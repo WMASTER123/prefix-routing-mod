@@ -1,0 +1,41 @@
+{
+  "schema_version": "vllm-hust-mod-metadata-v1",
+  "mod_id": "io.github.wmaster123.prefix-routing-mod",
+  "repository": "prefix-routing-mod",
+  "display_name": "Prefix Routing MOD",
+  "canonical_repository": "https://github.com/WMASTER123/prefix-routing-mod",
+  "responsibility": {
+    "organization": "WMASTER123",
+    "maintainers": [
+      {
+        "name": "WMASTER123",
+        "github": "WMASTER123"
+      }
+    ],
+    "advisor_status": "unknown",
+    "advisors": []
+  },
+  "lifecycle": {
+    "status": "experimental",
+    "default_enabled": false,
+    "activation_contract": "Descriptor-only: activation must be rejected until an applicable external Router contract is implemented and validated.",
+    "rollback_contract": "No runtime activation exists. Uninstall the descriptor distribution; do not stop shared services."
+  },
+  "scope": {
+    "mechanism": "External prefix-aware routing for homogeneous vLLM replica pools (planned)",
+    "supported_workloads": [],
+    "out_of_scope": [
+      "P/D disaggregation",
+      "tiered KV storage",
+      "KV migration",
+      "heterogeneous scheduling",
+      "engine eviction replacement"
+    ]
+  },
+  "evidence": {
+    "qualification": "unqualified",
+    "latest_result": null,
+    "index": "docs/progress.md",
+    "performance_claims": []
+  }
+}

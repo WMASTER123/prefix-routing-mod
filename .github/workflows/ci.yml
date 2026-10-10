@@ -1,0 +1,37 @@
+name: CPU checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cpu-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install uv==0.11.19
+      - run: uv sync --frozen --extra test
+      - run: uv run --frozen python tools/check.py --suite cpu
+      - run: uv run --frozen python tools/check.py --suite integration
+      - run: uv run --frozen python -m build
+      - run: uv run --frozen python tools/verify_wheel.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpu-evidence-${{ matrix.python }}
+          path: |
+            artifacts/
+            dist/
+          retention-days: 14

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "model": "Qwen2.5-7B-Instruct",
+  "compatibility_domain": "example-only-replace-after-identity-verification",
+  "workers": [
+    {
+      "worker_id": "replica-a",
+      "endpoint": "http://127.0.0.1:8001"
+    },
+    {
+      "worker_id": "replica-b",
+      "endpoint": "http://127.0.0.1:8002"
+    }
+  ]
+}

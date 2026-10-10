@@ -1,0 +1,33 @@
+# Prefix Routing MOD
+
+面向 vLLM / Ascend 同模型多副本的前缀路由综合套件。目标是在固定资源下提高同时满足 TTFT、生成停顿和完成率要求的服务容量，优先复用成熟路由宿主和索引。
+
+**当前是工程骨架，不是可运行的 Router。** 已提供静态配置预检、MOD 描述、CPU 测试入口和模拟后端；没有精确缓存路由、引擎 hook 或性能提升声明。Manager 可以发现描述，但必须拒绝启用未实现功能。
+
+## 开发起步
+
+安装 Git、Python 3.11/3.12 与 uv 后：
+
+```bash
+git clone https://github.com/WMASTER123/prefix-routing-mod.git
+cd prefix-routing-mod
+uv sync --frozen --extra test
+uv run --frozen prefix-routing-mod doctor --config configs/example.json
+uv run --frozen python tools/check.py --suite cpu
+uv run --frozen python tools/check.py --suite integration
+uv run --frozen python -m build
+uv run --frozen python tools/verify_wheel.py
+```
+
+仓库目前私有，需要本人或协作者权限。尚未发布 PyPI 包。doctor 只校验配置，不探测后端、不证明兼容性。
+
+## 文档与实施
+
+- [文档总览](docs/README.md)：架构、契约、规范、测试、运维、决策。
+- [当前进度与后续工作](docs/progress.md)：完成证据、未决项、P0–P7 门槛。
+- [原始详细实现计划](docs/reference/前缀路由MOD_整体实现计划与工程验收.md)：三人协作和完整阶段验收。
+- [贡献约定](CONTRIBUTING.md) / [AI 工作边界](AGENTS.md)。
+
+首版仅考虑一个外部 Router 接入已有服务。暂不做 P/D 分离、分层缓存、KV 搬运、异构调度、引擎淘汰改造。原生接口优先，observer 仅在证实必要后添加。当前 Python 包是工具和 MOD 元数据载体，不预先决定线上 Router 的实现语言。
+
+License: Apache-2.0；模板来源见 [NOTICE](NOTICE)。

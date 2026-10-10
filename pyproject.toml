@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prefix-routing-mod"
+version = "0.1.0.dev0"
+description = "Prefix routing MOD: contracts, diagnostics and validation scaffold"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10", "ruff>=0.12,<1", "build>=1.2,<2",
+  "vllm-hust-ext @ git+https://github.com/vLLM-HUST/extension-manager.git@00d1b940dc6ce8d60e2cd28708b80d80e9c33a09",
+]
+
+[project.scripts]
+prefix-routing-mod = "prefix_routing_mod.cli:main"
+
+[project.urls]
+Repository = "https://github.com/WMASTER123/prefix-routing-mod"
+
+[project.entry-points."vllm_hust.extension_bundles"]
+"io.github.wmaster123.prefix-routing-mod" = "prefix_routing_mod"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/prefix_routing_mod"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: CPU-only loopback protocol fixture checks"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+extend-exclude = ["artifacts", "docs/reference"]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
