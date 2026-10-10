@@ -30,6 +30,21 @@ python3 tools/collect_environment.py --output artifacts/environment-system.json
 
 私有仓库首次可通过本地已验证提交的 Git bundle 传入并克隆，随后设置 GitHub origin；这不在服务器保存个人 token，也不意味着后续 git pull 已获得认证。以后可继续 bundle 传递经审查提交，或由用户选择专用最小权限凭据。
 
+### 本次网络限制与可重复恢复
+
+服务器到 GitHub 的 HTTPS 连接超时，但 PyPI 下载成功。固定 Manager 的完整历史 bundle 存在 /root/work/.prefix-routing-bootstrap/extension-manager-complete.bundle，已导入同目录 extension-manager-complete.git，pinned 分支指向 00d1b940dc6ce8d60e2cd28708b80d80e9c33a09。若 Git 缓存需重建，可在本项目目录执行：
+
+```bash
+GIT_CONFIG_COUNT=1 \
+GIT_CONFIG_KEY_0=url.file:///root/work/.prefix-routing-bootstrap/extension-manager-complete.git.insteadOf \
+GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
+.venv/bin/uv sync --frozen --extra test
+```
+
+这是单次进程的来源镜像映射，版本仍由 uv.lock 的 commit 校验；不改变全局 Git 配置。创建 bundle 时必须包含完整对象历史且实际导入指定 ref；浅克隆生成的 bundle 不足以保证异机可还原。辅助目录也是私有 /root 持久存储，不应放共享区。
+
+本次观察到系统推理包：torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0，CANN 9.1.0。项目 .venv 与它们隔离，不因包名存在就认定可以执行 NPU 推理；后续先确定复用现成环境还是创建独立推理环境。
+
 ## 实验前检查
 
 1. 预约独占时段、核验设备可见性；物理编号 2/3 不直接等同容器内可见逻辑号，启动前确认映射。

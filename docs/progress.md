@@ -8,7 +8,7 @@
 - 已用固定 MOD 生成器建立包并修正规范版本、责任信息、惰性描述和不可启用边界。
 - 已建立静态配置预检、统一测试入口、CPU mock、CI 配置与干净 wheel 检查工具。
 - 文档目录覆盖架构、契约、复用、实施、规范、测试、运维、兼容、决策、实验与协作。
-- 本轮测试、推送和服务器同步结果将在执行后补到下方。脚本存在不代表已通过。
+- 本地、GitHub Actions 与远端基础验证均已执行，结果见下方；功能里程碑仍按实际能力推进。
 
 ## 仍未完成的阶段门槛
 
@@ -29,6 +29,12 @@
 
 真实 Manager inspect 返回 activation_ready=false；enable 被 descriptor-only 拒绝且没有写入状态。NPU/性能/发布入口返回 not-run，未运行真实推理。
 
-GitHub Actions 与远端同步检查待执行后追加结果。具体数量与最新提交以 CI / artifacts 的结果为准。
+初始实现提交 8e9e559c5a9f16f77dbad9558890bc00f1107ee2：本地和服务器各通过 28 项单元/规范检查及 3 项模拟检查；两端均构建 sdist/wheel，并通过干净安装验证。
+
+[首轮 GitHub Actions](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38054039836) 的 Linux / Python 3.11 与 3.12 两组均 success，含 CPU、mock、构建和干净 wheel 检查。
+
+远端已克隆到 /root/work/prefix-routing-mod，独立 .venv 不继承系统推理包。服务器访问 GitHub 超时，测试依赖通过固定提交的完整 Git bundle 导入；临时进程级 Git URL 映射未修改全局配置、锁文件或依赖版本。参见 [验证摘要](../evidence/bootstrap-2026-10-10.md)。
+
+系统只读清单：CANN 9.1.0、torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0。与计划候选不同；这只是已安装元数据，不是可用性/兼容性结论，未覆盖或卸载。
 
 GitHub 分支保护/强制审查尚未配置；协作规范已写入 CONTRIBUTING.md，不能把文档约定当作平台强制规则。
