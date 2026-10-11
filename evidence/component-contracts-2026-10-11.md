@@ -39,7 +39,9 @@ primary source：[固定候选源码](https://github.com/vllm-project/router/tre
 3. 浅克隆用普通 bundle 不带 shallow 边界，远端 clone 失败；保留失败对象，改为校验后的原 bare Git 归档，fsck 通过。Cargo 能继续读原提交，fetch 有 shallow-ref warning；不通过改 commit/锁消除 warning。
 4. 对第二/第三 Git 依赖的直接网络失败分别保留 `cargo-check-02.log`、`cargo-check-03.log`；完整原锁重试 `cargo-check-04.log` 的结果另行补记。不把网络失败算宿主否决或构建成功。
 
-构建状态暂记 pending，不继承工具链安装成功。raw 日志/归档留在 ignored artifacts；不提交大源码包或内部访问资料。
+第四次已进入原依赖编译后 exit 101：`openssl-sys 0.9.117` 缺 OpenSSL 开发 SDK。系统为 openEuler 24.03 LTS-SP3；rpm 查证 openssl/openssl-libs `3.0.12-52.oe2403sp3.aarch64` 已装、openssl-devel 未装；libssl/libcrypto runtime 存在，常见头文件/pkg-config 元数据未找到。离线正常依赖树进一步确认 hf-hub/reqwest/native-tls 等路径。未安装全局 SDK、改锁或改 HUST 环境；构建准入记 fail（SDK 前置未满足），未到 release/link/request 验证。不能据此宣称 NPU 不兼容或宿主否决。target/cache 私有占用约 489 MiB/1.4 GiB，无残留 cargo 进程。
+
+候选 Cargo.toml SHA256 `082883aba29f8ac912596325e2114a0e33d001bd23579084b05bd3c87faa1735`，Cargo.lock `8675caa4ef6227d0f2cb273ac921e9dd0a6989cdad304b5600887a9795355156`，两端与原源码一致。raw 日志/归档留在 ignored artifacts；不提交大源码包或内部访问资料。用户已选择评估窄幅扩展，初步范围、风险和退出条件见[R1 评估](../docs/planning/router-extension-assessment.md)；尚未实施扩展。
 
 ## 测试和审查
 
@@ -48,7 +50,7 @@ primary source：[固定候选源码](https://github.com/vllm-project/router/tre
 | Windows Python 3.12 CPU | 256 passed、2 Windows skips；ruff/format pass |
 | Windows loopback integration | 3 passed；不是生产 Router |
 | Windows sdist→wheel→干净安装 | pass；合同、manifest 和默认关闭插件导入无 torch/vllm |
-| Linux aarch64 CPU / integration / wheel | 待本轮代码同步后执行，不能继承旧 185/3 |
+| Linux aarch64 CPU / integration / wheel | a8141e0 同步后 258 passed、integration 3 passed、sdist→wheel→干净安装 pass；不是继承旧成绩 |
 | Actions 3.11/3.12 | 待本轮草稿 PR 的确切 head 验证 |
 | NPU / 真实 Router / 性能 | not-run，无卡，不宣称支持或提升 |
 

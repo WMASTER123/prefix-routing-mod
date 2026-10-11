@@ -8,6 +8,8 @@
 
 固定 Router 源码在项目隔离 Rust 工具链中做 aarch64 构建准入。网络 Git 依赖超时与原提交构建问题分开记录；不升级 HUST、不改原 Cargo 依赖掩盖失败。生产策略注入/生命周期/事件索引接缝与 ABI 仍未冻结，需要准入结果后再给生产实现分工。测试与审查证据见[本轮记录](../evidence/component-contracts-2026-10-11.md)。
 
+原锁编译的具体缺口已定位：openEuler 有 OpenSSL runtime，缺 openssl-devel SDK；exit 101，不是 HUST NumPy/NPU 问题。用户已选择先评估窄幅扩展，[六个接缝/维护风险/否决线](planning/router-extension-assessment.md)已记录，宿主源码未修改。当前代码本机 CPU 256+2 skips、远端 258、mock 各 3、两端 sdist/wheel/干净安装通过；另一成员审查仍待完成。
+
 近期：人工审查契约与工作包 → R1 宿主构建/适配范围决策；CPU 语义与测试可并行。真实 G2/G3 仍需 1 张 NPU，G4 两个 TP=1 副本需 2 张，到需要时提前反馈。M8、成本档案和新算法后置；MOD import_only 保持，G2 开放、G3/G4 未通过，没有性能提升声明。
 
 ## 此前 NPU 分配的状态（不是当前 CPU 机器的通过记录）
