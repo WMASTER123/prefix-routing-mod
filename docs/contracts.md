@@ -94,6 +94,7 @@ reserved -> sending -> accepted -> streaming -> released
 
 - sending 允许直接 streaming 或已确认终态；一次发送/首次接受/首次流式各最多一个转换。COMPLETED/CANCEL_CONFIRMED 要有 backend ENDED；FAILED 无后端终止证据仍 uncertain。HTTP 5xx、超时、关闭响应体不自动提供该证据。
 - 每次尝试 sequence 从 1 连续递增；同 event_id 同完整载荷为 duplicate，冲突或非法转换拒绝。晚到的可靠确认可解决 uncertain；已有 accepted/streaming 证据不能被后续“未接受”说法覆盖。
+- M5 仅给实际状态转换分配 sequence；已 uncertain 后再次报告 FAILED/NONE 不构成转换，必须在事件产生处收敛。参考账本拒绝此类通知且不消耗序号/留存，可靠确认使用下一连续序号；错误诊断另走有界日志。不能把每个超时回调或 token 当生命周期事件。
 - 发送前明确失败释放，允许新的 attempt_id；发送后 uncertain 保留本地负债，禁止同一请求自动重发。旧实例事件返回 stale，不碰新实例计数；旧负债需要 M7 的实际终止证据或可靠后端对账，不能凭 publisher 重启/超时删除。
 - Router 进程重启和 tombstone GC/持久化尚未实现；生产留存必须有上限、明确去重窗口/ID 不复用与满额拒绝行为。测试账本只保留有限尝试、每尝试最多 8 个转换，满额拒绝，不声称已解决长时间运行。
 

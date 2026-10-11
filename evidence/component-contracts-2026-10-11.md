@@ -12,7 +12,7 @@
 
 `component-v0.1` 标准库类型与五个端口；六组版本化生命周期正例；有界/带锁账本 oracle、静态目录及模拟 M1/M2/M3/M4/M5 链。新增 73 项 CPU 用例，涵盖未知/精确、连续完整块、新鲜度、域/模板、服务与 publisher 代次、配置/排空竞争、并发准入、幂等/冲突、发送前撤销、发送后未知和晚到确认、实例更换、来源/留存上限。
 
-参考 ledger 和静态目录只在 tests/fixtures，不是生产 M2/M3；FixturePolicy 只取首个合法目标并标记证据，未实现/选择新优化策略。生产宿主语言、ABI/绑定、可靠本地生命周期和长期 GC 仍未交付；MOD import_only 保持。
+参考 ledger 在 tests/fixtures，静态目录和 FixturePolicy 在 tests/test_component_flow.py，均不是生产 M2/M3/M4；FixturePolicy 只取首个合法目标并标记证据，未实现/选择新优化策略。生产宿主语言、ABI/绑定、可靠本地生命周期和长期 GC 仍未交付；MOD import_only 保持。
 
 ## 固定 Router 的源码检查
 

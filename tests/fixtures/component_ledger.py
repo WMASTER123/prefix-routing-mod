@@ -166,6 +166,17 @@ class ReferenceLedger:
                 EventKind.CANCEL_CONFIRMED,
                 EventKind.FAILED,
             ) and state in ("sending", "accepted", "streaming", "uncertain"):
+                if (
+                    state == "uncertain"
+                    and event.kind is EventKind.FAILED
+                    and event.confirmation is BackendConfirmation.NONE
+                ):
+                    # M5 sequences state transitions, not repeated error reports.
+                    # Reject before consuming the sequence or retention budget;
+                    # the next reliable confirmation must remain admissible.
+                    raise LifecycleRejected(
+                        "uncertain notification is not a transition"
+                    )
                 target = (
                     "released"
                     if event.confirmation is not BackendConfirmation.NONE

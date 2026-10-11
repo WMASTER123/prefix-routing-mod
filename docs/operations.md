@@ -1,6 +1,8 @@
 # 新实验服务器操作基线
 
-2026-10-11 最新分配服务器：aarch64、4 张 Ascend 910B2，npu-smi 枚举物理编号 0/1/2/7，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm。原 1/2/3/4 映射和四卡成绩属于此前分配，不能沿用为当前四卡复验；本轮身份/hook 主回归只使用逻辑 0。根卷盘点约 49 GiB 已用、245 GiB 可用。详细映射与版本以私有 inventory 为准，物理枚举本身不等同完整逻辑映射；平台独占性不能从空闲利用率推断。
+2026-10-11 当前分配为 CPU-only aarch64、16 核 CPU 配额、64 GiB RAM、16 GiB /dev/shm、0 NPU。项目目录仍为 /root/work/prefix-routing-mod；仅开展 CPU 契约、构建和模拟转发。需要真实 G2/G3 时申请 1 张 NPU，G4 申请 2 张，执行前重新盘点。
+
+此前最近一次 NPU 分配为 4 张 Ascend 910B2，物理枚举 0/1/2/7、每张 HBM 65536 MiB、128 GiB RAM、32 GiB /dev/shm，身份/hook 主回归只使用逻辑 0。该分配及更早的卡映射、磁盘和四卡测试均为历史记录，不能用于当前操作。下面真实推理命令仅在新 NPU 分配核验通过后执行。
 
 最新执行转入[HUST 隔离候选](decisions/2026-10-11-hust-runtime-candidate.md)，原预装环境仅保留历史对照。临时源码及服务环境位于项目私有 artifacts；不使用旧项目、不改全局 Python/CANN。任何环境变量调整仅限本次进程，须在真实推理中验证后才能成为恢复配方。
 
@@ -109,7 +111,7 @@ PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
 
 它覆盖受控空起点、三批重放、实际缓冲重复帧、SUB 断连补齐、空闲确认、超窗拒绝恢复、停止后的控制请求超时和同地址重启。缺少一致边界的快照保持 unknown；声明范围见[事件合同](kv-event-contract.md)。逐卡独立检查使用不同 HTTP 端口，绑定预检失败时保存记录并确认监听状态，不能直接认定为 NPU 故障或清理未知进程。
 
-当前已完成四张设备的串行真实模型烟测；主回归仍单卡。环境恢复与四卡结果见 [W1](../evidence/w1-runtime-restore-2026-10-11.md)，真实存储/淘汰/清空/重放子集见 [G2](../evidence/g2-native-events-subset-2026-10-11.md)。所有临时服务已关闭，不通过空转维持在线。
+此前分配已完成四张设备的串行真实模型烟测；当前 CPU 机器未运行推理。历史环境恢复与四卡结果见 [W1](../evidence/w1-runtime-restore-2026-10-11.md)，真实存储/淘汰/清空/重放子集见 [G2](../evidence/g2-native-events-subset-2026-10-11.md)。所有当时临时服务已关闭，不通过空转维持在线。
 
 恢复环境下事件子集示例，运行前确认卡/端口可用及新输出目录：
 

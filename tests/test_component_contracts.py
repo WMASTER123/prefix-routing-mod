@@ -434,3 +434,43 @@ def test_unknown_attempt_cannot_create_load():
     with pytest.raises(LifecycleRejected):
         ledger.apply(event(EventKind.SEND_STARTED))
     assert ledger.outstanding(REF) == 0
+
+
+@pytest.mark.parametrize(
+    "terminal", [EventKind.COMPLETED, EventKind.CANCEL_CONFIRMED, EventKind.FAILED]
+)
+def test_repeated_uncertain_errors_cannot_exhaust_reliable_reconciliation(terminal):
+    ledger = reserved()
+    ledger.apply(event(EventKind.SEND_STARTED))
+    uncertain = event(EventKind.FAILED, sequence=2)
+    ledger.apply(uncertain)
+    for index in range(32):
+        with pytest.raises(LifecycleRejected, match="not a transition"):
+            ledger.apply(event(EventKind.FAILED, sequence=3, event_id=f"error-{index}"))
+    assert ledger.outstanding(REF) == 1
+    assert ledger.apply(uncertain) == "duplicate"
+    confirmed = event(terminal, BackendConfirmation.ENDED, 3)
+    assert ledger.apply(confirmed) == "applied"
+    assert ledger.apply(confirmed) == "duplicate"
+    assert ledger.outstanding(REF) == 0
+
+
+def test_longest_progress_path_still_allows_late_confirmation():
+    ledger = reserved()
+    for sequence, kind in enumerate(
+        (
+            EventKind.SEND_STARTED,
+            EventKind.ACCEPTED,
+            EventKind.STREAMING,
+            EventKind.OUTCOME_UNKNOWN,
+        ),
+        1,
+    ):
+        ledger.apply(event(kind, sequence=sequence))
+    with pytest.raises(LifecycleRejected, match="not a transition"):
+        ledger.apply(event(EventKind.FAILED, sequence=5))
+    with pytest.raises(LifecycleRejected, match="contradicts"):
+        ledger.apply(event(EventKind.FAILED, BackendConfirmation.NOT_ACCEPTED, 5))
+    assert ledger.outstanding(REF) == 1
+    ledger.apply(event(EventKind.COMPLETED, BackendConfirmation.ENDED, 5))
+    assert ledger.outstanding(REF) == 0
