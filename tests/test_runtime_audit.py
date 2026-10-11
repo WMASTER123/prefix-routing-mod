@@ -25,6 +25,44 @@ def test_dependency_pass_is_not_runtime_compatibility():
     assert report["environment_gate_passed"] is False
 
 
+def test_hust_distribution_must_be_selected_explicitly():
+    packages = [p for p in core_packages() if p["name"] != "vllm-ascend"]
+    packages.append({"name": "vllm_ascend_hust", "version": "test"})
+    assert audit_runtime.make_report(packages, {"status": "pass"})["status"] == "fail"
+    report = audit_runtime.make_report(packages, {"status": "pass"}, "vllm-ascend-hust")
+    assert report["status"] == "pass"
+    assert report["selected_ascend_distribution"] == "vllm-ascend-hust"
+    assert report["runtime_compatibility_verified"] is False
+
+
+def test_upstream_package_cannot_satisfy_hust_selection():
+    report = audit_runtime.make_report(
+        core_packages(), {"status": "pass"}, "vllm-ascend-hust"
+    )
+    assert report["status"] == "fail"
+    assert report["missing_core_packages"] == ["vllm-ascend-hust"]
+
+
+def test_two_distributions_sharing_ascend_module_fail_audit():
+    packages = [*core_packages(), {"name": "vllm-ascend-hust", "version": "test"}]
+    report = audit_runtime.make_report(packages, {"status": "pass"}, "vllm-ascend-hust")
+    assert report["status"] == "fail"
+    assert report["missing_core_packages"] == []
+    assert report["conflicting_ascend_distributions"] == [
+        "vllm-ascend",
+        "vllm-ascend-hust",
+    ]
+
+
+def test_invalid_distribution_selector_is_rejected():
+    with pytest.raises(ValueError, match="Unsupported"):
+        audit_runtime.make_report(core_packages(), {"status": "pass"}, "anything")
+
+
+def test_distribution_names_follow_package_name_normalization():
+    assert audit_runtime.normalize_name("VLLM..Ascend__Hust") == "vllm-ascend-hust"
+
+
 @pytest.mark.parametrize("status", ["fail", "error"])
 def test_dependency_failure_fails_audit(status):
     assert (

@@ -23,8 +23,15 @@ PLUGINS = "ascend,ascend_kv_connector,ascend_model,ascend_model_loader"
 
 
 def build_command(
-    executable: Path, model: Path, port: int, events_port: int | None = None
+    executable: Path,
+    model: Path,
+    port: int,
+    events_port: int | None = None,
+    *,
+    events_ipc: Path | None = None,
 ) -> list[str]:
+    if events_port is not None and events_ipc is not None:
+        raise ValueError("Choose one KV event transport")
     command = [
         str(executable),
         "serve",
@@ -57,7 +64,7 @@ def build_command(
         "--additional-config",
         '{"enable_cpu_binding":false}',
     ]
-    if events_port is not None:
+    if events_port is not None or events_ipc is not None:
         command.extend(
             [
                 "--kv-events-config",
@@ -65,7 +72,11 @@ def build_command(
                     {
                         "enable_kv_cache_events": True,
                         "publisher": "zmq",
-                        "endpoint": f"tcp://127.0.0.1:{events_port}",
+                        "endpoint": (
+                            ipc_endpoint(events_ipc)
+                            if events_ipc is not None
+                            else f"tcp://127.0.0.1:{events_port}"
+                        ),
                         "hwm": 128,
                         "max_queue_size": 128,
                         "buffer_steps": 128,
@@ -76,7 +87,16 @@ def build_command(
     return command
 
 
-def create_event_subscriber(context, zmq, port: int):
+def ipc_endpoint(path: Path) -> str:
+    # Conservative Linux sockaddr_un limit; generated inside a fresh run dir.
+    if not path.is_absolute() or len(os.fsencode(path)) > 100:
+        raise ValueError("IPC socket needs an absolute path of at most 100 bytes")
+    return f"ipc://{path}"
+
+
+def create_event_subscriber(context, zmq, port: int | None, ipc: Path | None = None):
+    if (port is None) == (ipc is None):
+        raise ValueError("Choose exactly one KV event transport")
     subscriber = context.socket(zmq.SUB)
     subscriber.setsockopt(zmq.LINGER, 0)
     subscriber.setsockopt(zmq.RCVHWM, 128)
@@ -84,7 +104,10 @@ def create_event_subscriber(context, zmq, port: int):
     try:
         # The fixed backend connects PUB for non-wildcard TCP endpoints.
         # Bind SUB to loopback; connect/connect would silently emit nothing.
-        subscriber.bind(f"tcp://127.0.0.1:{port}")
+        if ipc is not None:
+            subscriber.connect(ipc_endpoint(ipc))
+        else:
+            subscriber.bind(f"tcp://127.0.0.1:{port}")
     except Exception:
         subscriber.close(linger=0)
         raise
@@ -92,7 +115,7 @@ def create_event_subscriber(context, zmq, port: int):
 
 
 def summarize_event_batch(batch: list) -> list[dict]:
-    """Observe the fixed backend's array-like msgspec protocol, not an index.
+    """Summarize known upstream arrays and HUST tagged maps, not an index.
 
     No token IDs, hashes or prompt content are persisted. This deliberately
     does not assert replay, ordering, readiness, removal or residency coverage.
@@ -101,23 +124,58 @@ def summarize_event_batch(batch: list) -> list[dict]:
         raise ValueError("Unexpected event batch envelope")
     summaries = []
     for event in batch[1]:
-        if not isinstance(event, list) or not event or not isinstance(event[0], str):
+        if isinstance(event, dict):
+            kind = event.get("type")
+            fields = event
+        elif isinstance(event, list) and event and isinstance(event[0], str):
+            kind = event[0]
+            fields = {}
+            if kind == "BlockStored" and len(event) >= 8:
+                fields = dict(
+                    zip(
+                        (
+                            "block_hashes",
+                            "parent_block_hash",
+                            "token_ids",
+                            "block_size",
+                            "lora_id",
+                            "medium",
+                            "lora_name",
+                        ),
+                        event[1:8],
+                        strict=True,
+                    )
+                )
+        else:
             raise ValueError("Unexpected event encoding")
-        summary = {"kind": event[0]}
-        if event[0] == "BlockStored":
+        if not isinstance(kind, str) or kind not in {
+            "BlockStored",
+            "BlockRemoved",
+            "AllBlocksCleared",
+        }:
+            raise ValueError("Unknown native event kind")
+        summary = {"kind": kind}
+        if kind == "BlockStored":
             if (
-                len(event) < 8
-                or not isinstance(event[1], list)
-                or not isinstance(event[3], list)
+                not isinstance(fields.get("block_hashes"), list)
+                or not isinstance(fields.get("token_ids"), list)
+                or type(fields.get("block_size")) is not int
+                or fields["block_size"] <= 0
+                or "parent_block_hash" not in fields
+                or "medium" not in fields
+                or (
+                    fields["medium"] is not None
+                    and not isinstance(fields["medium"], str)
+                )
             ):
                 raise ValueError("Incomplete BlockStored payload")
             summary.update(
                 {
-                    "block_count": len(event[1]),
-                    "token_count": len(event[3]),
-                    "block_size": event[4],
-                    "parent_present": event[2] is not None,
-                    "medium": event[6],
+                    "block_count": len(fields["block_hashes"]),
+                    "token_count": len(fields["token_ids"]),
+                    "block_size": fields["block_size"],
+                    "parent_present": fields["parent_block_hash"] is not None,
+                    "medium": fields["medium"],
                 }
             )
         summaries.append(summary)
@@ -199,6 +257,29 @@ def stop_owned_group(process: subprocess.Popen) -> dict:
     return {"parent_returncode": process.returncode, "forced_group_cleanup": forced}
 
 
+def build_environment(device: int, output: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    # Do not disable bytecode: cold Torch/NPU parsing can exhaust HUST's 20s
+    # preflight. Redirect all generated bytecode away from system/shared paths.
+    env.pop("PYTHONDONTWRITEBYTECODE", None)
+    env.update(
+        {
+            "ASCEND_RT_VISIBLE_DEVICES": str(device),
+            "VLLM_PLUGINS": PLUGINS,
+            "PYTHONPYCACHEPREFIX": str(output / "cache" / "pyc"),
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
+            "VLLM_NO_USAGE_STATS": "1",
+            "DO_NOT_TRACK": "1",
+            "OMP_NUM_THREADS": "2",
+            "TOKENIZERS_PARALLELISM": "false",
+            "XDG_CACHE_HOME": str(output / "cache"),
+            "VLLM_CACHE_ROOT": str(output / "cache" / "vllm"),
+        }
+    )
+    return env
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", required=True)
@@ -206,7 +287,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--device", type=int, required=True)
     parser.add_argument("--port", type=int, default=18140)
-    parser.add_argument("--kv-events-port", type=int)
+    events = parser.add_mutually_exclusive_group()
+    events.add_argument("--kv-events-port", type=int)
+    events.add_argument("--kv-events-ipc", action="store_true")
     parser.add_argument("--startup-timeout", type=int, default=600)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -228,9 +311,17 @@ def main(argv: list[str] | None = None) -> int:
     if output == model or model in output.parents:
         parser.error("Never write reports into the model directory")
     # Refuse overwrites, including a prior interrupted run's logs.
+    events_ipc = output / "kv.sock" if args.kv_events_ipc else None
+    if events_ipc is not None:
+        try:
+            ipc_endpoint(events_ipc)
+        except ValueError as error:
+            parser.error(str(error))
     output.mkdir(parents=True, exist_ok=False)
     origin = f"http://127.0.0.1:{args.port}"
-    command = build_command(executable, model, args.port, args.kv_events_port)
+    command = build_command(
+        executable, model, args.port, args.kv_events_port, events_ipc=events_ipc
+    )
     report = {
         "schema_version": 1,
         "scope": "single_backend_eager_probe",
@@ -238,6 +329,11 @@ def main(argv: list[str] | None = None) -> int:
         "command": command,
         "device_mask": str(args.device),
         "plugins": PLUGINS,
+        "event_transport": "ipc"
+        if events_ipc
+        else "tcp"
+        if args.kv_events_port
+        else None,
         "checks": {},
         "performance_validated": False,
         "routing_validated": False,
@@ -250,31 +346,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", args.port))
-        if args.kv_events_port is not None:
+        if args.kv_events_port is not None or events_ipc is not None:
             # Available in the probed engine environment, not package dependencies.
             import msgspec
             import zmq
 
-            with socket.socket() as sock:
-                sock.bind(("127.0.0.1", args.kv_events_port))
+            if args.kv_events_port is not None:
+                with socket.socket() as sock:
+                    sock.bind(("127.0.0.1", args.kv_events_port))
             context = zmq.Context()
-            event_socket = create_event_subscriber(context, zmq, args.kv_events_port)
-        env = os.environ.copy()
-        env.update(
-            {
-                "ASCEND_RT_VISIBLE_DEVICES": str(args.device),
-                "VLLM_PLUGINS": PLUGINS,
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "HF_HUB_OFFLINE": "1",
-                "TRANSFORMERS_OFFLINE": "1",
-                "VLLM_NO_USAGE_STATS": "1",
-                "DO_NOT_TRACK": "1",
-                "OMP_NUM_THREADS": "2",
-                "TOKENIZERS_PARALLELISM": "false",
-                "XDG_CACHE_HOME": str(output / "cache"),
-                "VLLM_CACHE_ROOT": str(output / "cache" / "vllm"),
-            }
-        )
+            event_socket = create_event_subscriber(
+                context, zmq, args.kv_events_port, events_ipc
+            )
+        env = build_environment(args.device, output)
         # Ignore inherited HTTP proxy configuration for loopback requests.
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with (output / "backend.log").open("x", encoding="utf-8") as log:

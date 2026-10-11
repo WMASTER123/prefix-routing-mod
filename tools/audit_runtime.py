@@ -16,6 +16,11 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 CORE_PACKAGES = ("vllm", "vllm-ascend", "torch", "torch-npu", "triton-ascend")
+ASCEND_DISTRIBUTIONS = ("vllm-ascend", "vllm-ascend-hust")
+
+
+def normalize_name(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def redact_urls(text: str) -> str:
@@ -68,9 +73,18 @@ def check_dependencies() -> dict:
         return {"command": command, "status": "error", "error": type(error).__name__}
 
 
-def make_report(packages: list[dict], dependency_check: dict) -> dict:
-    names = {p["name"].lower().replace("_", "-") for p in packages}
-    missing = sorted(set(CORE_PACKAGES) - names)
+def make_report(
+    packages: list[dict],
+    dependency_check: dict,
+    ascend_distribution: str = "vllm-ascend",
+) -> dict:
+    if ascend_distribution not in ASCEND_DISTRIBUTIONS:
+        raise ValueError("Unsupported Ascend distribution")
+    names = {normalize_name(p["name"]) for p in packages}
+    required = set(CORE_PACKAGES) - {"vllm-ascend"} | {ascend_distribution}
+    missing = sorted(required - names)
+    installed_ascend = sorted(names.intersection(ASCEND_DISTRIBUTIONS))
+    conflicts = installed_ascend if len(installed_ascend) > 1 else []
     return {
         "schema_version": 1,
         "scope": "python_dependency_audit_only",
@@ -82,10 +96,14 @@ def make_report(packages: list[dict], dependency_check: dict) -> dict:
         "base_prefix": sys.base_prefix,
         "sys_path": sys.path,
         "packages": packages,
+        "selected_ascend_distribution": ascend_distribution,
+        "conflicting_ascend_distributions": conflicts,
         "missing_core_packages": missing,
         "dependency_check": dependency_check,
         "status": (
-            "pass" if not missing and dependency_check["status"] == "pass" else "fail"
+            "pass"
+            if not missing and not conflicts and dependency_check["status"] == "pass"
+            else "fail"
         ),
         "artifact_lock_verified": False,
         "runtime_compatibility_verified": False,
@@ -96,11 +114,17 @@ def make_report(packages: list[dict], dependency_check: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--ascend-distribution",
+        choices=ASCEND_DISTRIBUTIONS,
+        default="vllm-ascend",
+        help="Expected distribution; the HUST fork still imports as vllm_ascend",
+    )
     args = parser.parse_args(argv)
     if args.output.exists():
         parser.error("Output already exists; preserve previous evidence")
     packages = package_inventory(metadata.distributions())
-    report = make_report(packages, check_dependencies())
+    report = make_report(packages, check_dependencies(), args.ascend_distribution)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as output:
         json.dump(report, output, indent=2)

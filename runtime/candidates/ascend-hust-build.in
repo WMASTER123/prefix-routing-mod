@@ -1,0 +1,7 @@
+# Exact isolated build-tool versions observed in the first HUST candidate build.
+# This is NOT a service runtime environment or a production compatibility claim.
+packaging==26.3
+setuptools==84.0.0
+setuptools-scm==10.3.4
+wheel==0.48.0
+vcs-versioning==2.6.0

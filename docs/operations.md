@@ -1,6 +1,8 @@
 # 新实验服务器操作基线
 
-2026-10-11 新服务器：aarch64、4 张 Ascend 910B2，物理编号 1/2/3/4 对应逻辑编号 0/1/2/3，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm；Python 3.12.13、npu-smi 26.0.rc1。约 38 GiB 是根卷已用量，实际剩余约 256 GiB。平台未确认的独占性不能从空闲利用率推断。此前两卡清单仅属旧服务器。
+2026-10-11 最新分配服务器：aarch64、4 张 Ascend 910B2，npu-smi 物理编号 0/1/6/7，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm；Python 3.12.13、npu-smi 26.0.rc1、CANN 9.1.0。重新分配后编号已改变，不能沿用此前 1/2/3/4。约 40 GiB 是根卷已用量，安装前剩余约 254 GiB。平台未确认的独占性不能从空闲利用率推断。
+
+最新执行转入[HUST 隔离候选](decisions/2026-10-11-hust-runtime-candidate.md)，原预装环境仅保留历史对照。临时源码及服务环境位于项目私有 artifacts；不使用旧项目、不改全局 Python/CANN。任何环境变量调整仅限本次进程，须在真实推理中验证后才能成为恢复配方。
 
 ## 存储和权限
 
@@ -47,14 +49,29 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 ## 实验前检查
 
-1. 预约独占时段、核验设备可见性；当前逻辑 0 映射物理 1，重新分配服务器后必须重查，不按旧编号启动。
+1. 预约独占时段、核验设备可见性；本次首先使用 mask=0，物理映射重新核验，不能继承旧物理 1 的映射记录。
 2. 首先单卡单副本冒烟，再两个 TP=1 副本；TP=2 只有一个路由目的地。
 3. 按用户要求选择 `/data/shared_models/Qwen2.5-14B-Instruct`，BF16、TP=1、先 8k 上下文；不下载重复权重，不静默降为 7B，不依据目录名断言 revision。
-4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；预装组合已通过局部 eager 探测，图和性能仍待验，不需先安装归档组合。
+4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；当前验证 HUST 隔离候选，预装局部 eager 成绩不继承。图、完整恢复及性能均须后验。
 5. CPU 为 16 核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。先单卡，再两个 TP=1 副本，最后四副本容量实验。压测端/Router/后端的竞争必须测量，不外推跨节点收益。
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
 
 ## 单后端局部探测（显式手动触发）
+
+最新 HUST 隔离探测示例（目录/端口每次新选；先确认逻辑设备和无人争用）：
+
+```bash
+cd /root/work/prefix-routing-mod
+PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+  artifacts/hust-runtime-20261011/service-venv-rebuild/bin/python \
+  tools/smoke_backend.py --execute \
+  --executable artifacts/hust-runtime-20261011/service-venv-rebuild/bin/vllm \
+  --model /data/shared_models/Qwen2.5-14B-Instruct \
+  --device 0 --port 18180 --kv-events-ipc --startup-timeout 600 \
+  --output artifacts/hust-runtime-20261011/probe-next
+```
+
+此次 private IPC 路径长度必须 <=100 bytes，过长明确拒绝；PUB bind/SUB connect。新工具允许字节码但统一重定向至 output/cache/pyc，保留 HUST preflight。普通 ZMQ 存储样本不代表全量订阅覆盖、重放、代次或恢复已通过。端口检查失败不清理未知进程；先核验，再换端口/等待正常释放，报告不覆盖。
 
 更新注意：以下为早期探测命令，不能当成已验收环境/事件配方。当前先完成[环境门槛](runtime.md)；原 TCP SUB-bind 接线未收到事件，已有单独 IPC 正向诊断，但还没纳入本工具的可重复恢复回归。勿依据下面 `--kv-events-port` 参数宣告事件能力失败或成功。G1 通过后按[事件合同](planning/runtime-event-gates.md)修正正式回归入口。
 

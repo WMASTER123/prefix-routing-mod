@@ -23,6 +23,8 @@ uv run --frozen python tools/verify_wheel.py
 
 2026-10-11：新增可选单卡后端诊断，公共 Qwen2.5-14B 已运行非流式/重复/流式请求；使用方法见[运维](docs/operations.md)，严格范围见[证据](evidence/qwen14b-preflight-2026-10-11.md)。这不是已完成的 Router，也不是加速结论。
 
+最新已独立构建用户指定 HUST 配套源码，隔离依赖、Qwen14B eager/IPC 存储事件及 venv 重建复验通过。完整事件恢复、图模式及路由性能未验收；见[最新记录](evidence/hust-runtime-candidate-2026-10-11.md)与[候选锁](runtime/candidates/README.md)。
+
 ## 文档与实施
 
 - [文档总览](docs/README.md)：架构、契约、规范、测试、运维、决策。
