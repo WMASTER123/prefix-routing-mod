@@ -23,6 +23,8 @@ tools/check.py 生成 artifacts/checks/<suite>.json，CPU / integration 同时�
 
 `tools/smoke_backend.py` 是显式 `--execute` 的局部诊断入口，仅 Linux、指定本地模型/可执行文件、单卡 TP=1 eager、loopback、独立进程组、有限超时；可采样原生 KV 事件。使用方式见[运维](operations.md)。它还不包含图/取消/恢复/Router，不能替代完整 `npu-smoke`，保留入口仍返回 not-run。CPU 测试覆盖启动参数、SSE 完整性、事件脱敏和关闭边界，不启动设备。探测不加速包安装、不更改 MOD 的 import_only 状态。
 
+新增 tools/restore_runtime.py 的同机环境恢复入口、tools/verify_triton_overlay.py 的实际文件审计、tools/inspect_runtime.py 的显式导入/加载库清单。恢复与四卡检查见 [W1 证据](../evidence/w1-runtime-restore-2026-10-11.md)。tools/regress_kv_events.py 是有界真实生命周期子集，tools/audit_kv_recovery.py 为合成队列的真实源码方法审计；[G2 证据](../evidence/g2-native-events-subset-2026-10-11.md)分别记录。不得把子集 pass 或确定性源码观察汇总为完整 npu-smoke/恢复通过。
+
 ## CI 策略
 
 GitHub Actions 在 push main、PR 和手动触发时运行 Python 3.11/3.12、锁文件依赖、同一测试入口和干净 wheel 检查，保存证据 14 天。仅 contents:read，不发布、不部署、不占 NPU。锁定第三方 action 的不可变提交是后续供应链加固项，当前使用主版本标签，依赖版本由 uv.lock 固定。
