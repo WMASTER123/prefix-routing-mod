@@ -16,7 +16,7 @@ tools/prototype_kv_boundary.py 已用固定 HUST 的真实镜像/重放方法验
 - 保存有上限的块 token/父链元数据。快照先恢复拓扑，再撤销已淘汰祖先的驻留；消费者必须在暂存状态中完整应用后原子替换，不能逐条开放快照命中。
 - 实验实时协议四帧：topic、8 字节序号、原生 batch、ASCII epoch；结构化重放回复增加 schema_version=1、valid、reason。消费者必须校验协议、epoch、完整区间与 payload 上限。
 - 只准入 TP=1、DP rank 0、纯文本、group 0、完整块；LoRA/extra keys/部分块遇到时停止精确恢复资格，明确反馈，后续再按功能验证扩展。
-- 默认元数据上限 16384 块/2097152 tokens，回复上限 16 MiB；达到上限先回收无驻留依赖的元数据，仍超限则降级。reset 后真实清空事件可以建立新代次，不以 HTTP 返回代替。
+- 默认元数据上限 16384 块/2097152 tokens，单个 payload、重放缓冲总 payload 和回复各有 16 MiB 上限；缓冲还受原生批次数上限约束。达到元数据上限先回收无驻留依赖的数据，仍超限则降级。reset 后真实清空事件可以建立新代次，不以 HTTP 返回代替。这些是逻辑限额，不等同进程 RSS 或峰值内存已测量。
 - 原生无 hook 组合保留；MOD 仍 import_only。四帧协议和恢复适配不是现有 Router 订阅器可直接消费的接口，需后续 Router 侧接线。
 
 ## 本轮验收

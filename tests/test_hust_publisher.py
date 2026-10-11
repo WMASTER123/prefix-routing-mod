@@ -240,6 +240,11 @@ def test_missing_ancestor_and_reply_limit_fail_closed():
     assert not publisher._build_replay_response(SimpleNamespace(force_snapshot=True))[
         "valid"
     ]
+    publisher, _, _ = make(hook.Limits(max_reply_bytes=200))
+    publisher._commit(Batch([Cleared()]))
+    assert not publisher._build_replay_response(SimpleNamespace(force_snapshot=True))[
+        "valid"
+    ]
 
 
 def test_replay_retention_has_a_byte_bound_and_metadata_recovery_remains_available():
@@ -252,8 +257,3 @@ def test_replay_retention_has_a_byte_bound_and_metadata_recovery_remains_availab
     )
     assert publisher._replay_bytes <= 1024 and len(publisher._buffer) < 20
     snapshot(publisher)
-    publisher, _, _ = make(hook.Limits(max_reply_bytes=200))
-    publisher._commit(Batch([Cleared()]))
-    assert not publisher._build_replay_response(SimpleNamespace(force_snapshot=True))[
-        "valid"
-    ]

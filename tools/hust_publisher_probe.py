@@ -212,32 +212,50 @@ def run_cases(
         raise ValueError("Native clear event was not observed")
     cases["real_clear_event"] = True
     backends[-1].stop()
-    restarted = OwnedBackend(command, env, output / "backend-restart", opener, origin)
-    backends.append(restarted)
-    restarted.start()
-    new_origin = recovery(force=True)
-    if (
-        new_origin["publisher_epoch"] == cold["publisher_epoch"]
-        or new_origin["next_seq"] != 0
-    ):
-        raise ValueError("Restart did not establish a distinct empty origin")
-    # This is a retained REAL old wire message, not synthetic epoch injection.
-    cases["real_old_wire_epoch_rejected"] = (
-        live_epoch(old_wire_frame) != new_origin["publisher_epoch"]
+    # Invalidate the old directory/connection before adopting a new origin.
+    # A recreated IPC publisher is not guaranteed to revive an old SUB pipe.
+    subscriber.close(linger=0)
+    initial_catalog.clear()
+    initial_residents.clear()
+    restarted_sub = smoke_backend.create_event_subscriber(
+        context, zmq, None, output / "events.sock"
     )
-    request(101)
-    new_frame_seen = False
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        if not subscriber.poll(100):
-            continue
-        frames = subscriber.recv_multipart()
-        if live_epoch(frames) != new_origin["publisher_epoch"]:
-            continue
-        smoke_backend.summarize_event_batch(msgspec.msgpack.decode(frames[2]))
-        new_frame_seen = True
-        break
-    if not new_frame_seen:
-        raise TimeoutError("New publisher wire event was not observed")
-    cases["same_address_restart"] = True
-    cases["new_epoch_live_event"] = True
+    try:
+        restarted_sub.setsockopt(zmq.MAXMSGSIZE, 1024**2)
+        restarted = OwnedBackend(
+            command, env, output / "backend-restart", opener, origin
+        )
+        backends.append(restarted)
+        restarted.start()
+        new_origin = recovery(force=True)
+        if (
+            new_origin["publisher_epoch"] == cold["publisher_epoch"]
+            or new_origin["next_seq"] != 0
+        ):
+            raise ValueError("Restart did not establish a distinct empty origin")
+        apply_batch(new_origin["snapshot"], msgspec, initial_catalog, initial_residents)
+        if initial_catalog or initial_residents:
+            raise ValueError("Restart snapshot inherited the old directory")
+        # Actual retained wire bytes, not a synthetic epoch injection. Reject
+        # before decoding/applying any old data to the new staging directory.
+        if live_epoch(old_wire_frame) == new_origin["publisher_epoch"]:
+            raise ValueError("Old wire event was not rejected by epoch")
+        cases["real_old_wire_epoch_rejected"] = True
+        request(101)
+        new_frame_seen = False
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if not restarted_sub.poll(100):
+                continue
+            frames = restarted_sub.recv_multipart()
+            if live_epoch(frames) != new_origin["publisher_epoch"]:
+                continue
+            smoke_backend.summarize_event_batch(msgspec.msgpack.decode(frames[2]))
+            new_frame_seen = True
+            break
+        if not new_frame_seen:
+            raise TimeoutError("New publisher wire event was not observed")
+        cases["same_address_restart"] = True
+        cases["new_epoch_live_event"] = True
+    finally:
+        restarted_sub.close(linger=0)

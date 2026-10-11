@@ -2,4 +2,4 @@
 
 
 class PrefixRoutingModContractProposal:
-    """Metadata carrier only; no host hook or external process is installed."""
+    """Metadata carrier only; this descriptor activates no hook or process."""
