@@ -9,7 +9,8 @@
 | [运行门槛](planning/runtime-event-gates.md) | G1–G4 准入及真实事件恢复的判定条件 |
 | [架构](architecture.md) | 产品范围、八项职责、复用边界和链路 |
 | [Ascend 设计约束](ascend-design.md) | NPU 知识应用、三道复用门槛、档案与 N0–N6 验收 |
-| [接口契约](contracts.md) | 七类对象、所有权、代次及生命周期语义 v0 |
+| [接口契约](contracts.md) | component-v0.1 可执行参考、所有权、代次及未冻结部分 |
+| [组件联调与三人工作包](planning/component-work-packages.md) | 首个闭环、独立任务、宿主准入、用卡与合并条件 |
 | [KV 事件回归合同](kv-event-contract.md) | 固定 HUST framing/replay、快照边界及真实回归子集 |
 | [MOD 合规](mod-compliance.md) | 模板/Manager 版本、发现/启用边界、发布门槛 |
 | [测试](testing.md) | CPU、模拟、硬件及制品测试的真实覆盖 |

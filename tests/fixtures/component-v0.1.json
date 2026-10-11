@@ -1,0 +1,42 @@
+{
+  "contract_version": "component-v0.1",
+  "scope": "bounded lifecycle oracle, no HTTP/engine/index/performance",
+  "cases": [
+    {
+      "name": "completed_stream",
+      "events": [["send_started", "none"], ["accepted", "none"], ["streaming", "none"], ["completed", "ended"]],
+      "outstanding": [1, 1, 1, 0],
+      "uncertain": false
+    },
+    {
+      "name": "before_send_failure",
+      "events": [["not_sent", "not_accepted"]],
+      "outstanding": [0],
+      "uncertain": false
+    },
+    {
+      "name": "client_disconnect_is_not_backend_end",
+      "events": [["send_started", "none"], ["streaming", "none"], ["outcome_unknown", "none"]],
+      "outstanding": [1, 1, 1],
+      "uncertain": true
+    },
+    {
+      "name": "late_reconciliation",
+      "events": [["send_started", "none"], ["outcome_unknown", "none"], ["cancel_confirmed", "ended"]],
+      "outstanding": [1, 1, 0],
+      "uncertain": false
+    },
+    {
+      "name": "http_failure_without_termination_evidence",
+      "events": [["send_started", "none"], ["failed", "none"]],
+      "outstanding": [1, 1],
+      "uncertain": true
+    },
+    {
+      "name": "definite_backend_rejection",
+      "events": [["send_started", "none"], ["failed", "not_accepted"]],
+      "outstanding": [1, 0],
+      "uncertain": false
+    }
+  ]
+}

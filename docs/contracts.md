@@ -1,6 +1,6 @@
-# 接口契约 v0（设计基线，尚未全部代码化）
+# 接口契约：component-v0.1 研发参考与未冻结部分
 
-契约字段在 P1 接线前复核。下表是最低语义，不代表所有数据源已存在。未知使用 null / unknown，不用 0 伪造测量；token 数、block 数、字节数不能混用。进程内耗时用单调时钟；跨主机时间不直接相减。
+基础在线对象现已有[标准库参考类型和端口](../src/prefix_routing_mod/contracts.py)、[版本化行为样例](../tests/fixtures/component-v0.1.json)及 CPU 组合测试，详见下方 v0.1。生产语言/ABI、事件索引绑定及 MOD 激活仍待宿主准入和人工评审。下表是最低语义，不代表所有数据源已存在。未知使用 null / unknown，不用 0 伪造测量；token 数、block 数、字节数不能混用。进程内耗时用单调时钟；跨主机时间不直接相减。
 
 | 对象 / 唯一写入者 | 必需语义 | 消费者必须遵守 |
 |---|---|---|
@@ -22,7 +22,7 @@ received -> selected -> reserved -> sending -> accepted/acceptance_unknown
 - M5 产生生命周期事件，M3 是账本唯一写入者。reserved 是本地预记账，不是引擎已预留 HBM。
 - 发送前失败可明确撤销本次预记账；发送后超时可能已执行，不可盲目重发。
 - terminal 包括 completed、failed、cancel_confirmed、outcome_unknown；“未知”不能当成功，也不能永久不对账。
-- 以 attempt_id / event_id 幂等；旧代次通知不得污染新代次。具体持久化/超时对账方法 P2/P3 再选。
+- 以 attempt_id / event_id 幂等；旧代次通知不得污染新代次。服务 `instance_epoch` 与发布流 `publisher_epoch` 分离，发布器失效不清空仍运行实例的在途账本。具体持久化/超时对账方法 P2/P3 再选。
 - 重启、模型或模板身份变化使旧索引、旧计划失效；订阅缺口需要恢复或明确降级。
 - 精确模式缺失身份/事件证据时退出精确模式，基础策略仍须执行健康和隔离筛选。
 
@@ -49,4 +49,52 @@ PrefixMatches 的匹配 tokens 与实际省去计算 tokens 分开；allocated/r
 
 档案缺失、过期、指纹不符或超出校准范围时，禁止无标识套用旧成本，降级到有证据的基础策略；精确身份/事件缺失则另行退出精确模式。未来测试至少覆盖这些分支、异步事件、block/rank 映射及失效范围。
 
-下一步先为基础闭环实际使用的对象补版本化样例和自动契约测试，再交叉评审。ExecutionProfile 及相关过期/适用范围测试随消费它的策略引入，不阻塞基础代理、生命周期和基础策略接线。当前不能将本页视为 P0 接口冻结已完成，也不能将规划合同当真实 API。
+ExecutionProfile、PlacementPlan、CapabilityReport 完整 schema 随真实消费者和接入能力引入；不是本轮所有规划对象都已代码化。不能将本页视为生产接口冻结已完成，也不能将参考类型当后端真实 API。
+
+## component-v0.1：可独立实现的语义接缝
+
+| 参考类型 | 关键字段与限制 |
+|---|---|
+| WorkerRef | worker_id + instance_epoch；URL/逻辑卡号不代替实例身份，M7 从受控启动/可靠来源确认 |
+| CacheRef | WorkerRef + publisher_epoch；对应 M2 的一个发布流，不是 M3 的账本代次 |
+| SemanticIdentity | domain、model、tokenizer、template、kv_config 指纹；M7/M1 验证来源，类型存在不代表已验证 |
+| RequestFeatures | request_id/domain、可空 identity/input_tokens、只读 token_ids、block_size、precision；exact 要求完整 token 序列与匹配计数，非 exact 禁止携带伪精确块 |
+| ReadContext / Observation | Router 单调 clock_id/now_ns/max_age_ns；值可未知，来源/覆盖范围/接收时点独立。后端时钟不能直接带入 Router 时钟 |
+| PrefixMatch | CacheRef、完整身份、block_size、连续完整 matched_tokens、trust、来源与时间；未知/恢复中为 null，可信 0 才是已观测 miss |
+| WorkerState | ref/domain、控制 version、health/draining/观测时间；backend_running 与 local_outstanding 分开；不将两个覆盖重叠的计数相加 |
+| DispatchContext | M5 分配的 request_id/attempt_id + 捕获的 config_version；每个真实发送尝试有唯一 ID |
+| RouteDecision | 对应请求/尝试、目标实例、控制 worker_version、policy/config_version、有限 reason_code；不意味着已预留或发送 |
+| LifecycleEvent | event/request/attempt/worker、sequence、kind、confirmation、Router 时点、有限 error_class；不是逐 token 的事件流 |
+
+核心类型不可变。参考上限为 ID 128 UTF-8 bytes、262144 token IDs、u32 token ID 和非负 i64 计数/时间；用于阻止无界 fixture/跨语言溢出，不是 NPU 性能调参或实际服务上下文限制。部署应按模型、payload 和资源配置更低上限；超出精确特征预算可以显式退出精确模式，不能悄悄截断 token 后仍称完整匹配。不记录 token 原文/序列到日志。未知值不通过填 0 进入策略。
+
+PrefixMatch 只接受事件或一致恢复协议来源，不接收请求历史作为 observed。M2 须验证完整覆盖、序号/epoch 及拓扑后才能标 trusted；参考类型校验无法替代这个过程。M4 必须同时比对 WorkerRef、语义身份、block_size 和新鲜度，不能拿旧实例的可信记录给新实例使用。
+
+### 端口与并发合同
+
+- `FeaturePort.extract(request_id, parsed_request)`：M1，使用本地已验证 tokenizer/template，输出已知或明确降级特征；不发逐请求远程查询。
+- `CachePort.lookup(features, ReadContext)`：M2，返回不可变匹配元组；只读当前安装视图，不在请求链等待网络恢复。M7→M2 的 wire framing/恢复边界以[事件合同](kv-event-contract.md)为准，生产规范化 event ABI/索引接线仍在 R1 复核。
+- `StatePort.snapshot()`：M3，当前实例状态快照；计数有各自来源/时点，健康与负载新鲜度不互相替代。
+- `PolicyPort.select(features, matches, workers, DispatchContext, ReadContext)`：M4，只读函数，返回决定或无目的地。空目标应明确拒绝/按配置有界排队，不能绕过健康/隔离约束。
+- `LedgerPort.reserve(features, decision, ReadContext)`：M3 原子检查当前实例、控制版本、配置版本、健康/排空、新鲜度、请求关联、重复与准入限额，再预记账；返回成功才允许这次发送。失败抛 `ReservationRejected`，无新增负债，M5 有界重读/选点或返回拒绝，不忙等。
+- `LedgerPort.apply(LifecycleEvent)`：M3，返回 applied/duplicate/stale 或抛 `LifecycleRejected`；不接受未知尝试、不吞事件缺口/冲突。M5 对异常暂停相关派发并对账，保留负债，不能将异常当成功释放。
+
+worker.version 是实例/健康/排空/隔离等**控制合法性版本**，不在每次负载计数变化时使所有并发决定失效。准入额度在 reserve 内原子检查，策略的负载视图可以短暂陈旧，但不能越过额度；生产实现需避免全局锁、重复分词/跨语言复制带来的 Host 放大，CPU oracle 不提供性能实现保证。
+
+配置发布与 reserve 要有明确线性化顺序；新 config_version 拒绝尚未预记账的旧决定，已有工作继续完成/排空，不因配置切换抹掉负债。配置版本不得复用。reserve→发送期间的排空/重启桥接是 M5 宿主适配的强制验收项，不在这里假定分布式网络发送可以原子完成。
+
+### 生命周期与错误行为
+
+```text
+reserved -> sending -> accepted -> streaming -> released
+    |          |          |           |
+    |          +----------+-----------+-> uncertain -> 对账确认 -> released
+    +-> not_sent（明确未接受）-> released
+```
+
+- sending 允许直接 streaming 或已确认终态；一次发送/首次接受/首次流式各最多一个转换。COMPLETED/CANCEL_CONFIRMED 要有 backend ENDED；FAILED 无后端终止证据仍 uncertain。HTTP 5xx、超时、关闭响应体不自动提供该证据。
+- 每次尝试 sequence 从 1 连续递增；同 event_id 同完整载荷为 duplicate，冲突或非法转换拒绝。晚到的可靠确认可解决 uncertain；已有 accepted/streaming 证据不能被后续“未接受”说法覆盖。
+- 发送前明确失败释放，允许新的 attempt_id；发送后 uncertain 保留本地负债，禁止同一请求自动重发。旧实例事件返回 stale，不碰新实例计数；旧负债需要 M7 的实际终止证据或可靠后端对账，不能凭 publisher 重启/超时删除。
+- Router 进程重启和 tombstone GC/持久化尚未实现；生产留存必须有上限、明确去重窗口/ID 不复用与满额拒绝行为。测试账本只保留有限尝试、每尝试最多 8 个转换，满额拒绝，不声称已解决长时间运行。
+
+六组版本化正例、反例和并发模拟见 `tests/test_component_contracts.py`；跨 M1/M2/M3/M4/模拟 M5 的调用见 `tests/test_component_flow.py`。它们不含生产代理、tokenizer、缓存索引、真实取消、图模式或性能验证。三人任务边界和待决生产接口见[工作包](planning/component-work-packages.md)。
