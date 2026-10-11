@@ -23,6 +23,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.reply(200 if self.path == "/health" else 404, b"{}")
 
+    def before_reply(self, request):
+        """Optional fault injection for manual host-admission probes."""
+
     def do_POST(self):
         if self.path not in {"/v1/chat/completions", "/v1/completions"}:
             self.reply(404, b"{}")
@@ -38,6 +41,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError):
             self.reply(400, b"{}")
             return
+        self.before_reply(request)
         if request.get("model") == "fixture-error":
             self.reply(503, b'{"error":{"message":"synthetic unavailable"}}')
         elif request.get("stream"):
