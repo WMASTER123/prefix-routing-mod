@@ -36,6 +36,15 @@ def test_command(executable: Path, model: Path, port: int, output: Path) -> list
     return command
 
 
+def test_environment(device: int, output: Path) -> dict:
+    env = smoke_backend.build_environment(device, output)
+    env["PYTHONPATH"] = restore_runtime.read_manifest()["cann_python_path"]
+    # The fixed HUST reset route is a dev API. Enable it only in this owned,
+    # loopback test service, never in the general smoke or production recipe.
+    env["VLLM_SERVER_DEV_MODE"] = "1"
+    return env
+
+
 def validate_response(response: dict, start: int, epoch: str | None) -> dict:
     if not isinstance(response, dict):
         raise ValueError("Invalid replay envelope")
@@ -190,6 +199,7 @@ def main() -> int:
         "complete_recovery_validated": False,
         "kv_events_validated": False,
         "performance_validated": False,
+        "loopback_test_dev_api": True,
     }
     process = context = subscriber = receiver = None
     try:
@@ -201,8 +211,7 @@ def main() -> int:
             context, zmq, None, output / "events.sock"
         )
         subscriber.setsockopt(zmq.MAXMSGSIZE, 1024**2)
-        env = smoke_backend.build_environment(args.device, output)
-        env["PYTHONPATH"] = restore_runtime.read_manifest()["cann_python_path"]
+        env = test_environment(args.device, output)
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         origin = f"http://127.0.0.1:{args.port}"
         with (output / "backend.log").open("x", encoding="utf-8") as log:

@@ -121,3 +121,12 @@ def test_eviction_configuration_is_separate_from_performance_baseline():
     assert config["buffer_steps"] == 4
     assert config["replay_endpoint"] == "ipc:///private/probe/replay.sock"
     assert command[command.index("--host") + 1] == "127.0.0.1"
+
+
+def test_reset_dev_api_is_enabled_only_in_private_test_environment(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("VLLM_SERVER_DEV_MODE", "0")
+    env = regress_kv_events.test_environment(0, tmp_path)
+    assert env["VLLM_SERVER_DEV_MODE"] == "1"
+    assert regress_kv_events.smoke_backend.os.environ["VLLM_SERVER_DEV_MODE"] == "0"

@@ -24,6 +24,8 @@ tools/regress_kv_events.py 复用已有启动命令、进程清理、请求与�
 
 测试接收器只保存有上限的摘要，拒绝实时序号缺口和不完整重放，丢弃冷启动快照水位前的已缓冲帧；不持有生产驻留树，不输出精确命中。HTTP reset 成功必须继续观察 AllBlocksCleared；本次源码的 API 并不检查内部 reset 布尔结果。
 
+该 reset 路由受 VLLM_SERVER_DEV_MODE 控制。首轮未开该开关时返回 404，保留为失败记录；回归专用服务在进程环境中设为 1，监听保持 loopback。通用 smoke、环境恢复入口与未来生产服务不因此开放开发接口。
+
 每次报告区分子集 pass 与 complete_recovery_validated=false。本子集没有验证：跨节点 TCP、legacy 重放、断连/静默、同地址重启、旧代次迟到帧、精确身份/完整目录恢复。以上通过前 G2 不关闭，MOD 不启用。
 
 ## 失败与后续讨论
