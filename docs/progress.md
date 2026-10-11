@@ -1,6 +1,6 @@
 # 进度与下一步
 
-最新执行（新分配四卡服务器）：已按指定 HUST 两份归档 main 完整隔离构建，联合依赖可满足；两个 venv 通过审计，Qwen14B eager/重复/SSE 与真实 IPC BlockStored 通过，干净重建和全新私有 import cache 对照通过。解决了探测器 bytecode 设置造成的冷启动风险，未改 HUST 引擎或关闭其预检。完整事实、失败和自检见[本轮证据](../evidence/hust-runtime-candidate-2026-10-11.md)。完整 G1 尚需制品/恢复配方收尾，G2–G4 不自动通过。下方早期 NumPy 冲突只适用于预装上游，不适用于当前 HUST 候选。
+最新执行：W1 统一环境恢复入口在新目录通过，13 个步骤及 Qwen14B 基础推理/IPC 事件复现成功。本机研发 G1 技术证据齐备，正式冻结待人工复核，可继续 G2 测试。四张卡均已逐卡完成真实模型检查；[恢复、四卡、测试和审查证据](../evidence/w1-runtime-restore-2026-10-11.md)已记录。完整事件恢复、图/并发、Router 和性能仍未通过。下方早期 NumPy 冲突不适用于当前 HUST 候选。
 
 上一轮运行验证代码已同步服务器；当时两端各 CPU 79、mock 3、构建及干净 wheel 检查通过，代码提交 74ca2cf 的 Actions success。[PR #4](https://github.com/WMASTER123/prefix-routing-mod/pull/4) 为待人工审查草稿，未合并，未启动生产 Router。下一工作包是把隔离恢复/制品证据收尾后进入完整原生事件回归，不重启版本试错或提前加算法。
 
