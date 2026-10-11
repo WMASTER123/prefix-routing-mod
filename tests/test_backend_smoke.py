@@ -13,6 +13,22 @@ def frame(content):
     return b"data: " + json.dumps(content).encode() + b"\n"
 
 
+def test_shared_bytecode_is_explicit_private_and_preserves_other_probe_caches(tmp_path):
+    root = Path(smoke_backend.__file__).resolve().parents[1]
+    shared = root / "artifacts" / "runtime-bytecode-test" / "pyc"
+    env = smoke_backend.build_environment(3, tmp_path, pycache_root=shared)
+    assert env["PYTHONPYCACHEPREFIX"] == str(shared.resolve())
+    assert env["VLLM_CACHE_ROOT"] == str(tmp_path / "cache" / "vllm")
+    assert env["ASCEND_RT_VISIBLE_DEVICES"] == "3"
+    default = smoke_backend.build_environment(3, tmp_path)
+    assert default["PYTHONPYCACHEPREFIX"] == str(tmp_path / "cache" / "pyc")
+
+
+def test_shared_bytecode_cannot_escape_project_artifacts(tmp_path):
+    with pytest.raises(ValueError, match="artifacts"):
+        smoke_backend.build_environment(0, tmp_path, pycache_root=tmp_path / "external")
+
+
 def test_command_is_loopback_single_replica_and_disables_host_irq_binding():
     command = smoke_backend.build_command(
         Path("/bin/vllm"), Path("/models/qwen"), 18140
