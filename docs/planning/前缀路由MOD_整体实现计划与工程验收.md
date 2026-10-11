@@ -1,6 +1,6 @@
 # 前缀路由 MOD：整体实现计划与工程验收
 
-2026-10-11 当前执行基线：用户指定的两份 HUST 归档固定提交已完成隔离构建、Qwen14B eager/重复/SSE、真实 IPC BlockStored 及干净 venv 重建复验，见[执行证据](../../evidence/hust-runtime-candidate-2026-10-11.md)。完整 G1 仍待自动恢复入口和制品/来源清单收尾；不沿用预装上游的冲突结论，也不宣称完整事件恢复或性能通过。
+2026-10-11 当前执行基线：用户指定的两份 HUST 归档固定提交已完成隔离构建、Qwen14B eager/重复/SSE、真实 IPC BlockStored 及干净 venv 重建复验，见[执行证据](../../evidence/hust-runtime-candidate-2026-10-11.md)。统一恢复入口已在新目录通过，本机研发 G1 技术证据齐备、正式冻结待人工复核；不沿用预装上游的冲突结论，也不宣称完整事件恢复或性能通过。
 
 近期按[下一阶段执行计划](next-execution-plan.md)推进：W1 环境收尾 → W2 真实事件完整回归 → W3 单后端目标执行配置与稳定性 → W4 成熟 Router 和两个 TP=1 副本。对应 G1–G4；早期 P1a/P1b 并行安排不再作为执行依据。M1–M8 职责及 MOD import_only 边界保留，不先增加算法。
 
