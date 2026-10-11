@@ -13,3 +13,7 @@
 stream_continuity_validated 仅证明从受控空起点或已有连续状态到完整重放水位的事件覆盖。snapshot_boundary_validated、identity_validated、complete_recovery_validated 始终分别报告；子集通过不关闭完整 G2。
 
 后续优先核查候选 Router 的表示方式及固定 HUST 的扩展接口，比较可选 publisher 注册适配与受限恢复方式。任何一致性方案须用“存储和移除尚未发布”反例、并发快照与增量、错误发送、重启和开销验证。不能用重复请求、等待固定时间或看队列暂时为空替代共同水位保证。
+
+本次已读固定源码：KVEventsConfig.publisher 仅允许 null/zmq，工厂注册不等于配置可接受自定义名字；未替换其注册表。缓存默认 xxhash，NONE_HASH 可由进程随机值或 PYTHONHASHSEED 派生。精确索引接入须核查哈希算法、序列化、首块 seed、group 和 tokenizer 身份；本次未改这些默认值。
+
+共同水位的候选最小修正是将镜像更新移到发布线程，使快照、序号和重放缓冲在同一线程边界产生。此处只记录可审查的方向，尚未应用源码补丁；它也不能单独补齐实时帧 epoch、快照 token/parent 表示或 NPU 可复用语义。后续须先证明这些边界，再确定可选适配交付方式。

@@ -27,6 +27,10 @@ tools/check.py 生成 artifacts/checks/<suite>.json，CPU / integration 同时�
 
 ## CI 策略
 
+恢复故障入口 tools/regress_kv_recovery.py 需在已审计的 HUST 服务 venv 中显式运行；CPU 连续性/故障测试沿用统一入口。与生命周期入口使用不同输出目录和 HTTP 端口，不覆盖旧报告。真实三批重放、缓冲重复帧、SUB 断连、窗口溢出、控制面超时和同地址重启分别报告；旧连接注入标记 synthetic。完整快照恢复、hash/group 身份、网络逐帧 epoch 和性能保持独立未验证标志。命令见[运维](operations.md)，边界见[ADR](decisions/2026-10-11-g2-recovery-regression.md)。
+
+smoke 的可选 --pycache-root 覆盖显式私有缓存、越界拒绝和其他缓存隔离；真实逻辑卡 3 复测见[本轮证据](../evidence/g2-recovery-regression-2026-10-11.md)。该参数不改变完整 NPU 套件状态，环境准备、冷启动和共享 bytecode 启动分别留证。
+
 GitHub Actions 在 push main、PR 和手动触发时运行 Python 3.11/3.12、锁文件依赖、同一测试入口和干净 wheel 检查，保存证据 14 天。仅 contents:read，不发布、不部署、不占 NPU。锁定第三方 action 的不可变提交是后续供应链加固项，当前使用主版本标签，依赖版本由 uv.lock 固定。
 
 NPU 先手动执行，后接受控 runner。不得将未审查 PR 放到有服务器凭据的 runner。真机测试必须预约/设备锁，清理只针对本次创建的资源。

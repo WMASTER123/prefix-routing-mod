@@ -1,6 +1,6 @@
 # 新实验服务器操作基线
 
-2026-10-11 最新分配服务器：aarch64、4 张 Ascend 910B2，npu-smi 物理编号 0/1/6/7，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm；Python 3.12.13、npu-smi 26.0.rc1、CANN 9.1.0。重新分配后编号已改变，不能沿用此前 1/2/3/4。约 40 GiB 是根卷已用量，安装前剩余约 254 GiB。平台未确认的独占性不能从空闲利用率推断。
+2026-10-11 本轮重新分配服务器：aarch64、4 张 Ascend 910B2，当前 npu-smi 物理编号 1/2/3/4 分别对应逻辑 0/1/2/3，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm；Python 3.12.13、npu-smi 26.0.rc1、CANN 9.1.0。此前 0/1/6/7 仅属于上一分配的证据，不能沿用。根卷当前已用约 48 GiB、可用约 246 GiB。平台未确认的独占性不能从空闲利用率推断。
 
 最新执行转入[HUST 隔离候选](decisions/2026-10-11-hust-runtime-candidate.md)，原预装环境仅保留历史对照。临时源码及服务环境位于项目私有 artifacts；不使用旧项目、不改全局 Python/CANN。任何环境变量调整仅限本次进程，须在真实推理中验证后才能成为恢复配方。
 
@@ -57,6 +57,36 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
 
 ## 单后端局部探测（显式手动触发）
+
+本轮复现全新 Python 字节码缓存的 Torch 导入约 22.36 秒，超过 HUST CLI 20 秒预检；已生成缓存的诊断约 10.75 秒。它与模型 KV/图预热无关。连续运行同一已审计服务 venv 时，可显式指定项目私有 `--pycache-root`，复用准备阶段的 bytecode；默认仍为每次 probe 的独立缓存，报告记录模式与路径。先在该缓存下执行 tools/inspect_runtime.py 的显式导入及来源审计，再用于启动；软件/解释器变更重新审计，不能将该准备流程写成冷启动性能。
+
+```bash
+PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+PYTHONPYCACHEPREFIX=/root/work/prefix-routing-mod/artifacts/runtime-ready-next/pyc \
+  artifacts/w1-restore-20261011/service-venv/bin/python tools/inspect_runtime.py \
+  --execute --output artifacts/runtime-ready-next/imports.json
+
+PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+  artifacts/w1-restore-20261011/service-venv/bin/python tools/smoke_backend.py \
+  --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
+  --model /data/shared_models/Qwen2.5-14B-Instruct --device 3 --port 18247 \
+  --kv-events-ipc --pycache-root artifacts/runtime-ready-next/pyc \
+  --output artifacts/card-check-next
+```
+
+该选项仅接受实际项目 artifacts 子目录，拒绝逃逸和模型写入；图缓存、KV 与日志仍按各 probe 隔离。原预检保持启用及 20 秒，不修改 HUST、驱动或依赖。
+
+恢复故障回归同样使用已审计的 HUST venv。输出为新的项目私有目录；其中两次服务启动共用本次 HTTP/IPC 地址，分别保存日志和缓存。该工具不接生产 Router：
+
+```bash
+PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+  artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_recovery.py \
+  --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
+  --model /data/shared_models/Qwen2.5-14B-Instruct \
+  --device 0 --port 18242 --output artifacts/g2-recovery-20261011/run-next
+```
+
+它覆盖受控空起点、三批重放、实际缓冲重复帧、SUB 断连补齐、空闲确认、超窗拒绝恢复、停止后的控制请求超时和同地址重启。缺少一致边界的快照保持 unknown；声明范围见[事件合同](kv-event-contract.md)。逐卡独立检查使用不同 HTTP 端口，绑定预检失败时保存记录并确认监听状态，不能直接认定为 NPU 故障或清理未知进程。
 
 当前已完成四张设备的串行真实模型烟测；主回归仍单卡。环境恢复与四卡结果见 [W1](../evidence/w1-runtime-restore-2026-10-11.md)，真实存储/淘汰/清空/重放子集见 [G2](../evidence/g2-native-events-subset-2026-10-11.md)。所有临时服务已关闭，不通过空转维持在线。
 
