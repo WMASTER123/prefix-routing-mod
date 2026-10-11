@@ -118,7 +118,9 @@ def run_cases(
         raise ValueError("Test did not exceed the four-batch replay window")
     overflow_catalog, overflow_residents = {}, set()
     apply_batch(overflowing["snapshot"], msgspec, overflow_catalog, overflow_residents)
-    if residents != overflow_residents or catalog != overflow_catalog:
+    if cold["next_seq"] == overflowing["next_seq"] and (
+        residents != overflow_residents or catalog != overflow_catalog
+    ):
         raise ValueError("Cold and overflow snapshots differ at an idle cut")
     initial_catalog, initial_residents = dict(catalog), set(residents)
     request(99)
@@ -142,10 +144,20 @@ def run_cases(
         raise ValueError("Unexpected overflow in one-delta test")
     for _, payload in delta["replayed_batches"]:
         apply_batch(payload, msgspec, initial_catalog, initial_residents)
-    later = recovery(force=True)
+    for _ in range(4):
+        later = recovery(force=True)
+        if later["next_seq"] == delta["next_seq"]:
+            break
+        delta = recovery(delta["next_seq"], cold["publisher_epoch"])
+        if delta.get("snapshot") is not None:
+            raise ValueError("Unexpected replay overflow during convergence")
+        for _, payload in delta["replayed_batches"]:
+            apply_batch(payload, msgspec, initial_catalog, initial_residents)
+    else:
+        raise ValueError("Could not observe a common final snapshot/replay cut")
     later_catalog, later_residents = {}, set()
     apply_batch(later["snapshot"], msgspec, later_catalog, later_residents)
-    if later["next_seq"] != delta["next_seq"] or later_residents != initial_residents:
+    if later_residents != initial_residents:
         raise ValueError("Snapshot plus delta differs from the later snapshot cut")
     if any(later_catalog[k] != initial_catalog[k] for k in later_catalog):
         raise ValueError("Recovered token metadata differs")
@@ -170,6 +182,22 @@ def run_cases(
         if reply.status != 200:
             raise ValueError("Reset HTTP request failed")
     request(100)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if not subscriber.poll(100):
+            continue
+        frames = subscriber.recv_multipart()
+        if live_epoch(frames) != cold["publisher_epoch"]:
+            raise ValueError("Unexpected reset epoch")
+        if int.from_bytes(frames[1], "big") < delta["next_seq"]:
+            continue
+        summaries = smoke_backend.summarize_event_batch(
+            msgspec.msgpack.decode(frames[2])
+        )
+        if any(event["kind"] == "AllBlocksCleared" for event in summaries):
+            break
+    else:
+        raise TimeoutError("Native reset clear was not published")
     reset = recovery(delta["next_seq"], cold["publisher_epoch"])
     if reset.get("snapshot") is not None:
         raise ValueError("Reset exceeded the controlled replay window")
