@@ -2,6 +2,8 @@
 
 最新执行（新分配四卡服务器）：已按指定 HUST 两份归档 main 完整隔离构建，联合依赖可满足；两个 venv 通过审计，Qwen14B eager/重复/SSE 与真实 IPC BlockStored 通过，干净重建和全新私有 import cache 对照通过。解决了探测器 bytecode 设置造成的冷启动风险，未改 HUST 引擎或关闭其预检。完整事实、失败和自检见[本轮证据](../evidence/hust-runtime-candidate-2026-10-11.md)。完整 G1 尚需制品/恢复配方收尾，G2–G4 不自动通过。下方早期 NumPy 冲突只适用于预装上游，不适用于当前 HUST 候选。
 
+本轮代码已同步服务器；两端各 CPU 79、mock 3、构建及干净 wheel 检查通过，代码提交 74ca2cf 的 Actions success。[PR #4](https://github.com/WMASTER123/prefix-routing-mod/pull/4) 为待人工审查草稿，未合并，未启动生产 Router。下一工作包是把隔离恢复/制品证据收尾后进入完整原生事件回归，不重启版本试错或提前加算法。
+
 更新：2026-10-11。状态：P0 骨架已建立，P1b 已进入新四卡服务器的 Qwen2.5-14B 单卡 eager 功能探测；尚无真实 Router 或性能提升结论。最新事实见[执行证据](../evidence/qwen14b-preflight-2026-10-11.md)，以下早期记录保留历史范围。
 
 最新复核：用户已确认按 **环境 → 事件回归 → 单后端兼容 → 两副本 Router** 顺序推进，见[当前门槛](planning/runtime-event-gates.md)。G1 暂未通过：Triton Ascend 3.2.2 / OpenCV 的 NumPy 约束冲突已可重复确认；允许评估官方候选，但已查版本仍保留冲突链，未替换原环境。新增只读依赖审计及 CPU 测试，见[环境证据](../evidence/runtime-gate-2026-10-11.md)。先前诊断已收到真实 IPC BlockStored 与 TCP 清空事件，不代表完整事件/恢复通过。下一步不再并行接 Router。

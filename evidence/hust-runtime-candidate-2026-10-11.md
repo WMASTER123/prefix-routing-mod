@@ -47,7 +47,9 @@
 - audit_runtime 显式接受 vllm-ascend-hust；同导入树的两 Ascend 发行包并存直接失败，报告仍不自动置位环境/ABI兼容。
 - smoke_backend 加入私有 IPC 接线、路径长度和互斥检查、HUST tagged map 摘要、异常类型拒绝和脱敏。旧 array/TCP 入口保留但不宣称跨节点 TCP 已通过。
 - 存储样本不等于完整 G2；探测器仍不建立生产目录，完整事件/关闭/路由/性能标志保持 false。
-- 本地 CPU 79 项、mock 3 项、ruff 检查/格式通过；末次 bytecode/异常 guard 修订后，sdist/wheel 重新构建及干净 wheel 检查通过。远端源码同步后的 CPU/mock 与 CI 结果还需补入，不沿用旧提交成绩。
+- 代码提交 `74ca2cf07f57b922e488fbccb5c2d7cb36cee638`：本地 Windows 及服务器 Linux aarch64 分别 CPU 79 项、mock 3 项、ruff 检查/格式通过；sdist/wheel 重新构建及干净 wheel 检查两端通过。服务器通过已核验完整 bundle 同步到同一提交，工作区干净。
+- [本次 GitHub Actions](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38125455575) 对同一代码提交 completed/success；没有 NPU CI，不能以该成绩替代本页真机证据。
+- [PR #4](https://github.com/WMASTER123/prefix-routing-mod/pull/4) 堆叠在 #3 上，draft、待人工审查、未合并。后续仅文档回填提交不重复声称独立真机验证。
 - 已自检变更的发行身份、失败关闭、socket/进程所有权、缓存写入边界和性能声明；这是代码自检，不是第二成员或独立审查通过。PR 需人工审查、不自动合并。
 
 ## 下一步与限制
@@ -55,3 +57,5 @@
 最终冷缓存复验已通过，可记录本机 HUST eager 的局部可用组合；完整 G1 仍需收齐制品/镜像来源与可重复恢复说明，再冻结。随后 G2 验真实自然淘汰、清空、replay、断连、重启/epoch 和覆盖起点。HUST 源码有扩展恢复接口，但需按实际语义验收，不重新实现其旧 Router。
 
 G3 再验证目标图模式、并发、取消、重复启停与持续运行；G4 才准入成熟 Router、使用两张卡做两个 TP=1。现有四卡足够，不申请更多卡。没有生产 Router、收益对比或 Manager 激活；MOD 继续 import_only。
+
+收尾检查：四个设备均无残留 NPU 进程；所有临时模型服务已关闭。两份候选 venv、完整源历史、依赖/构建锁、成功与失败日志保留用于复现，没有清理其他用户目录、全局安装或公共模型。
