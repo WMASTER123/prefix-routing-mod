@@ -16,7 +16,21 @@
 
 publish() 在生产者侧先更新镜像、再排入队列；发布线程后续才分配序号。强制快照的镜像状态与 next_seq 不在同一个发布边界。tools/audit_kv_recovery.py 用固定源码真实方法、暂停发布的合成队列验证此点：未发布的存储已经进入快照，随后未发布的移除又从快照消失，而 next_seq 仍为 1。它是确定性 CPU 协议证据，不是实际 NPU 丢包/重启实验。
 
-因此，收到快照和 epoch 不能单独将生产目录标为可信。后续需验证快照/增量的共同边界、迟到帧处理与消费者表示方式；复用底座选型要检查是否具备该保证。当前不修改 HUST publisher，窄幅适配或其他恢复方案在缺口实证与 ADR 后确定。
+因此，原生模式收到快照和 epoch 不能单独将生产目录标为可信。用户已批准实验性窄幅 publisher hook，见下节与 [ADR](decisions/2026-10-11-optional-hust-publisher.md)。引擎文件保留不动，安装包默认不启用适配；原生三帧/仅哈希快照的限制仍存在，不能将适配后的结果转记到原生模式。
+
+## 可选实验协议 v1（与原生模式分开）
+
+`PREFIX_ROUTING_HUST_PUBLISHER=1` 且 `VLLM_PLUGINS` 显式包含 `prefix_routing_publisher` 才启用；版本、文件 SHA-256 和重复绑定守卫在启用时检查。此内部工厂适配尚未获准作为生产交付，MOD 仍 import_only。
+
+- producer 只入队，publisher owner 按编码→镜像/元数据→重放→next_seq 的顺序提交，然后发送；快照与排他水位同属一个 owner，不包含仍在队列中的变化。
+- 实时四帧为 topic、8 字节序号、原生 msgpack batch、ASCII epoch；结构化回复另含 `schema_version=1`、`valid` 和 `reason`。valid=false、epoch 变化或连续性缺失必须撤销精确资格，不以普通存储事件恢复旧目录。
+- 快照包含 token 和父链。已淘汰但被驻留子块依赖的祖先先作为拓扑恢复，随后由 BlockRemoved 撤销驻留；消费者必须整批暂存后安装，不能在中间步骤开放命中。
+- 元数据数/token 数、单 payload、回复和重放总 payload 分别有界；限制不等于 RSS 已验证。上限或身份错误时反馈不可恢复；真实清空后才可建立新的已知起点。
+- epoch 过滤不能替代传输恢复。已知重启或采用新代次时丢弃旧目录，关闭旧 SUB、建立新连接并重新握手；PUB 没有订阅就绪确认，冷接入/丢帧必须通过快照和完整重放补齐。
+
+实验验证范围为 TP=1、DP rank 0、Qwen2.5-14B 纯文本/group 0/完整块/IPC/eager。构造器拒绝非零 DP rank，元数据拒绝 LoRA/extra keys/部分块；TP=1 是受控启动配置和本轮验证范围，不宣称 hook 已对所有 TP 配置实现独立预检。目标图、压力、Host 开销、跨节点和生产索引原子安装仍须独立验收。
+
+本地匹配键按候选 token 索引的 u32 little-endian/SHA-256 计算；引擎整数 hash 是不透明 parent/removal 锚点。本路线不要求改默认 xxhash 或统一首块 seed，不能将“局部 token 对应正确”写成完整原生 bytes 哈希链重算通过。
 
 ## 有界真实回归子集
 
@@ -36,8 +50,8 @@ tools/regress_kv_events.py 复用已有启动命令、进程清理、请求与�
 
 实时 frame 缺少 epoch：连接 generation 只是本地 socket 来源，发现新 epoch 后关闭旧 SUB 并创建新 SUB。旧连接帧拒收用例含显式本地注入，不能写成真实网络逐帧 epoch 隔离已完成。生产接管已热服务、检测重启前的迟到帧及完整身份仍需进一步适配。
 
-固定 HUST 的 KVEventsConfig.publisher 是 Literal["null", "zmq"]。即使工厂提供 register_publisher，也不能由此推出第三个 publisher 名称可通过配置校验；后续窄适配必须连同配置入口一起核验。默认缓存哈希为 xxhash，首块 NONE_HASH 在未设置 PYTHONHASHSEED 时随机初始化；请求哈希复现不能盲目照搬上游默认或跨进程假设。当前回归没有调整哈希算法或固定 seed，也未宣称精确身份验证通过。
+固定 HUST 的 KVEventsConfig.publisher 是 Literal["null", "zmq"]。即使工厂提供 register_publisher，也不能由此推出第三个 publisher 名称可通过配置校验；可选适配因此守卫现有 zmq 工厂绑定，不新增未经配置准入的名称。默认缓存哈希为 xxhash，首块 NONE_HASH 在未设置 PYTHONHASHSEED 时随机初始化；请求哈希复现不能盲目照搬上游默认或跨进程假设。本轮纯文本 token 身份子集已有证据，但未调整哈希算法/seed，也不宣称原生完整 bytes 父链重算或生产精确路由通过。
 
 存储/自然移除/清空缺失、帧或范围错误均失败，保留原报告；只清理本工具创建的服务组及 socket。报告成功不允许默默清除未恢复目录的 unknown 状态。
 
-下一项方法决策是如何获得一致恢复边界并接入候选 Router 的索引：先复现压力/断连/重启，核对候选公开接口，再比较引擎已有保证、小型适配或受限恢复条件。不能把禁用精确模式写成精确模式已通过，也不在该合同中提前决定重写索引或 fork 引擎。
+共同边界/已热 token 快照的可选适配路线已由用户批准实验，并有回归证据；下一项验收是压力/竞态/开销及生产消费者接线。不能把禁用精确模式写成精确模式已通过，不因此决定重写索引或 fork 引擎。

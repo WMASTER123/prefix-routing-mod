@@ -12,16 +12,18 @@
 | vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 与下行隔离构建；本机 TP=1 Qwen14B BF16 eager 局部验证及 venv 重建通过 |
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
-| vLLM Router | 待 P1a 固定 commit | 第一评估候选，没有接入 |
-| 新服务器 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 当前物理 1/2/3/4→逻辑 0/1/2/3；四卡真实 Qwen14B 局部功能复验通过，逻辑 3 含显式私有 bytecode 准备条件，见[新证据](../evidence/g2-recovery-regression-2026-10-11.md)。非并行四副本或性能结果 |
+| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 固定源码评估候选，未构建/接入；索引未在在线策略接线、HUST replay 协议需适配，见[复用评估](planning/组件复用与自研边界评估_2026-10-10.md) |
+| 最新服务器 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 物理枚举 0/1/2/7；本轮主回归仅逻辑 0。此前 1/2/3/4 映射及四卡结果属于上一分配，不是当前四卡复验 |
 | HUST 环境恢复入口 | 两个固定源码 + 186 包及 builder 锁 | 全新目录 13 步通过，本机研发证据齐备、正式冻结待人工复核；不等于可移植镜像 |
 | 原生 KV 回归子集 | HUST IPC + 结构化 replay；1024 context / 1 GiB KV | 真实存储/自然移除/清空/重放子集通过；快照水位风险复现，完整恢复/身份未验收 |
-| 原生 KV 恢复故障子集 | 同机 IPC / 受控空起点 / 4 批窗口 | 多批重放、缓冲去重、SUB 断连、控制面超时、同地址真实重启通过；旧连接注入单独标识，快照边界/精确身份/完整恢复未过，见[新证据](../evidence/g2-recovery-regression-2026-10-11.md) |
+| 原生 KV 恢复故障子集 | 同机 IPC / 受控空起点 / 4 批窗口 | 多批重放、缓冲去重、SUB 断连、控制面超时、同地址真实重启通过；旧连接注入单独标识，原生快照边界/完整恢复未过；身份新进展另列，见[既有证据](../evidence/g2-recovery-regression-2026-10-11.md) |
+| 纯文本身份 | 固定 HUST/Qwen2.5-14B/完整块/group 0 | 分词、chat template、真实 token 块对应通过；整数 hash 为不透明锚点，native bytes 父链重算未验证，见[新证据](../evidence/g2-identity-publisher-2026-10-11.md) |
+| 可选 publisher hook | 固定版本/文件守卫；TP=1、DP rank 0、纯文本/IPC/eager | 已热冷接入、超窗 token 快照、增量/清空/同地址重启及 wire epoch 子集通过；默认关闭、生产交付/压力/开销/图配置未验收 |
 | 预装系统推理栈 | CANN 9.1.0、torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0 | 用户选择优先首验；Qwen2.5-14B TP=1 BF16 eager 功能探测通过；未覆盖图/完整事件恢复/路由性能 |
 
 不同包的元数据版本号不能证明或否定兼容，必须核查依赖约束和实际调用。最新本轮仅在私有隔离环境构建 HUST 候选，没有改全局引擎。运行声明需要：提交、制品 hash、环境指纹、配置、测试结果、局限和回退。版本变化重新验收。
 
-不支持的产品能力：当前没有线上 Router、精确路由、生产 KV 事件订阅/恢复、引擎 observer、Manager 运行激活或性能声明。探测工具能采样原生事件，不等同生产订阅器。
+不支持的产品能力：当前没有线上 Router、精确路由、生产 KV 事件订阅/恢复、Manager 运行激活或性能声明。实验 publisher hook 与测试 oracle 不等同已交付的生产订阅器/目录；不得扩展到未经测试的模型、TP、图模式、LoRA/多模态或跨节点。
 
 早期预装首验源码提交：vLLM `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；vLLM-Ascend `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。仅为旧环境结果；HUST 已独立构建验证，见[最新证据](../evidence/hust-runtime-candidate-2026-10-11.md)，不据包名外推官方发行制品认证。
 

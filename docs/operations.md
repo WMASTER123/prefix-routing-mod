@@ -1,6 +1,6 @@
 # 新实验服务器操作基线
 
-2026-10-11 本轮重新分配服务器：aarch64、4 张 Ascend 910B2，当前 npu-smi 物理编号 1/2/3/4 分别对应逻辑 0/1/2/3，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm；Python 3.12.13、npu-smi 26.0.rc1、CANN 9.1.0。此前 0/1/6/7 仅属于上一分配的证据，不能沿用。根卷当前已用约 48 GiB、可用约 246 GiB。平台未确认的独占性不能从空闲利用率推断。
+2026-10-11 最新分配服务器：aarch64、4 张 Ascend 910B2，npu-smi 枚举物理编号 0/1/2/7，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm。原 1/2/3/4 映射和四卡成绩属于此前分配，不能沿用为当前四卡复验；本轮身份/hook 主回归只使用逻辑 0。根卷盘点约 49 GiB 已用、245 GiB 可用。详细映射与版本以私有 inventory 为准，物理枚举本身不等同完整逻辑映射；平台独占性不能从空闲利用率推断。
 
 最新执行转入[HUST 隔离候选](decisions/2026-10-11-hust-runtime-candidate.md)，原预装环境仅保留历史对照。临时源码及服务环境位于项目私有 artifacts；不使用旧项目、不改全局 Python/CANN。任何环境变量调整仅限本次进程，须在真实推理中验证后才能成为恢复配方。
 
@@ -55,6 +55,27 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；当前验证 HUST 隔离候选，预装局部 eager 成绩不继承。图、完整恢复及性能均须后验。
 5. CPU 为 16 核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。先单卡，再两个 TP=1 副本，最后四副本容量实验。压测端/Router/后端的竞争必须测量，不外推跨节点收益。
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
+
+## 可选 publisher 实验与关闭回退
+
+仅在完成固定来源/依赖审计的项目服务 venv 中安装本次已验证 wheel，不用全局 pip，不把开发工具依赖装入推理环境。普通启动不设置 opt-in，原生 publisher 保持不变。以下入口自行给它拥有的临时服务设置显式开关和 allowlist，不修改当前 shell 或现有服务：
+
+```bash
+cd /root/work/prefix-routing-mod
+PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+PYTHONPYCACHEPREFIX=/root/work/prefix-routing-mod/artifacts/g2-recovery-20261011/new-server/pyc \
+artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_identity.py \
+  --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
+  --model /data/shared_models/Qwen2.5-14B-Instruct --device 0 --port 18324 \
+  --core-source artifacts/w1-restore-20261011/core \
+  --ascend-source artifacts/w1-restore-20261011/ascend \
+  --pycache-root artifacts/g2-recovery-20261011/new-server/pyc \
+  --output artifacts/g2-identity-next/hook --publisher-hook
+```
+
+路径是本机已审计环境示例，运行前重核；输出不能已存在，端口须空闲。此配置只用 1024 context/1 GiB KV/4 批窗口/eager 来放大事件与恢复边界，不是最终性能配置。测试会有限次重启自己创建的模型服务，reset dev API 仅在临时 loopback 进程中开放。
+
+关闭回退：移除 `PREFIX_ROUTING_HUST_PUBLISHER=1`（或设 0）并从 general plugin allowlist 移除 `prefix_routing_publisher`，重启自己的服务；不能热切换已经实例化的 publisher。不带 `--publisher-hook` 的身份入口复验原生三帧协议。新旧协议不得混用，已有消费者必须重新建立连接/代次/已知起点；无可信恢复时不继续使用旧目录。普通用户暂不推荐部署此实验 hook，生产交付与开销验收尚未完成。
 
 ## 单后端局部探测（显式手动触发）
 

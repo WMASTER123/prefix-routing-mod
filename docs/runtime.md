@@ -8,6 +8,8 @@
 
 源码与边界见[ADR](decisions/2026-10-11-hust-runtime-candidate.md)，[候选锁目录](../runtime/candidates/README.md)含 186 包完整 hash 锁与 Ascend 隔离构建工具锁，不是最终发布基线。core 发行名仍为 vllm；Ascend 发行名是 vllm-ascend-hust，导入 vllm_ascend。不混装上游 Ascend。
 
+W2 增量只把本项目无运行依赖的 wheel 安装到该服务 venv，用于可选 publisher 实验；未改引擎 editable 源码、全局依赖或原锁。实验 general plugin 默认关闭，仅支持固定整栈及 publisher 源文件指纹，不从 G1 结果推导任意版本的 hook 兼容。复用本项目内来源为本地 clone 的恢复源码时，身份工具逐级核对干净固定提交和 canonical origin；不重写 origin 或放宽到任意本地路径。
+
 ## 统一恢复入口（W1）
 
 在确认设备空闲、HTTP 端口可用后手动执行。输入为本项目内干净且完整历史的两份 HUST 源码；目标目录必须是新的、位于本项目 artifacts 下。执行会下载锁定依赖、构建 editable 引擎并启动临时单卡模型，不用于重建系统环境。
