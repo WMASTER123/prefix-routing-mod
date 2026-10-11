@@ -31,6 +31,7 @@ def main() -> int:
         )
         clean = os.environ.copy()
         clean.pop("PYTHONPATH", None)
+        clean.pop("PREFIX_ROUTING_HUST_PUBLISHER", None)
         subprocess.run(
             [str(binary), "-m", "pip", "install", "--no-deps", str(wheel)],
             cwd=root,
@@ -46,6 +47,10 @@ def main() -> int:
             "m = json.loads(p.read_text()); "
             "assert m['implementation'][0]['status'] == 'import_only'; "
             "assert m['activation']['entry_points'] == []; "
+            "hook = next(iter(entry_points(group='vllm.general_plugins', "
+            "name='prefix_routing_publisher'))).load(); hook(); "
+            "import sys; assert 'torch' not in sys.modules; "
+            "assert 'vllm' not in sys.modules; "
             "print('Clean wheel: descriptor and bundled manifest verified')"
         )
         subprocess.run(

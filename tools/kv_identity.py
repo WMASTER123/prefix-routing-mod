@@ -54,7 +54,10 @@ def check_stored_chain(event, request_tokens, anchors, *, hash_function=None):
     if parent is None:
         start = 0
     else:
-        if not isinstance(parent, bytes | int) or parent not in anchors:
+        if (
+            not (isinstance(parent, bytes) or type(parent) is int)
+            or parent not in anchors
+        ):
             raise ValueError("Parent position is unknown")
         start = anchors[parent]
     if tokens != request_tokens[start : start + len(tokens)]:
@@ -83,6 +86,7 @@ def check_stored_chain(event, request_tokens, anchors, *, hash_function=None):
         "group_idx": 0,
         "parent_known": event.get("parent_block_hash") is not None,
         "native_chained_hash_checks": native_checks,
+        "external_hash_kind": "bytes" if isinstance(hashes[0], bytes) else "int",
         "local_keys_match_request": all(
             key == local_block_digest(request_tokens[i : i + size])
             for key, i in zip(

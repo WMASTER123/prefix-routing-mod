@@ -57,7 +57,7 @@ def run(args, output, report):
         raise ValueError("Controlled prompt is outside the probe context")
     messages = [{"role": "user", "content": text}]
     chat_tokens = tokenizer.apply_chat_template(
-        messages, tokenize=True, add_generation_prompt=True
+        messages, tokenize=True, add_generation_prompt=True, return_dict=False
     )
     assets = {}
     for name in (
@@ -76,6 +76,7 @@ def run(args, output, report):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     context = zmq.Context()
     subscriber = backend = None
+    backends = []
     try:
         subscriber = smoke_backend.create_event_subscriber(
             context, zmq, None, output / "events.sock"
@@ -88,9 +89,14 @@ def run(args, output, report):
             args.device, output, pycache_root=args.pycache_root
         )
         env["PYTHONPATH"] = restore_runtime.read_manifest()["cann_python_path"]
+        if args.publisher_hook:
+            env["PREFIX_ROUTING_HUST_PUBLISHER"] = "1"
+            env["VLLM_PLUGINS"] += ",prefix_routing_publisher"
+            env["VLLM_SERVER_DEV_MODE"] = "1"
         # Native defaults and process hash seed stay unchanged. This probe
         # verifies tokens and observed hash chains, not another process's seed.
         backend = OwnedBackend(command, env, output / "backend", opener, origin)
+        backends.append(backend)
         backend.start()
         initial = regress_kv_events.replay(
             context,
@@ -155,7 +161,10 @@ def run(args, output, report):
                     if not subscriber.poll(100):
                         continue
                     frames = subscriber.recv_multipart()
-                    if len(frames) != 3 or len(frames[1]) != 8:
+                    if (
+                        len(frames) != (4 if args.publisher_hook else 3)
+                        or len(frames[1]) != 8
+                    ):
                         raise ValueError("Invalid live event framing")
                     batch = msgspec.msgpack.decode(frames[2])
                     observed = any(
@@ -201,20 +210,48 @@ def run(args, output, report):
                 }
             )
         report["checks"]["full_block_correspondence"] = bool(anchors)
-        report["checks"]["native_chained_hashes"] = any(
+        report["native_chained_hashes_validated"] = any(
             item["native_chained_hash_checks"] > 0
             for request in report["requests"]
             for item in request["stored"]
         )
+        report["native_hash_scope"] = (
+            "observed_bytes_chain"
+            if report["native_chained_hashes_validated"]
+            else "opaque_integer_anchors_only"
+        )
         if not all(report["checks"].values()):
             raise ValueError("An identity check failed")
+        if args.publisher_hook:
+            if __package__:
+                from . import hust_publisher_probe
+            else:
+                import hust_publisher_probe
+            hust_publisher_probe.run_cases(
+                args,
+                output,
+                report,
+                backends,
+                context,
+                subscriber,
+                opener,
+                origin,
+                env,
+                command,
+            )
     finally:
-        if backend is not None:
-            backend.stop()
-            report["cleanup"] = backend.cleanup
-        if subscriber is not None:
-            subscriber.close(linger=0)
-        context.term()
+        try:
+            for backend in reversed(backends):
+                backend.stop()
+            report["backends"] = [b.cleanup for b in backends]
+            if backends:
+                report["cleanup"] = backends[-1].cleanup
+        finally:
+            try:
+                if subscriber is not None:
+                    subscriber.close(linger=0)
+            finally:
+                context.term()
 
 
 def main():
@@ -228,6 +265,7 @@ def main():
     parser.add_argument("--ascend-source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pycache-root", type=Path, required=True)
+    parser.add_argument("--publisher-hook", action="store_true")
     args = parser.parse_args()
     if sys.platform != "linux" or not 0 < args.port < 65536 or args.device < 0:
         parser.error("Requires Linux and valid logical device/port")
@@ -262,6 +300,7 @@ def main():
         "status": "fail",
         "sources": sources,
         "device": args.device,
+        "publisher_hook": args.publisher_hook,
         "checks": {},
         "hash_algorithm": "xxhash",
         "first_block_seed_validated": False,
