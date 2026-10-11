@@ -10,6 +10,8 @@
 
 原锁编译的具体缺口已定位：openEuler 有 OpenSSL runtime，缺 openssl-devel SDK；exit 101，不是 HUST NumPy/NPU 问题。用户已选择先评估窄幅扩展，[六个接缝/维护风险/否决线](planning/router-extension-assessment.md)已记录，宿主源码未修改。当前代码本机 CPU 256+2 skips、远端 258、mock 各 3、两端 sdist/wheel/干净安装通过；另一成员审查仍待完成。
 
+[草稿 PR #9](https://github.com/WMASTER123/prefix-routing-mod/pull/9) 已建立并附到当前任务，基于未合并 PR #8；9e17ad3 的 Actions Python 3.11/3.12 success。新文档提交不自动继承前个 head 的 CI，按 PR 的确切提交检查；不自动合并。本机与服务器代码/文档同步在独立 codex/component-contracts-cpu 分支，不覆盖旧分支或环境。
+
 近期：人工审查契约与工作包 → R1 宿主构建/适配范围决策；CPU 语义与测试可并行。真实 G2/G3 仍需 1 张 NPU，G4 两个 TP=1 副本需 2 张，到需要时提前反馈。M8、成本档案和新算法后置；MOD import_only 保持，G2 开放、G3/G4 未通过，没有性能提升声明。
 
 ## 此前 NPU 分配的状态（不是当前 CPU 机器的通过记录）

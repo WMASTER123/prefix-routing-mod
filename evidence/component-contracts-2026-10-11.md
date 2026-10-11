@@ -50,10 +50,10 @@ primary source：[固定候选源码](https://github.com/vllm-project/router/tre
 | Windows Python 3.12 CPU | 256 passed、2 Windows skips；ruff/format pass |
 | Windows loopback integration | 3 passed；不是生产 Router |
 | Windows sdist→wheel→干净安装 | pass；合同、manifest 和默认关闭插件导入无 torch/vllm |
-| Linux aarch64 CPU / integration / wheel | a8141e0 同步后 258 passed、integration 3 passed、sdist→wheel→干净安装 pass；不是继承旧成绩 |
-| Actions 3.11/3.12 | 待本轮草稿 PR 的确切 head 验证 |
+| Linux aarch64 CPU / integration / wheel | a8141e0 同步后 258 passed、integration 3 passed、sdist→wheel→干净安装 pass；9e17ad3 文档同步后 CPU 258 / integration 3 复测通过 |
+| Actions 3.11/3.12 | 9e17ad3ce90c6b16438188c615e95754a2344150 两项 success，包含 CPU/mock/构建/干净 wheel；后续文档提交另看确切 head，不继承成绩 |
 | NPU / 真实 Router / 性能 | not-run，无卡，不宣称支持或提升 |
 
 代码自检实际修正：负载变化不作为全局控制版本失效；同请求未知禁止再试；未知不擦除已有接受证据；本地账本计数不接受后端来源；配置切换要拒绝旧未预记账决定。收紧本地计数时钟后，一项旧 foreign-clock fixture 在构造阶段失败，已保留首个失败报告并修正 fixture 的自洽时钟，完整复测通过。这不是改验收条件迁就实现。
 
-自检不替代另一成员独立审查。PR 保持草稿、不合并；进入生产适配前必须复核 ABI、Host 开销、配置/排空线性化、恢复和限额。继续申请卡：真实 G2/G3 1 张；真实 G4 2 张、两个 TP=1，届时反馈。
+自检不替代另一成员独立审查。[PR #9](https://github.com/WMASTER123/prefix-routing-mod/pull/9) 保持草稿、不合并，基于待审 PR #8。进入生产适配前必须复核 ABI、Host 开销、配置/排空线性化、恢复和限额。继续申请卡：真实 G2/G3 1 张；真实 G4 2 张、两个 TP=1，届时反馈。
