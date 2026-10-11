@@ -53,8 +53,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def mock_backend():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+def mock_backend(handler=Handler):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     server.daemon_threads = True
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
