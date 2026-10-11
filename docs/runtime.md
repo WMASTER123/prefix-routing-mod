@@ -1,6 +1,6 @@
 # 服务运行环境：准入与重建边界
 
-更新：2026-10-11。**尚无通过准入的服务锁文件；不要把候选输入当作可安装基线。**
+更新：2026-10-11。**已有可安装且经过隔离重建验证的 HUST 候选锁；完整 G1 尚待恢复入口和制品/来源清单收尾，未冻结发布基线。** 下一步见[W1 环境收尾](planning/next-execution-plan.md)。
 
 ## 最新执行：指定 HUST 隔离候选
 
@@ -12,7 +12,7 @@
 
 ```bash
 PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
-  artifacts/hust-runtime-20261011/service-venv/bin/python tools/audit_runtime.py \
+  artifacts/hust-runtime-20261011/service-venv-rebuild/bin/python tools/audit_runtime.py \
   --ascend-distribution vllm-ascend-hust --output artifacts/hust-audit-new.json
 ```
 
@@ -28,7 +28,7 @@ HUST CLI 的 Torch/NPU preflight 固定 20 秒。重建首次启动在这里超�
 
 项目 `.venv` / `uv.lock` 用于 MOD 的 CPU 开发与 CI，不承载推理栈。预装系统 Python 保留作为历史功能对照。新的服务环境必须位于项目私有目录，不继承系统 site-packages，不修改驱动、CANN、公共模型或全局 Python。
 
-## 当前阻塞与可重复检查
+## 历史阻塞：预装上游与只读检查
 
 固定 vLLM 0.23.0 + Ascend 0.23.0 的 Python 依赖有不可同时满足的 NumPy 约束，详见[审计证据](../evidence/runtime-gate-2026-10-11.md)。这是安装/依赖一致性问题，不等于已证明模型计算错误；之前 eager 功能成功也不能覆盖它。
 
@@ -52,13 +52,13 @@ python tools/audit_runtime.py --output artifacts/runtime-audit-new.json
 
 ## 环境准入交付物
 
-1. 固定 Python/aarch64、驱动/固件、CANN/NNAL、核心包与源码提交；固件等未知信息明确保留待核验。
+1. 固定 Python/aarch64、驱动/固件、CANN/NNAL、核心包与源码提交；本机已核验固件 9.0.0.0.205；镜像 digest 等未知来源明确记录。
 2. 完整服务依赖解析、锁文件、下载来源与制品 SHA256；本地构建还需源码提交、构建依赖和构建日志。只有包版本列表不能叫可复现锁。
 3. 全新隔离环境安装并 `pip check` 通过；不得忽略冲突、伪造版本或默改 wheel 元数据后称为官方制品。
 4. 核验 Triton/Ascend 共享文件的实际归属和安装顺序、动态库加载来源、CANN 环境路径；不是仅检查 Python 包名。构建环境继承系统包时必须单独标明，不得充当隔离服务环境。
 5. 同一环境完成单卡 Qwen2.5-14B 健康、非流式、重复前缀、SSE 与原生事件基础探测；保留启动参数和插件 allowlist。图与完整恢复另有门槛。
 6. 第二次干净恢复可复现上述结果，再冻结基线。任何候选更换均不继承旧 NPU 测试成绩。
 
-用户已允许评估官方配套候选。已查的 0.23.0.post1、0.26.0rc1、0.27.1rc1 仍固定 Triton Ascend 3.2.2，不能仅通过更换这些 Ascend 版本宣告修复。尚未评估所有历史版本或所有镜像，不声称所有官方组合都不可用。
+历史候选检查：此前用户允许评估官方配套；当时查到的 0.23.0.post1、0.26.0rc1、0.27.1rc1 仍固定 Triton Ascend 3.2.2。此记录不代表所有官方组合不可用，也不是下一步继续换官方版本的指令。当前采用指定 HUST 候选，按 W1 收尾，不混装这两条来源。
 
 如果下一步需要自行放宽打包约束、使用开发主干构建或接受已知冲突，先做范围决策与 ADR，说明官方支持边界、风险、测试及回退，再实施；不得把 `--no-deps` 成功当作兼容验证。
