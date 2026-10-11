@@ -1,6 +1,7 @@
 # 决策索引
 
 - [ADR-001：脚手架和诚实的 MOD 状态](001-scaffold-boundary.md)。
+- [2026-10-11：Ascend 优先规划与性能证据边界](2026-10-11-ascend-first.md)。
 - 待 ADR-002：单 Router 宿主、扩展点、语言和构建制品（P1a）。
 - 待 ADR-003：引擎版本组合、原生 KV 事件及 observer 必要性（P1b）。
 - 待 ADR-004：完整身份、恢复和账本契约（P2/P3）。
