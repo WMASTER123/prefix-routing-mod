@@ -91,6 +91,40 @@ def verify_source(path: Path, identity: dict) -> dict:
     return {"commit": identity["commit"], "origin": origin, "full_history": True}
 
 
+def verify_restored_source(path: Path, identity: dict, *, root: Path = ROOT) -> dict:
+    """Audit an installed source and bounded project-private local clone chain.
+
+    Input-source verification above stays strict. A restored clone can name its
+    verified local input as origin; record that chain rather than rewrite it.
+    """
+    current = private_path(path, root).resolve(strict=True)
+    seen, chain = set(), []
+    for _ in range(4):
+        if current in seen:
+            raise ValueError("Source origin chain contains a cycle")
+        seen.add(current)
+        if git_value(current, "rev-parse", "HEAD") != identity["commit"]:
+            raise ValueError("Restored source chain commit differs")
+        if git_value(current, "status", "--porcelain", "--untracked-files=all"):
+            raise ValueError("Restored source chain has local changes")
+        if git_value(current, "rev-parse", "--is-shallow-repository") != "false":
+            raise ValueError("Restored source chain requires full history")
+        origin = git_value(current, "remote", "get-url", "origin")
+        chain.append({"path": str(current), "origin": origin})
+        if origin == identity["origin"]:
+            return {
+                "commit": identity["commit"],
+                "origin_chain": chain,
+                "canonical_origin": origin,
+                "full_history": True,
+            }
+        local_origin = Path(origin)
+        if not local_origin.is_absolute():
+            raise ValueError("Source origin is neither canonical nor private local")
+        current = private_path(local_origin, root).resolve(strict=True)
+    raise ValueError("Source origin chain exceeds four repositories")
+
+
 def stop_command(process) -> None:
     """The installer owns this process group; never target a device-wide PID list."""
     try:

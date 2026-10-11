@@ -160,7 +160,7 @@ def main():
     args = parser.parse_args()
     source = args.core_source.resolve(strict=True)
     identity = restore_runtime.read_manifest()["sources"]["core"]
-    restore_runtime.verify_source(source, identity)
+    source_report = restore_runtime.verify_restored_source(source, identity)
     output = restore_runtime.private_path(args.output)
     if output.exists():
         parser.error("Output already exists")
@@ -171,6 +171,7 @@ def main():
         parser.error("Imported publisher differs from audited source")
     report = inspect(events, msgspec)
     report["source_commit"] = identity["commit"]
+    report["source"] = source_report
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, indent=2)

@@ -242,7 +242,9 @@ def main():
             raise ValueError("Bytecode overlaps the model")
         manifest = restore_runtime.read_manifest()
         sources = {
-            name: restore_runtime.verify_source(path, manifest["sources"][name])
+            name: restore_runtime.verify_restored_source(
+                path, manifest["sources"][name]
+            )
             for name, path in (
                 ("core", args.core_source),
                 ("ascend", args.ascend_source),
