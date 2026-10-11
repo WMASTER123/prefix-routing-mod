@@ -2,6 +2,8 @@
 
 更新：2026-10-11。状态：P0 骨架已建立，P1b 已进入新四卡服务器的 Qwen2.5-14B 单卡 eager 功能探测；尚无真实 Router 或性能提升结论。最新事实见[执行证据](../evidence/qwen14b-preflight-2026-10-11.md)，以下早期记录保留历史范围。
 
+最新复核：用户已确认按 **环境 → 事件回归 → 单后端兼容 → 两副本 Router** 顺序推进，见[当前门槛](planning/runtime-event-gates.md)。G1 暂未通过：Triton Ascend 3.2.2 / OpenCV 的 NumPy 约束冲突已可重复确认；允许评估官方候选，但已查版本仍保留冲突链，未替换原环境。新增只读依赖审计及 CPU 测试，见[环境证据](../evidence/runtime-gate-2026-10-11.md)。先前诊断已收到真实 IPC BlockStored 与 TCP 清空事件，不代表完整事件/恢复通过。下一步不再并行接 Router。
+
 ## 本轮范围
 
 - 已创建 WMASTER123/prefix-routing-mod 私有仓库。
@@ -55,5 +57,5 @@ GitHub 分支保护/强制审查尚未配置；协作规范已写入 CONTRIBUTIN
 - 新增显式触发、有限超时、仅清理自有进程组的探测工具及 CPU 回归测试；未安装全局依赖，未修改引擎和公共模型。
 - 公共 Qwen2.5-14B TP=1 BF16 eager 已完成非流式、重复和 SSE 请求；APC 计数器有命中。ZMQ 接线与关闭问题的诊断、修正和复测逐次保留证据，不覆盖失败记录。
 - 三份当前详细规划和根目录工作稿同步修订；docs/reference 不变。新增[基线决策](decisions/2026-10-11-qwen14b-first.md)。
-- 下一工作包为 P1a 成熟 Router 源码/构建/接线审计，同时补 P1b 未通过项；任何底座变更、hook 或版本替换先记录证据并讨论。暂不堆叠预测档案或新算法。
+- 原先安排的“P1a Router 审计同时补 P1b”已由页首 G1–G4 顺序替代。当前先消除环境阻塞，再补事件、单后端兼容，之后才接成熟 Router；暂不堆叠预测档案或新算法。
 - 当前为自检与待人工审查分支；不自动合并，不称为独立审查通过。完整 npu-smoke/npu-routing/performance/release 仍 not-run。
