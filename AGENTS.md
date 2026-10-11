@@ -1,6 +1,10 @@
 # Repository instructions
 
 - Read docs/progress.md, docs/architecture.md and relevant contracts before editing.
+- Read docs/ascend-design.md for backend/performance work. Ascend is the primary target; generic CPU reuse still comes first.
+- Never transplant GPU timing constants, KV layout assumptions or support claims without target validation. Profiles must carry execution fingerprints, scope and evidence.
+- Do not add per-request device synchronization, npu-smi or profiler calls. Online graph/phase telemetry is optional and must justify its overhead.
+- docs/planning contains current detailed plans; docs/reference is an immutable bootstrap snapshot, not current instructions. Update active documents together.
 - This is an external prefix Router MOD, not an engine fork or KV connector.
 - Reuse first. Do not implement a second proxy/index before P1 evidence and an ADR.
 - Never represent request history, planned placement or dispatched work as observed KV residency.
