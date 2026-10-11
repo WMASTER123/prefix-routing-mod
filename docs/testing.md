@@ -19,6 +19,8 @@ tools/check.py 生成 artifacts/checks/<suite>.json，CPU / integration 同时�
 
 在目标实现阶段补齐 pass/fail/skipped/not-run/inconclusive 的完整结果 schema；必须有真实测试才允许该套件通过。
 
+`tools/smoke_backend.py` 是显式 `--execute` 的局部诊断入口，仅 Linux、指定本地模型/可执行文件、单卡 TP=1 eager、loopback、独立进程组、有限超时；可采样原生 KV 事件。使用方式见[运维](operations.md)。它还不包含图/取消/恢复/Router，不能替代完整 `npu-smoke`，保留入口仍返回 not-run。CPU 测试覆盖启动参数、SSE 完整性、事件脱敏和关闭边界，不启动设备。探测不加速包安装、不更改 MOD 的 import_only 状态。
+
 ## CI 策略
 
 GitHub Actions 在 push main、PR 和手动触发时运行 Python 3.11/3.12、锁文件依赖、同一测试入口和干净 wheel 检查，保存证据 14 天。仅 contents:read，不发布、不部署、不占 NPU。锁定第三方 action 的不可变提交是后续供应链加固项，当前使用主版本标签，依赖版本由 uv.lock 固定。
