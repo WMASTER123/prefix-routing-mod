@@ -59,4 +59,6 @@ hook 约 330 行，通过内部 zmq 工厂绑定/继承实现；native 文件指
 
 尚未完成：hook 压力/自然淘汰真机重验、恢复竞态/生产 trust 状态机、过载与关闭边界、Host 开销、目标图、跨节点 TCP、legacy hook 恢复、Rust 构建与在线索引接线、策略/性能和完整 MOD。M1–M8 仍为部分基础工作，不能按工具文件数量宣称组件完成。
 
-原始私有报告位于服务器项目 `artifacts/g2-identity-20261011/`；不提交 token-bearing payload、prompt/输出或完整日志。最终工作树的 Windows CPU 183 passed/2 skipped、mock 3 与文档链接/围栏/差异检查通过。关闭回退 id03-disabled 已真实复验；最后提交的远端 CPU 与 GitHub CI 在同步/PR 后另补，未运行的项目不自动记 pass。
+原始私有报告位于服务器项目 `artifacts/g2-identity-20261011/`；不提交 token-bearing payload、prompt/输出或完整日志。55ad9ac 同步到服务器后 Linux aarch64 CPU 185、mock 3、干净 wheel 及最终 HUST 依赖审计通过；两份引擎源码保持清洁，退出后四个 NPU 无残留进程。Windows CPU 183 passed/2 skipped、mock 3 与文档链接/围栏/差异检查通过，关闭回退 id03-disabled 已真实复验。
+
+[草稿 PR #8](https://github.com/WMASTER123/prefix-routing-mod/pull/8) 基于未合并 PR #7，等待另一成员审查，不自动合并。55ad9acf663673018f6a777f339c7dcd03d80790 的 [Actions](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38144974731) Python 3.11/3.12 两组 success；本补记仅是文档变更，后续提交的 CI 不继承该 head 的结果。
