@@ -14,7 +14,7 @@
 | 生命周期 | 独占 RAII guard，发送前 not_sent；发送后 EOF、5xx、网络错误、body drop/future cancel 均保留 unknown；关闭回调恰一次 | 原型回调不是完整 LifecycleEvent 协议；可靠终止、晚到对账、事件投递与持久化未接 |
 | 重试/回退 | provider 安装时关闭模糊自动重试；select None 明确回退原生选点；未安装 provider 使用原重试配置 | 所有路由/故障策略等价性；本轮仅 completion/chat ordinary HTTP 范围 |
 
-当前启用范围仅 HTTP、DP=1、无 program scheduler、completion/chat；范围不符明确拒绝。生产还必须在接入层阻止其他推理路由绕过账本。本原型没有改原生流式 channel，客户端 drop 仅证明本地 guard 收到关闭，**不证明 producer 或后端已经取消**。
+当前接缝接受范围仅 HTTP、DP=1、无 program scheduler、completion/chat；范围不符明确拒绝。fixture provider 本轮只验证 completion，chat 真实特征桥未验收；原版 chat 转发成绩不继承为启用扩展的成绩。生产还必须在接入层阻止其他推理路由绕过账本。本原型没有改原生流式 channel，客户端 drop 仅证明本地 guard 收到关闭，**不证明 producer 或后端已经取消**。
 
 provider 回调必须本地、有界、无阻塞、不抛 panic；完整决策与特征用同进程 Arc 传递。不透明 trait 是实验工具，不能直接冻结成团队生产类型。一次 `serde_json::to_value`、候选 URL 收集和 body wrapper 都有成本，尚无收益/热路径开销数据。
 
@@ -22,7 +22,7 @@ provider 回调必须本地、有界、无阻塞、不抛 panic；完整决策�
 
 先用 `bash tools/router_build_probe.sh build` 准入原版，再执行原生二进制 HTTP probe。该入口只接受已审计的项目私有工具链/归档/SDK，前置材料来源见本轮证据。不是新服务器的一键安装器。
 
-在项目 artifacts 下新建独立实验目录，从已校验原 tar 解包；应用前核对归档 SHA256 `eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f`，再 `git apply --check` 与 apply。本原型 patch 不应应用到原版准入目录或 HUST。把本目录两份 `.rs` 分别复制到 `src/routers/http/prefix_extension.rs`、`examples/prefix_extension_probe.rs`。共享已锁构建环境/target，运行：
+在项目 artifacts 下新建独立实验目录，从已校验原 tar 解包；应用前核对归档 SHA256 `eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f`。该固定提交部分源码是 CRLF，patch 是 LF：在非 Git 的独立副本使用进程级 `GIT_CEILING_DIRECTORIES` 阻止父仓库发现，`git -c core.autocrlf=true -C "$task_prototype" apply --check --whitespace=error <绝对 patch 路径>`，通过后同设置 apply；不改全局 Git 或原版源码。随后仅对 registry.rs、router.rs 运行 `rustfmt --edition 2021 --config newline_style=Unix`，不对 mod.rs 递归格式化子模块。本轮已核对复放输出与实际编译输入逐字节一致，新增/删除行数为规范化后的逻辑增量。本原型 patch 不应应用到原版准入目录或 HUST。把本目录两份 `.rs` 分别复制到 `src/routers/http/prefix_extension.rs`、`examples/prefix_extension_probe.rs`。共享已锁构建环境/target，运行：
 
 ```bash
 cargo build --release --locked --example prefix_extension_probe --manifest-path "$task_prototype/Cargo.toml"

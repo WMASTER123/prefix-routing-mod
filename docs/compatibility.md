@@ -12,7 +12,7 @@
 | vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 与下行隔离构建；本机 TP=1 Qwen14B BF16 eager 局部验证及 venv 重建通过 |
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
-| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 固定源码评估候选，未构建/接入；索引未在在线策略接线、HUST replay 协议需适配，见[复用评估](planning/组件复用与自研边界评估_2026-10-10.md) |
+| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 check/release、启动、completion/chat JSON/SSE 与关闭重试单次 503 通过；仅 CPU/mock 准入，未接 HUST、索引未在在线策略接线，见[最新证据](../evidence/router-cpu-admission-2026-10-12.md) |
 | 当前研发服务器 | aarch64 / Python 3.12.13 / 16 核配额 / 64 GiB RAM / 0 NPU | CPU 合同、隔离 Rust 构建及模拟；不能验收 NPU 能力 |
 | 历史 NPU 分配 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 当时物理枚举 0/1/2/7，身份/hook 主回归仅逻辑 0；更早四卡结果分别记录，不继承到当前分配 |
 | HUST 环境恢复入口 | 两个固定源码 + 186 包及 builder 锁 | 全新目录 13 步通过，本机研发证据齐备、正式冻结待人工复核；不等于可移植镜像 |
