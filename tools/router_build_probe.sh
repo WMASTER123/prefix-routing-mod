@@ -23,6 +23,8 @@ test "$(rpm -q openssl-libs)" = openssl-libs-3.0.12-52.oe2403sp3.aarch64
 for task_command in curl rpm rpm2archive tar sha256sum pkg-config gcc g++ cmake make perl timeout; do
   command -v "$task_command" >/dev/null
 done
+test "$(sha256sum "$task_root/router-source.tar" | cut -d ' ' -f1)" = eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f
+tar --compare --file "$task_root/router-source.tar" --directory "$task_source"
 test "$(sha256sum "$task_source/Cargo.toml" | cut -d ' ' -f1)" = 082883aba29f8ac912596325e2114a0e33d001bd23579084b05bd3c87faa1735
 test "$(sha256sum "$task_source/Cargo.lock" | cut -d ' ' -f1)" = 8675caa4ef6227d0f2cb273ac921e9dd0a6989cdad304b5600887a9795355156
 mkdir -p "$task_root/sdk-rpms" "$task_sdk" "$task_root/probes"
@@ -38,7 +40,13 @@ rpm --checksig "$task_rpm" > "$task_run/rpm-signature.txt"
 rpm2archive "$task_rpm" > "$task_run/sdk.tgz"
 tar --extract --gzip --file "$task_run/sdk.tgz" --directory "$task_sdk" \
   --no-same-owner --no-same-permissions ./usr/include/openssl ./usr/lib64
-cp -L /usr/lib64/libssl.so.3 /usr/lib64/libcrypto.so.3 "$task_sdk/usr/lib64/"
+# Preserve the versioned targets expected by this exact development RPM.
+test "$(readlink "$task_sdk/usr/lib64/libssl.so")" = libssl.so.3.0.12
+test "$(readlink "$task_sdk/usr/lib64/libcrypto.so")" = libcrypto.so.3.0.12
+cp -L /usr/lib64/libssl.so.3 "$task_sdk/usr/lib64/libssl.so.3.0.12"
+cp -L /usr/lib64/libcrypto.so.3 "$task_sdk/usr/lib64/libcrypto.so.3.0.12"
+test -f "$task_sdk/usr/lib64/libssl.so"
+test -f "$task_sdk/usr/lib64/libcrypto.so"
 
 export RUSTUP_HOME="$task_root/toolchain/rustup"
 export CARGO_HOME="$task_root/toolchain/cargo"
@@ -47,6 +55,7 @@ export CARGO_TARGET_DIR="$task_root/target"
 export CARGO_BUILD_JOBS=4
 export OPENSSL_INCLUDE_DIR="$task_sdk/usr/include"
 export OPENSSL_LIB_DIR="$task_sdk/usr/lib64"
+export OPENSSL_STATIC=0
 export PKG_CONFIG_SYSROOT_DIR="$task_sdk"
 export PKG_CONFIG_LIBDIR="$task_sdk/usr/lib64/pkgconfig"
 export GIT_CONFIG_COUNT=3
@@ -64,7 +73,8 @@ export GIT_CONFIG_VALUE_2=https://github.com/openai/harmony
   gcc --version | head -1
   pkg-config --libs --cflags openssl
   sha256sum "$task_rpm" "$task_source/Cargo.toml" "$task_source/Cargo.lock" \
-    "$task_sdk/usr/lib64/libssl.so.3" "$task_sdk/usr/lib64/libcrypto.so.3"
+    "$task_sdk/usr/lib64/libssl.so.3.0.12" \
+    "$task_sdk/usr/lib64/libcrypto.so.3.0.12"
 } > "$task_run/preflight.txt"
 
 task_args=(check --lib)
