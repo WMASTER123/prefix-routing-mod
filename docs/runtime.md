@@ -8,6 +8,25 @@
 
 源码与边界见[ADR](decisions/2026-10-11-hust-runtime-candidate.md)，[候选锁目录](../runtime/candidates/README.md)含 186 包完整 hash 锁与 Ascend 隔离构建工具锁，不是最终发布基线。core 发行名仍为 vllm；Ascend 发行名是 vllm-ascend-hust，导入 vllm_ascend。不混装上游 Ascend。
 
+## 统一恢复入口（W1）
+
+在确认设备空闲、HTTP 端口可用后手动执行。输入为本项目内干净且完整历史的两份 HUST 源码；目标目录必须是新的、位于本项目 artifacts 下。执行会下载锁定依赖、构建 editable 引擎并启动临时单卡模型，不用于重建系统环境。
+
+```bash
+cd /root/work/prefix-routing-mod
+.venv/bin/python tools/restore_runtime.py --execute \
+  --core-source artifacts/hust-runtime-20261011/vllm-hust \
+  --ascend-source artifacts/hust-runtime-20261011/vllm-ascend-hust \
+  --python /usr/local/python3.12.13/bin/python3 \
+  --uv .venv/bin/uv \
+  --model /data/shared_models/Qwen2.5-14B-Instruct \
+  --device 0 --port 18220 --output artifacts/w1-restore-20261011
+```
+
+入口检查锁、源码、来源、完整历史、平台/版本及项目空间；新建环境不继承 system-site-packages，缓存留在目标目录。移除 UV/PIP 来源和构建覆盖变量并使用显式索引，窄 CANN PYTHONPATH 与必要动态库环境按已验证配方保留。最后覆盖 Triton Ascend，核验其 RECORD 与实际导入的 backend、引擎来源及加载库，再执行普通/重复/SSE/真实 IPC 存储探测。
+
+安装阶段有超时及自有进程组清理，首个失败终止后续阶段，失败目录保留。模型探测使用已有工具的启动/请求/清理期限，不通过外层超时杀死其控制器而遗留独立引擎进程组。详细报告、版本文件和加载库路径仅留私有 artifacts；报告成功不自动将 environment_gate_passed 或完整 KV/性能标志置为 true，G1 的研发冻结需审查相应证据。
+
 必须显式审计 HUST：
 
 ```bash

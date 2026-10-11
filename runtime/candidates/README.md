@@ -10,3 +10,5 @@
 `triton-ascend==3.2.1` 自身声明依赖 `triton==3.5.0`，两者存在 35 个共用文件。本次 uv 并行安装结果曾由通用 Triton 覆盖；必须最后重装锁定 Ascend 并校验 RECORD 对应文件哈希、确认运行 backend 为 ascend。不能删除它声明的通用 Triton 包来让 pip check 报绿，也不能只看发行版本号。
 
 详细执行与真实结果维护在 [运行环境](../../docs/runtime.md)。这是候选快照；CANN 9.1 与仓库参考 CANN 9.0 的差异、首次启动、完整 KV 恢复、图/并发和性能仍须按阶段验证。所有原始日志留忽略的 artifacts，不上传权重、原始 prompts 或凭据。
+
+`hust-restore.json` 将上述源码、两份锁文件的 LF hash、Python/uv 和进程级路径固定为同机研发恢复配方。使用[恢复入口](../../docs/runtime.md)验证它；制品锁不覆盖 CANN/驱动和 editable 引擎。构建 constraints 固定隔离 builder 的版本，不等于整个工具链已经成为可移植发行镜像。
