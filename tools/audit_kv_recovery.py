@@ -77,6 +77,21 @@ def inspect_boundary(module, msgspec) -> dict:
         if isinstance(event, module.BlockStored)
     )
     report["watermark_after_unpublished_remove"] = after_remove.next_seq
+    # Use actual queued HUST batches to demonstrate the temporal regression.
+    # This synthetic set is only a counterexample, not a production KV index.
+    consumer_hashes = set()
+    first_pending = publisher._event_queue.get_nowait()
+    for event in first_pending.events:
+        if isinstance(event, module.BlockStored):
+            consumer_hashes.update(event.block_hashes)
+    report["naive_snapshot_then_old_store_reintroduces_evicted_hash"] = (
+        1 in consumer_hashes and report["snapshot_hashes_after_unpublished_remove"] == 0
+    )
+    second_pending = publisher._event_queue.get_nowait()
+    for event in second_pending.events:
+        if isinstance(event, module.BlockRemoved):
+            consumer_hashes.difference_update(event.block_hashes)
+    report["naive_consumer_converges_only_after_pending_remove"] = not consumer_hashes
     report["status"] = (
         "observed"
         if report["mirror_update_precedes_sequence_assignment"]
