@@ -2,6 +2,8 @@
 
 代码提交：`801b628`，基于 `ecacc39`。分支 `codex/backend-terminal-audit`。本记录只覆盖注明代码和实验，不自动继承到后续修改。自审完成；第二成员独立审查待完成，无自动合并。
 
+[草稿 PR #13](https://github.com/WMASTER123/prefix-routing-mod/pull/13) 基于 PR #12。文档提交 6d4ab6f 的最终检查发现本页复现代码块未格式化；已使用同一 formatter 修正，本机 CPU 317+4 skips 再通过。没有修改实验逻辑或放宽检查，首次失败报告保留。
+
 ## 运行范围与结果
 
 | 检查 | 结果 | 限制 |
@@ -52,28 +54,47 @@ python tools/verify_wheel.py --wheel artifacts/terminal-audit-20261012/dist/pref
 ```python
 import json, statistics, time, tracemalloc
 from tools.terminal_observer_prototype import Binding, TerminalJournal, OnlineConsumer
+
+
 def trial(count):
-    b=Binding("worker","instance","observer")
-    j=TerminalJournal(b,max_families=count,max_children=count,max_events=1)
-    c=OnlineConsumer(b,lambda record: None)
+    b = Binding("worker", "instance", "observer")
+    j = TerminalJournal(b, max_families=count, max_children=count, max_events=1)
+    c = OnlineConsumer(b, lambda record: None)
     c.recover(j)
-    start=time.perf_counter_ns()
+    start = time.perf_counter_ns()
     for i in range(count):
-        j.register("a"+str(i),("c"+str(i),))
-        assert j.observe_core_end("c"+str(i))
+        j.register("a" + str(i), ("c" + str(i),))
+        assert j.observe_core_end("c" + str(i))
         c.pump(j)
-    elapsed=time.perf_counter_ns()-start
-    snap_start=time.perf_counter_ns()
-    cut, records=j.snapshot(b)
-    snap_ns=time.perf_counter_ns()-snap_start
-    assert cut==count and len(records)==count and not j.events
-    return elapsed/count, snap_ns, j
-samples=[trial(2000)[0] for _ in range(5)]
+    elapsed = time.perf_counter_ns() - start
+    snap_start = time.perf_counter_ns()
+    cut, records = j.snapshot(b)
+    snap_ns = time.perf_counter_ns() - snap_start
+    assert cut == count and len(records) == count and not j.events
+    return elapsed / count, snap_ns, j
+
+
+samples = [trial(2000)[0] for _ in range(5)]
 tracemalloc.start()
-_,snapshot_ns,retained=trial(2000)
-current,peak=tracemalloc.get_traced_memory()
+_, snapshot_ns, retained = trial(2000)
+current, peak = tracemalloc.get_traced_memory()
 tracemalloc.stop()
-print(json.dumps({"scope":"synthetic register+observe+no-op sink+ack; no engine/network/ledger","families":2000,"samples":5,"ns_per_family_median":statistics.median(samples),"ns_per_family_min":min(samples),"ns_per_family_max":max(samples),"tracemalloc_retained_bytes":current,"tracemalloc_peak_bytes":peak,"snapshot_ns_with_tracemalloc":snapshot_ns,"production_overhead_validated":False}))
+print(
+    json.dumps(
+        {
+            "scope": "synthetic register+observe+no-op sink+ack; no engine/network/ledger",
+            "families": 2000,
+            "samples": 5,
+            "ns_per_family_median": statistics.median(samples),
+            "ns_per_family_min": min(samples),
+            "ns_per_family_max": max(samples),
+            "tracemalloc_retained_bytes": current,
+            "tracemalloc_peak_bytes": peak,
+            "snapshot_ns_with_tracemalloc": snapshot_ns,
+            "production_overhead_validated": False,
+        }
+    )
+)
 ```
 
 ## 审查与下一步
