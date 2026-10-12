@@ -32,6 +32,7 @@ impl RawBinding {
 enum RawOp {
     Store {
         id: String,
+        #[serde(deserialize_with = "required_parent")]
         parent: Option<String>,
         local: String,
     },
@@ -39,6 +40,9 @@ enum RawOp {
         id: String,
     },
     Clear,
+}
+fn required_parent<'de, D: serde::Deserializer<'de>>(input: D) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(input)
 }
 impl RawOp {
     fn into_op(self) -> Op {
@@ -187,4 +191,17 @@ pub fn run(path: &str) -> Result<(), String> {
         })
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn missing_parent_is_not_an_explicit_root() {
+        assert!(serde_json::from_str::<RawOp>(r#"{"kind":"store","id":"a","local":"b"}"#).is_err());
+        assert!(serde_json::from_str::<RawOp>(
+            r#"{"kind":"store","id":"a","parent":null,"local":"b"}"#
+        )
+        .is_ok());
+    }
 }
