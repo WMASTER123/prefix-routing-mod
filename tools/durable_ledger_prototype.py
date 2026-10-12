@@ -301,7 +301,33 @@ class DurableLedger:
 
     def apply(self, event):
         with self.lock:
+            if event.kind is EventKind.SEND_STARTED and not self.admission_ready:
+                raise ReservationRejected("restart cannot authorize a new send")
             return self._receive({"kind": "event", "event": asdict(event)})
+
+    def receive_batch(self, operations):
+        """Bounded group-commit experiment; all successes return AFTER commit.
+
+        Operations are internally generated metadata, not a network/JSON API.
+        No batching timer or background thread is introduced.
+        """
+        with self.lock:
+            if not isinstance(operations, tuple) or not 0 < len(operations) <= 64:
+                raise ValueError("bounded nonempty operation tuple required")
+            for operation in operations:
+                if not isinstance(operation, dict) or operation.get("kind") not in (
+                    "reserve",
+                    "event",
+                ):
+                    raise ValueError(
+                        "only internal reservation/event batches supported"
+                    )
+                if not self.admission_ready and (
+                    operation["kind"] == "reserve"
+                    or event_from(operation["event"]).kind is EventKind.SEND_STARTED
+                ):
+                    raise ReservationRejected("restart cannot authorize new work")
+            return self._receive_many(operations)
 
     def notify_transport(self, attempt_id, kind, context):
         """Collapse repeated/late callbacks; only applied SEND_STARTED permits send."""
@@ -391,35 +417,44 @@ class DurableLedger:
             return result
 
     def _receive(self, operation):
+        return self._receive_many((operation,))[0]
+
+    def _receive_many(self, operations):
         if self.failed:
             raise RuntimeError("receipt owner failed; reopen for recovery")
-        payload = encode(operation)
-        decode(payload)
+        encoded = tuple(encode(operation) for operation in operations)
+        normalized = tuple(decode(payload) for payload in encoded)
         try:
-            result = self._apply_to(self.oracle, operation)
-            if result == "duplicate":
-                return result  # The original receipt already committed.
-            if result != "applied":
-                raise LifecycleRejected("stale evidence cannot be acknowledged")
+            results, new_payloads = [], []
+            for operation, payload in zip(normalized, encoded, strict=True):
+                result = self._apply_to(self.oracle, operation)
+                results.append(result)
+                if result == "applied":
+                    new_payloads.append(payload)
+                elif result != "duplicate":
+                    raise LifecycleRejected("stale evidence cannot be acknowledged")
+            if not new_payloads:
+                return tuple(results)
+            added_bytes = sum(len(payload.encode()) for payload in new_payloads)
             if (
-                self.operation_count >= self.max_operations
-                or self.payload_bytes + len(payload.encode()) > self.max_payload_bytes
+                self.operation_count + len(new_payloads) > self.max_operations
+                or self.payload_bytes + added_bytes > self.max_payload_bytes
             ):
                 raise RuntimeError("receipt retention full")
             self.connection.execute("BEGIN IMMEDIATE")
-            self.connection.execute(
+            self.connection.executemany(
                 "INSERT INTO receipts VALUES(?,?)",
-                (
-                    self.operation_count + 1,
-                    payload,
-                ),
+                [
+                    (self.operation_count + offset, payload)
+                    for offset, payload in enumerate(new_payloads, 1)
+                ],
             )
             self.fault("before_commit")
             self.connection.execute("COMMIT")
-            self.operation_count += 1
-            self.payload_bytes += len(payload.encode())
+            self.operation_count += len(new_payloads)
+            self.payload_bytes += added_bytes
             self.fault("after_commit_before_ack")
-            return result
+            return tuple(results)
         except BaseException:
             if self.connection.in_transaction:
                 self.connection.execute("ROLLBACK")

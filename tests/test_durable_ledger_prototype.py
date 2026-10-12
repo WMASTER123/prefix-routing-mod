@@ -5,7 +5,7 @@ import os
 import sqlite3
 import subprocess
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -333,3 +333,105 @@ def test_foreign_observer_binding_cannot_release(tmp_path):
         with pytest.raises(ValueError, match="identity mismatch"):
             store.confirm_end(wrong, EventKind.CANCEL_CONFIRMED, CONTEXT)
         assert store.outstanding(REF) == 1 and store.operation_count == 3
+
+
+def reservation_op(index):
+    request = f"request-{index}"
+    return {
+        "kind": "reserve",
+        "request_id": request,
+        "domain": FEATURES.domain,
+        "decision": asdict(decision(attempt_id=f"attempt-{index}", request_id=request)),
+        "context": asdict(CONTEXT),
+    }
+
+
+def progress_op(index, kind, sequence):
+    confirmation = (
+        BackendConfirmation.ENDED
+        if kind is EventKind.CANCEL_CONFIRMED
+        else BackendConfirmation.NONE
+    )
+    value = replace(
+        event(kind, confirmation, sequence=sequence),
+        request_id=f"request-{index}",
+        attempt_id=f"attempt-{index}",
+        event_id=f"event-{index}-{sequence}",
+    )
+    return {"kind": "event", "event": asdict(value)}
+
+
+def test_group_commit_all_or_nothing_and_duplicate_replay(tmp_path):
+    path = tmp_path / "batch.sqlite"
+    with opened(path) as store:
+        reservations = tuple(reservation_op(i) for i in range(2))
+        assert store.receive_batch(reservations) == ("applied", "applied")
+        sends = tuple(progress_op(i, EventKind.SEND_STARTED, 1) for i in range(2))
+        assert store.receive_batch(sends) == ("applied", "applied")
+        assert store.receive_batch(sends) == ("duplicate", "duplicate")
+        assert store.operation_count == 4
+    with DurableLedger(path) as store:
+        assert store.outstanding(REF) == 2
+        ends = tuple(progress_op(i, EventKind.CANCEL_CONFIRMED, 2) for i in range(2))
+        store.receive_batch(ends)
+        assert store.outstanding(REF) == 0
+
+
+def test_invalid_batch_tail_rolls_back_whole_batch(tmp_path):
+    path = tmp_path / "invalid-batch.sqlite"
+    with opened(path) as store:
+        invalid = (reservation_op(0), progress_op(0, EventKind.CANCEL_CONFIRMED, 1))
+        with pytest.raises(LifecycleRejected):
+            store.receive_batch(invalid)
+        assert store.operation_count == 0 and store.outstanding(REF) == 0
+    with DurableLedger(path) as store:
+        assert store.operation_count == 0
+
+
+@pytest.mark.parametrize(
+    "point,expected",
+    [
+        ("before_commit", 2),
+        ("after_commit_before_ack", 0),
+    ],
+)
+def test_group_commit_process_exit(tmp_path, point, expected):
+    path = tmp_path / "batch-crash.sqlite"
+    with opened(path) as store:
+        store.receive_batch(tuple(reservation_op(i) for i in range(2)))
+        store.receive_batch(
+            tuple(progress_op(i, EventKind.SEND_STARTED, 1) for i in range(2))
+        )
+    code = (
+        "import os,sys; from pathlib import Path; "
+        "from tools.durable_ledger_prototype import DurableLedger; "
+        "from tests.test_durable_ledger_prototype import progress_op,EventKind; "
+        "fault=lambda point: os._exit(38) if point==sys.argv[2] else None; "
+        "store=DurableLedger(Path(sys.argv[1]),fault=fault); "
+        "store.receive_batch(tuple(progress_op(i,EventKind.CANCEL_CONFIRMED,2) "
+        "for i in range(2)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(path), point],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 38, result.stderr
+    with DurableLedger(path) as store:
+        assert store.outstanding(REF) == expected
+        store.receive_batch(
+            tuple(progress_op(i, EventKind.CANCEL_CONFIRMED, 2) for i in range(2))
+        )
+        assert store.outstanding(REF) == 0 and store.operation_count == 6
+
+
+def test_batch_bound_and_restart_admission(tmp_path):
+    path = tmp_path / "bounds.sqlite"
+    with opened(path) as store:
+        with pytest.raises(ValueError, match="bounded"):
+            store.receive_batch(tuple(reservation_op(i) for i in range(65)))
+        assert store.operation_count == 0
+    with DurableLedger(path) as store, pytest.raises(ReservationRejected):
+        store.receive_batch((reservation_op(0),))

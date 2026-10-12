@@ -1,0 +1,25 @@
+{
+  "binding": {
+    "worker": "synthetic-worker", "instance": 1,
+    "publisher": "11111111111111111111111111111111",
+    "identity": "00a595e4db73fb1f620ccd06c643d1e06a55c12d6459fd31b6dd2ab1ad41d945",
+    "block_size": 2
+  },
+  "snapshot": [
+    {"kind": "clear"},
+    {"kind": "store", "id": "i:000000000000000b", "parent": null,
+     "local": "34fb5c825de7ca4aea6e712f19d439c1da0c92c37b423936c5f618545ca4fa1f"},
+    {"kind": "store", "id": "i:000000000000000c", "parent": "i:000000000000000b",
+     "local": "8073c94ef47ecc86dcd78a8d9027a23484fadcd7cea37150319ba8cbf1c70b6b"}
+  ],
+  "watermark": 10,
+  "events": [
+    {"sequence": 10, "ops": [{"kind": "remove", "id": "i:000000000000000c"}]},
+    {"sequence": 11, "ops": [{"kind": "clear"}]}
+  ],
+  "query": [
+    "34fb5c825de7ca4aea6e712f19d439c1da0c92c37b423936c5f618545ca4fa1f",
+    "8073c94ef47ecc86dcd78a8d9027a23484fadcd7cea37150319ba8cbf1c70b6b"
+  ],
+  "limit_bytes": 4194304, "lease_ns": 100
+}

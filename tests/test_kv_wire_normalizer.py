@@ -16,6 +16,8 @@ def stored():
         "block_size": 2,
         "group_idx": 0,
         "medium": "GPU",
+        "lora_id": None,
+        "lora_name": None,
     }
 
 
@@ -98,6 +100,14 @@ def test_bad_batch_envelope(batch):
 
 def test_hash_encoding_keeps_int_and_bytes_domains_separate():
     assert wire.anchor(1) != wire.anchor(b"\x01")
+
+
+@pytest.mark.parametrize("field", ["parent_block_hash", "lora_id", "lora_name"])
+def test_missing_metadata_cannot_be_interpreted_as_none(field):
+    value = stored()
+    del value[field]
+    with pytest.raises(ValueError, match="missing required"):
+        wire.batch_ops(b"payload", lambda _: [0, [value], 0], 2)
 
 
 def test_operation_expansion_checked_before_processing(monkeypatch):

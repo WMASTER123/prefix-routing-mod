@@ -3,10 +3,10 @@
 use std::{fs, sync::Arc, time::Instant};
 include!(concat!(env!("OUT_DIR"), "/upstream.rs"));
 mod directory;
-mod pool;
-mod wire;
 #[cfg(test)]
 mod directory_tests;
+mod pool;
+mod wire;
 use kv_index::{
     indexer::{KvBlockIndexer, MatchQuery},
     types::{ResidencyOwner, StorageTier},

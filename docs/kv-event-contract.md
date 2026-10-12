@@ -1,5 +1,7 @@
 # HUST KV 事件回归合同 v0
 
+2026-10-12 规范化增量：`tools/kv_wire_normalizer.py` 对 opt-in 四帧做解码前限额/epoch/完整必需字段校验，生成 opaque anchor/local digest，接既有 Rust 目录/索引 CPU 实验。固定原生 Struct+msgspec 编码的合成输入已验证，非真实 NPU 事件；normalizer 不负责订阅信任、去重/共同边界握手。pool 注册额度、当前恢复 ticket 和发送时点控制 lease 另有 CPU 验证，详见[当前范围](planning/capture-recovery-wire-boundaries.md)。
+
 适用源码：core 13f11da44455d2f85f00f810a04e1bd2eaf30ba6。本文供 G2 测试与后续适配判断，不是生产目录协议实现。源码入口为 [kv_events.py](https://github.com/intellistream/vllm-hust-legacy-20260831/blob/13f11da44455d2f85f00f810a04e1bd2eaf30ba6/vllm/distributed/kv_events.py)。
 
 ## 已核对的接线与消息

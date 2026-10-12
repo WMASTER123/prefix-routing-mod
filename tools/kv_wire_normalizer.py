@@ -67,6 +67,19 @@ def batch_ops(payload, decode, block_size):
                     raise ValueError("unexpected removal fields")
                 result.extend({"kind": "remove", "id": anchor(h)} for h in hashes)
                 continue
+            required = {
+                "type",
+                "block_hashes",
+                "parent_block_hash",
+                "token_ids",
+                "block_size",
+                "lora_id",
+                "medium",
+                "lora_name",
+                "group_idx",
+            }
+            if not required.issubset(event):
+                raise ValueError("missing required stored metadata")
             if (
                 event.get("block_size") != block_size
                 or type(event.get("block_size")) is not int
