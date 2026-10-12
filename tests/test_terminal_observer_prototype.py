@@ -221,3 +221,61 @@ def test_ended_record_validation():
         Ended(BINDING, True, "a")
     with pytest.raises(ValueError):
         Binding("a", "b", "")
+
+
+def test_dynamic_child_completion_waits_for_seal():
+    source = journal()
+    source.begin("dynamic", 2)
+    source.bind_child("dynamic", "first")
+    assert source.observe_core_end("first")
+    assert source.snapshot(BINDING) == (0, ())
+    with pytest.raises(ValueError, match="incomplete"):
+        source.seal("dynamic")
+    source.bind_child("dynamic", "second")
+    assert source.observe_core_end("second")
+    assert source.snapshot(BINDING) == (0, ())
+    assert source.seal("dynamic")
+    assert source.snapshot(BINDING)[0] == 1
+    assert source.seal("dynamic")  # Idempotent sealing cannot emit twice.
+    assert source.snapshot(BINDING)[0] == 1
+
+
+def test_partial_submission_failure_never_confirms_family():
+    source = journal()
+    source.begin("partial", 3)
+    source.bind_child("partial", "first")
+    source.abandon("partial")
+    assert source.observe_core_end("first")
+    assert source.snapshot(BINDING) == (0, ())
+    with pytest.raises(RuntimeError, match="abandoned"):
+        source.seal("partial")
+
+
+def test_child_capacity_reserved_before_submission():
+    source = journal(max_children=3)
+    source.begin("first", 3)
+    with pytest.raises(RuntimeError, match="retention"):
+        source.begin("second", 1)
+    assert source.reserved_children == 3 and not source.owners
+
+
+def test_dynamic_capture_rejects_late_child_and_count_overflow():
+    source = journal()
+    source.begin("one", 1)
+    source.bind_child("one", "child")
+    with pytest.raises(ValueError, match="exceeded"):
+        source.bind_child("one", "extra")
+    source.seal("one")
+    with pytest.raises(RuntimeError, match="closed"):
+        source.bind_child("one", "late")
+
+
+def test_seal_overflow_invalidates_observation():
+    source = journal(max_events=1)
+    source.register("one", ("a",))
+    source.observe_core_end("a")
+    source.begin("two", 1)
+    source.bind_child("two", "b")
+    source.observe_core_end("b")
+    assert source.seal("two") is False
+    assert source.failed and len(source.events) == 1

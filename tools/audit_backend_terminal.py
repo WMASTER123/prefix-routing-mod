@@ -63,10 +63,10 @@ class Waiting(list):
         self[:] = [item for item in self if item not in requests]
 
 
-def load_sources(directory):
+def load_sources(directory, hashes=None):
     """Reject any byte change before compiling any selected method."""
     sources = {}
-    for name, digest in SOURCE_HASHES.items():
+    for name, digest in (SOURCE_HASHES if hashes is None else hashes).items():
         payload = (directory / name).read_bytes()
         if hashlib.sha256(payload).hexdigest() != digest:
             raise ValueError(f"fixed source hash mismatch: {name}")
@@ -74,7 +74,9 @@ def load_sources(directory):
     return sources
 
 
-def source_class(sources, filename, class_name, methods, namespace):
+def source_class(
+    sources, filename, class_name, methods, namespace, *, allowed_decorators=()
+):
     """Preserve complete method bodies, with postponed annotations only."""
     classes = [
         node
@@ -91,7 +93,11 @@ def source_class(sources, filename, class_name, methods, namespace):
     ]
     if {node.name for node in selected} != set(methods):
         raise ValueError("source method set changed")
-    if any(node.decorator_list for node in selected):
+    if any(
+        not isinstance(decorator, ast.Name) or decorator.id not in allowed_decorators
+        for node in selected
+        for decorator in node.decorator_list
+    ):
         raise ValueError("decorated methods require separate audit")
     cls = ast.ClassDef(
         name=class_name, bases=[], keywords=[], body=selected, decorator_list=[]

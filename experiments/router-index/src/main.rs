@@ -3,6 +3,8 @@
 use std::{fs, sync::Arc, time::Instant};
 include!(concat!(env!("OUT_DIR"), "/upstream.rs"));
 mod directory;
+mod pool;
+mod wire;
 #[cfg(test)]
 mod directory_tests;
 use kv_index::{
@@ -89,6 +91,13 @@ mod resource_counterexamples {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mode = args.get(1).map(String::as_str).unwrap_or("original");
+    if mode == "wire" {
+        if let Err(error) = wire::run(args.get(2).expect("wire requires explicit input path")) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     assert!(matches!(mode, "original" | "rebuild" | "adapter"));
     let count: usize = args.get(2).map(|v| v.parse().unwrap()).unwrap_or(200_000);
     let budget: usize = args.get(3).map(|v| v.parse().unwrap()).unwrap_or(4096);

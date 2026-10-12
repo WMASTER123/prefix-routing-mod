@@ -569,4 +569,8 @@ impl Directory {
     pub fn retained_records(&self) -> usize {
         self.active.as_ref().map_or(0, |v| v.catalog.len())
     }
+
+    pub fn next_sequence(&self) -> Option<u64> {
+        self.active.as_ref().map(|v| v.next)
+    }
 }
