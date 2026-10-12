@@ -4,6 +4,8 @@
 
 交付位于[草稿 PR #14](https://github.com/WMASTER123/prefix-routing-mod/pull/14)，基于 PR #13；自审完成，另一成员独立审查待完成，不自动合并。
 
+f676fe1 的 Python 3.11/3.12 和原生索引 CI 已核验 success；两端在该 head 的最终检查通过，记录不自动覆盖后续提交。源码与 workspace 三份最新说明一致。
+
 本轮验证：Python（b4caf71）Windows 376+4 skips、Linux 380、mock 各 3；两端新制品/干净安装通过。Rust（7cef70c 内容）58 项通过，codec→原索引结果 [2,1,0]。失败、审查修正、开销和未过项见[本轮证据](../evidence/capture-recovery-wire-2026-10-12.md)；新提交 CI 以确切 head 验证，不继承旧成绩。
 
 固定 HUST 真实 ID/parent/AsyncLLM 方法新增 10 项检查，旧终态 25 项仍通过；关联须完整封口，提前 child 结束或中途失败不能结清。接收侧复用 ReferenceLedger，加有限事务日志、统一序号、丢 ACK 幂等、独立子进程提交前/后退出恢复；恢复后不直接新派发。规范化 HUST 原生 codec 合成四帧已进入原 KvBlockIndexer，命中结果 2→1→0，控制确认缺失/过期/断连返回 unknown；分区逻辑额度之和受全池约束。具体结果与阶段限制见[接线边界](planning/capture-recovery-wire-boundaries.md)。

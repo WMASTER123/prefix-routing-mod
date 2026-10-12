@@ -13,7 +13,7 @@
 | 旧终态方法 | 25 项全部 true | 既有四文件方法审计，未启动完整引擎 |
 | 原生 codec→原索引 | matched_blocks=[2,1,0]，确认前/过期/断连均 null | 固定 HUST KV Struct/msgspec 0.22.0 的合成四帧，真实 CPU Rust index；非 NPU KV |
 | 新 sdist/wheel/干净安装 | 两端 pass | b4caf71 Python 内容；MOD import_only、默认关闭入口不导入引擎 |
-| CI | 创建 PR 后检查确切 head | 不提前宣告未完成状态 |
+| CI | f676fe1 的 Python 3.11/3.12 与原生索引 success | [Python](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38269431990)、[索引](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38269431805)；后续提交不自动继承 |
 
 当前远端只有 CPU。HUST 工作树固定 `13f11da...` 且未修改；原 Router 两个源文件和宿主 lock 不变。实验 crate 添加固定 serde/serde_json，lock 仅增加依赖，没有升级原 dashmap/parking_lot 依赖。构建格式化产生的工作副本已逐文件比较，保存在可恢复 stash 后 fast-forward 到本地提交；没有覆盖不明修改。
 
