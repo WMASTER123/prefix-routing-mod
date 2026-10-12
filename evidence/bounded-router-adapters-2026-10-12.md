@@ -67,4 +67,6 @@ adapter 重建次数和保留量仍为 49/2447、198/1530。内存具有有界�
 
 新分配共享目录权限使原 build probe 的 tar metadata 比较误报；修正为固定归档解包后的精确文件集合/内容/符号链接比较，继续检查 Cargo/归档/RPM hash 与平台配套。新增 `preflight` 入口在新机器通过，无需重新完整编译；未修改系统或源目录权限。Git 推送先有连接失败，采用进程级 HTTP/1.1/OpenSSL 设置后成功，不改变仓库依赖或全局 Git 配置。
 
+代码 `ab42d61a0e113650d4972ebb60f03c011520be33`：修正后的[原生索引 CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38242718189) success，[Python 3.11/3.12 CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38242718191) 均 success；Linux aarch64 同提交 CPU 274 pass。后续文档提交不自动继承该 head 的 CI 记录。已完成代码和文档自审，[草稿 PR #11](https://github.com/WMASTER123/prefix-routing-mod/pull/11) 以 PR #10 分支为 base，等待另一成员独立审查，不自动合并。原生制品不随 Python wheel 自动交付。
+
 生产 M2 仍需 M7 wire/身份/控制面新鲜度接线、多分区总预算及更大拓扑性能验证。M3 仍需标准生命周期桥、可靠对账/留存/重启恢复。MOD 保持 import_only；NPU、策略收益、生产 ABI 冻结和独立人工审查未通过。

@@ -28,11 +28,12 @@ provider 回调必须本地、有界、无阻塞、不抛 panic；完整决策�
 
 先用 `bash tools/router_build_probe.sh preflight` 复核固定源文件集合/内容/链接与私有 SDK，再用 `build` 准入原版和执行原生二进制 HTTP probe。内容核查不将共享目录权限重映射误判为源码修改，其他归档/Cargo/RPM hash 守卫保留。该入口只接受已审计的项目私有工具链/归档/SDK，前置材料来源见本轮证据。不是新服务器的一键安装器。
 
-在项目 artifacts 下新建独立实验目录，从已校验原 tar 解包；应用前核对归档 SHA256 `eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f`。该固定提交部分源码是 CRLF，patch 是 LF：在非 Git 的独立副本使用进程级 `GIT_CEILING_DIRECTORIES` 阻止父仓库发现，`git -c core.autocrlf=true -C "$task_prototype" apply --check --whitespace=error <绝对 patch 路径>`，通过后同设置 apply；不改全局 Git 或原版源码。随后仅对 registry.rs、router.rs 运行 `rustfmt --edition 2021 --config newline_style=Unix`，不对 mod.rs 递归格式化子模块。本轮已核对复放输出与实际编译输入逐字节一致，新增/删除行数为规范化后的逻辑增量。本原型 patch 不应应用到原版准入目录或 HUST。把本目录两份 `.rs` 分别复制到 `src/routers/http/prefix_extension.rs`、`examples/prefix_extension_probe.rs`。共享已锁构建环境/target，运行：
+在项目 artifacts 下新建独立实验目录，从已校验原 tar 解包；应用前核对归档 SHA256 `eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f`。该固定提交部分源码是 CRLF，patch 是 LF：在非 Git 的独立副本使用进程级 `GIT_CEILING_DIRECTORIES` 阻止父仓库发现，`git -c core.autocrlf=true -C "$task_prototype" apply --check --whitespace=error <绝对 patch 路径>`，通过后同设置 apply；不改全局 Git 或原版源码。随后仅对 registry.rs、router.rs 运行 `rustfmt --edition 2021 --config newline_style=Unix`，不对 mod.rs 递归格式化子模块。本轮已核对复放输出与实际编译输入逐字节一致，新增/删除行数为规范化后的逻辑增量。本原型 patch 不应应用到原版准入目录或 HUST。把 helper `prefix_extension.rs` 复制到 `src/routers/http/prefix_extension.rs`，把两个 probe `.rs` 复制到 `examples/` 下各自同名文件。共享已锁构建环境/target，运行：
 
 ```bash
-cargo build --release --locked --example prefix_extension_probe --manifest-path "$task_prototype/Cargo.toml"
+cargo build --release --locked --example prefix_extension_probe --example stream_extension_probe --manifest-path "$task_prototype/Cargo.toml"
 python -m tools.router_extension_probe --binary "$task_target/release/examples/prefix_extension_probe" --output artifacts/router-admission-20261011/prototype-http-new
+python -m tools.router_stream_probe --binary "$task_target/release/examples/stream_extension_probe" --output artifacts/router-admission-20261011/prototype-stream-new
 ```
 
 `task_prototype` 和 `task_target` 是操作员核验过的本项目私有绝对路径，输出目录须新建。首次 example 会启用原锁中的 dev-dependency 图，离线 cache 不全可能失败；保留失败，再允许原锁下载，不改依赖。Rustfmt 同样安装在私有工具链，不改系统 Rust。
