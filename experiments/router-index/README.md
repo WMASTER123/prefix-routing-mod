@@ -15,6 +15,8 @@ cargo run --offline --locked --release --manifest-path experiments/router-index/
 
 实验直接编译固定 Router `91b65ee` 的 indexer.rs/types.rs，按 SHA256 守卫；不复制或修改索引算法。上游为 Apache-2.0，仓库根 LICENSE 保留相同许可。最小依赖版本与该候选锁一致。
 
+源码守卫只接受同一固定 Git blob 的 LF 与已审计归档的 CRLF 两种精确 hash；内容逐字归一化后相同，已在 GitHub 固定提交重新核实。任意其他源码修改仍拒绝。CI 初次下载 LF 触发旧 CRLF-only 守卫的失败已保留，不能通过关闭守卫或扩大版本范围解决。
+
 ```bash
 export ROUTER_SOURCE_DIR="$PWD/artifacts/router-admission-20261011/source"
 export CARGO_HOME="$PWD/artifacts/router-admission-20261011/toolchain/cargo"

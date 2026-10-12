@@ -5,8 +5,8 @@ set -euo pipefail
 
 task_stage=${1:-check}
 case "$task_stage" in
-  check|build) ;;
-  *) printf 'usage: bash tools/router_build_probe.sh [check|build]\n' >&2; exit 2 ;;
+  preflight|check|build) ;;
+  *) printf 'usage: bash tools/router_build_probe.sh [preflight|check|build]\n' >&2; exit 2 ;;
 esac
 task_repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 task_root="$task_repo/artifacts/router-admission-20261011"
@@ -20,15 +20,20 @@ task_rpm_hash=0c5eedb36f98e2961c97a0e84901535030a97ea1f3c5610bf789ba29bb329e40
 test "$(uname -m)" = aarch64
 grep -q '^ID="openEuler"$' /etc/os-release
 test "$(rpm -q openssl-libs)" = openssl-libs-3.0.12-52.oe2403sp3.aarch64
-for task_command in curl rpm rpm2archive tar sha256sum pkg-config gcc g++ cmake make perl timeout; do
+for task_command in curl rpm rpm2archive tar diff sha256sum pkg-config gcc g++ cmake make perl timeout; do
   command -v "$task_command" >/dev/null
 done
 test "$(sha256sum "$task_root/router-source.tar" | cut -d ' ' -f1)" = eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f
-tar --compare --file "$task_root/router-source.tar" --directory "$task_source"
+mkdir -p "$task_root/probes"
+task_run=$(mktemp -d "$task_root/probes/$task_stage.XXXXXX")
+mkdir "$task_run/reference"
+tar --extract --file "$task_root/router-source.tar" --directory "$task_run/reference"
+# Shared storage can change directory mode/ownership on reassignment. Verify
+# exact file contents, symlink targets and file set, not archive metadata.
+diff -qr "$task_run/reference" "$task_source" > "$task_run/source-compare.txt"
 test "$(sha256sum "$task_source/Cargo.toml" | cut -d ' ' -f1)" = 082883aba29f8ac912596325e2114a0e33d001bd23579084b05bd3c87faa1735
 test "$(sha256sum "$task_source/Cargo.lock" | cut -d ' ' -f1)" = 8675caa4ef6227d0f2cb273ac921e9dd0a6989cdad304b5600887a9795355156
 mkdir -p "$task_root/sdk-rpms" "$task_sdk" "$task_root/probes"
-task_run=$(mktemp -d "$task_root/probes/$task_stage.XXXXXX")
 
 if ! test -f "$task_rpm"; then
   curl --fail --silent --show-error --location --connect-timeout 10 --max-time 120 \
@@ -76,6 +81,11 @@ export GIT_CONFIG_VALUE_2=https://github.com/openai/harmony
     "$task_sdk/usr/lib64/libssl.so.3.0.12" \
     "$task_sdk/usr/lib64/libcrypto.so.3.0.12"
 } > "$task_run/preflight.txt"
+
+if test "$task_stage" = preflight; then
+  printf 'preflight=%s\n' "$task_run"
+  exit 0
+fi
 
 task_args=(check --lib)
 if test "$task_stage" = build; then
