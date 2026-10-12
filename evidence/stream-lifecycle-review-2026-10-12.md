@@ -18,7 +18,16 @@ Windows 当前代码：CPU 282 passed / 4 platform skips，integration 3 passed�
 
 `tools.lifecycle_trace_probe` 在 native 进程退出后将记录重放到既有 ReferenceLedger，校验事件身份、连续序号、时钟、重复投递、预算与未知保留。重放的预记账是合成输入；没有在线可靠投递、生产持久化或重启恢复。原 fixture 的中途合成 ENDED 清债与累计传输记录分开报告。
 
-完整 aarch64 宿主的流式 helper 新编译通过（10m11s，原 Cargo 锁/私有 SDK 保持）。包含新 lifecycle example 的最终构建和实际 HTTP 回归此时仍在运行；本段不预记通过，完成后追加实际结果及制品 hash。
+完整 aarch64 宿主的流式 helper 新编译通过（10m11s，原 Cargo 锁/私有 SDK 保持）；包含新 lifecycle example 的最终 release 构建通过（2m47s）。实际 HTTP stream 回归 8 次 POST、两种 load 分支通过；admission 的 default-off/准入/控制 fence/503/错误/drop/取消/并发回归通过，后端尝试数仍 26，未重发。两工具正常退出、owned group 无强制清理。
+
+标准记录 24 个已预记账尝试、46 条事件：现有账本重放接受且重复事件返回 duplicate；22 个已发送仍 unknown、2 个明确未发送释放，backend_confirmed=0。原 fixture 最后一批未决数为 8，因为前面分批用了明确合成 ENDED 清债；不能把 22 与 8 混为同一口径。
+
+最终 native binary SHA256：
+
+- stream：`a6b8c63521187f8c5f531e1ece152cfd78bdbb4f6af1d0023fcfe8cdff19f3e5`
+- admission：`9d688cfec6d8eac035986f96363ba3f0f2cd712653329136d358264a56db2739`
+
+代码 `d51be7a` 同步到服务器新分支后，Linux aarch64 CPU 286、integration 3、新 sdist/wheel 和源码外干净安装通过。直接在同步后的共享 helper 上再次 cargo fmt/checks 10 项通过；与实际编译 helper、lifecycle helper 和 admission example 的内容比较仅归一化 CRLF 后一致。完整原生制品独立于 Python wheel 交付，MOD 激活仍未实现。本提交 CI 尚待创建草稿 PR 后执行，不继承旧 head 成绩。
 
 ## 固定 HUST 源码审计
 
