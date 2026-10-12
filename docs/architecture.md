@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-12 终态增量：先区分前端结束、核心逻辑结束与资源释放。新增仅在 tools 的有界 observer/在线消费者 CPU 原型，不增加生产服务、不修改 HUST 或 MOD 入口；真实关联、跨进程可靠投递和持久化仍未实现。见[范围评估](planning/terminal-observer-scope.md)。
+
 2026-10-12 审查收尾：流式空块让出/idle 回归和有限标准生命周期记录在独立 CPU 实验中补齐，源文件与宿主 helper 共用；原生 helper CI 与完整 Router 人工验证分别记录。可靠终态和在线投递仍是 M3/M5/M7 接线门槛，见[终态来源审计](planning/backend-terminal-evidence.md)，不凭 HTTP `[DONE]` 或前端 finish_reason 结算。
 
 2026-10-12 资源适配增量：[单分区目录与流式实验](decisions/2026-10-12-bounded-router-adapters.md)继续调用原 Router 索引/HTTP，不新增在线服务。目录 owner 通过写锁处理批次、恢复和限额重建，查询仅持短读锁；适配输入必须已经通过 M7 身份/协议检查。旧 publisher 失效只撤销 M2 信任，不清除 M3 请求负债。CPU 原型的受限能力不能代替生产多分区、可靠终态及 MOD 启停。
