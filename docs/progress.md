@@ -2,6 +2,8 @@
 
 ## 当前执行：关联封口、事务恢复与 KV wire CPU 接线（2026-10-12）
 
+本轮验证：Python（b4caf71）Windows 376+4 skips、Linux 380、mock 各 3；两端新制品/干净安装通过。Rust（7cef70c 内容）58 项通过，codec→原索引结果 [2,1,0]。失败、审查修正、开销和未过项见[本轮证据](../evidence/capture-recovery-wire-2026-10-12.md)；新提交 CI 以确切 head 验证，不继承旧成绩。
+
 固定 HUST 真实 ID/parent/AsyncLLM 方法新增 10 项检查，旧终态 25 项仍通过；关联须完整封口，提前 child 结束或中途失败不能结清。接收侧复用 ReferenceLedger，加有限事务日志、统一序号、丢 ACK 幂等、独立子进程提交前/后退出恢复；恢复后不直接新派发。规范化 HUST 原生 codec 合成四帧已进入原 KvBlockIndexer，命中结果 2→1→0，控制确认缺失/过期/断连返回 unknown；分区逻辑额度之和受全池约束。具体结果与阶段限制见[接线边界](planning/capture-recovery-wire-boundaries.md)。
 
 开销诊断发现逐请求三次 FULL SQLite 事务的中位约 11.3 ms；三次批量事务处理 20 个合成 family 共约 28.85 ms，只是并发摊销，不能当个体请求延迟或 NPU 收益。生产持久化方案未选择，不能照搬实验存储进入热路径。真实 HTTP 多 prompt 关联、原生 M5 跨进程接收、服务时钟交接/重新观测、长期 GC、真实 M7→M2 订阅和 MOD 启停仍未完成；不冻结生产 ABI，暂不分派人员。下一项将这些候选接缝收敛为可逆适配与受控控制通道，真实后端时提前通知 1 张 NPU。
