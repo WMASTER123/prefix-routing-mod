@@ -2,7 +2,7 @@
 
 ## 当前执行：审查修复与标准生命周期记录（2026-10-12）
 
-在 `codex/stream-review-lifecycle` 修复持续空块绕过 idle 的遗漏、Windows 大响应 fixture 的连接 reset 不稳定，并统一流式 ADR 与直接拉取实现。新原生反例在旧代码失败，新共享 helper 的 10 项测试通过，进入独立 CI。代码 d51be7a：Windows CPU 282+4 skips、Linux aarch64 CPU 286、mock 各 3、两端新制品/干净安装通过。完整宿主最终 example 构建及真实 HTTP 流式/default-off/准入回归通过；24 尝试/46 条有限标准事件在旧账本重放后保留 22 个未知、释放 2 个未发送，未认定后端结束。结果与局限见[本轮证据](../evidence/stream-lifecycle-review-2026-10-12.md)；本提交 CI 和另一成员审查尚待完成，不自动合并。
+在 `codex/stream-review-lifecycle` 修复持续空块绕过 idle 的遗漏、Windows 大响应 fixture 的连接 reset 不稳定，并统一流式 ADR 与直接拉取实现。新原生反例在旧代码失败，新共享 helper 的 10 项测试通过，进入独立 CI。代码 d51be7a：Windows CPU 282+4 skips、Linux aarch64 CPU 286、mock 各 3、两端新制品/干净安装通过。完整宿主最终 example 构建及真实 HTTP 流式/default-off/准入回归通过；24 尝试/46 条有限标准事件在旧账本重放后保留 22 个未知、释放 2 个未发送，未认定后端结束。记录提交 2f2b737 的 Python 3.11/3.12 与原生 helper CI success；后续提交不自动继承成绩。结果与局限见[本轮证据](../evidence/stream-lifecycle-review-2026-10-12.md)；[草稿 PR #12](https://github.com/WMASTER123/prefix-routing-mod/pull/12) 待另一成员审查，不自动合并。
 
 M5 回调已有有限 component-v0.1 记录与旧账本 oracle 的重放接线；它不是生产可靠在线投递。固定 HUST 源码审计确认 `[DONE]`、前端 finished 和 abort send 不够证明核心结束，finished ID 的导出依赖内部 DP balancing。下一项先核实正常/取消可靠终态和投递/恢复接缝，再补 M7→M2 wire/新鲜度及多分区总预算，随后冻结生产接口与交付。详见[终态审计](planning/backend-terminal-evidence.md)。目前 CPU 够用，真实 G2/G3 到需要时通知 1 张 NPU；双 TP=1 后续 2 张。MOD import_only，无性能收益声明，暂不分派人员。
 

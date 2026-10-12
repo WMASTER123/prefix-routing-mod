@@ -27,7 +27,9 @@ Windows 当前代码：CPU 282 passed / 4 platform skips，integration 3 passed�
 - stream：`a6b8c63521187f8c5f531e1ece152cfd78bdbb4f6af1d0023fcfe8cdff19f3e5`
 - admission：`9d688cfec6d8eac035986f96363ba3f0f2cd712653329136d358264a56db2739`
 
-代码 `d51be7a` 同步到服务器新分支后，Linux aarch64 CPU 286、integration 3、新 sdist/wheel 和源码外干净安装通过。直接在同步后的共享 helper 上再次 cargo fmt/checks 10 项通过；与实际编译 helper、lifecycle helper 和 admission example 的内容比较仅归一化 CRLF 后一致。完整原生制品独立于 Python wheel 交付，MOD 激活仍未实现。本提交 CI 尚待创建草稿 PR 后执行，不继承旧 head 成绩。
+代码 `d51be7a` 同步到服务器新分支后，Linux aarch64 CPU 286、integration 3、新 sdist/wheel 和源码外干净安装通过。直接在同步后的共享 helper 上再次 cargo fmt/checks 10 项通过；与实际编译 helper、lifecycle helper 和 admission example 的内容比较仅归一化 CRLF 后一致。完整原生制品独立于 Python wheel 交付，MOD 激活仍未实现。
+
+记录提交 `2f2b73706d490951cbd0dd293d5f36b55ae2605a` 的 [Python 3.11/3.12 CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38248978808) 和[原生共享 helper CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38248978845) 均 success；同 head Windows CPU 282+4 skips、mock 3 复测通过。[草稿 PR #12](https://github.com/WMASTER123/prefix-routing-mod/pull/12) 以 PR #11 分支为 base，等待人工审查，不自动合并。每个后续 head 按其自身检查记录判断，不继承此成绩。
 
 ## 固定 HUST 源码审计
 
@@ -47,4 +49,4 @@ Windows 当前代码：CPU 282 passed / 4 platform skips，integration 3 passed�
 
 ## 尚未通过
 
-M3/M5 可靠在线投递、正常/取消确认、留存和重启恢复；M7→M2 wire/新鲜度、多分区总预算；HTTP/2/未消费连接期限和请求/非流式预算；真实 NPU/图/持续运行、两副本容量及生产 ABI/交付冻结。已自检，独立成员审查和本提交 CI 待完成，不自动合并。后续先核实可靠终态观测的可维护接缝，CPU 当前够用；真机验证需要 1 张，两个 TP=1 后续需要 2 张。
+M3/M5 可靠在线投递、正常/取消确认、留存和重启恢复；M7→M2 wire/新鲜度、多分区总预算；HTTP/2/未消费连接期限和请求/非流式预算；真实 NPU/图/持续运行、两副本容量及生产 ABI/交付冻结。已自检，独立成员审查待完成，不自动合并。后续先核实可靠终态观测的可维护接缝，CPU 当前够用；真机验证需要 1 张，两个 TP=1 后续需要 2 张。
