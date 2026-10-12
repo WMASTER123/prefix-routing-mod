@@ -1,5 +1,18 @@
 # 原索引持续更替审计
 
+2026-10-12 增加 `adapter` 模式及目录故障/并发测试，直接调用原 `KvBlockIndexer`。`src/directory.rs` 是受限 CPU 可行性 adapter：完整快照加连续增量、恢复任务/连接代次隔离、身份匹配、缺失父链/别名拒绝、clear 和预算降级。不是第二套匹配索引，也未接实际 HUST wire。
+
+```bash
+cargo test --offline --locked --release --manifest-path experiments/router-index/Cargo.toml
+cargo run --offline --locked --release --manifest-path experiments/router-index/Cargo.toml -- adapter 800000 4096
+```
+
+普通事件批次按有界操作数做增量维护，不复制整个目录或遍历全树。视图在 owner 写锁内变化；读者返回匹配值，不持有旧索引 Arc。到历史限额时删除不再需要的历史元数据，保留所有驻留项和必要祖先后重建。恢复期间不开放旧视图；完整排他水位和连续覆盖满足后才安装。旧任务不能撤销或安装新任务的目录。
+
+仅一个分区、group 0/device/DP 0；身份来自调用者已验证的摘要。预算涵盖记录、单批操作、缓冲批次数/字节、查询长度、父链深度与重建 overlap 的逻辑计费；批次暂态最多记录上限加单批操作数，最多两个索引对象。实验 parent_depth 仅接受 1–1024，超限明确退出精确模式，避免原树销毁深度无界；不是已经验证任意模型最大上下文。上限是实验配置，不是生产默认或 allocator 的硬 RSS 保证。生产还需注册分区总预算、解码前限制、控制面新鲜度及重建的长前缀/大工作集延迟实验。相同位置但不同引擎锚点的别名拒绝并降级，不让原索引默默混合它们。
+
+新增 `Native index adapter checks` 对上述固定原文件做 hash 守卫、Rust 格式/原生语义及短更替检查；独立于 Python CI。aarch64 HTTP 原生编译和 NPU 仍手动执行，不能从这个 CI 推导整套 Router 支持。
+
 实验直接编译固定 Router `91b65ee` 的 indexer.rs/types.rs，按 SHA256 守卫；不复制或修改索引算法。上游为 Apache-2.0，仓库根 LICENSE 保留相同许可。最小依赖版本与该候选锁一致。
 
 ```bash

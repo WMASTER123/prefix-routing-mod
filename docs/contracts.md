@@ -1,5 +1,11 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-12 增量实验见[目录/流式适配 ADR](decisions/2026-10-12-bounded-router-adapters.md)。Rust 目录实验使用 `Binding`、不可复用的恢复 `Ticket`、规范化 `Block/Batch` 与排他快照/重放水位；这些是实验输入，不替代 component-v0.1，也不是已冻结的 HUST wire 或生产 ABI。一个分区只支持 worker 实例/publisher/完整身份/block_size、group 0/device/DP 0。`lookup=None` 表示未可信或身份不符，`Some(0)` 才是已观测未命中。
+
+目录事件在 owner 写锁内处理，查询仅持读锁，不暴露索引 Arc；失败撤销整个精确视图，不能开放半批结果。普通增量不复制整个目录；资源到限额时完整重建必要父链。父链缺失、同位置哈希别名、序号缺口及超预算均退出可信模式。M7 仍负责解码前 payload 上限、完整身份核验、控制面新鲜度及连接代次；没有这些证据，不能把本实验接口直接接生产。
+
+可选流式实验的本地 EOF/error/drop 继续属于传输证据，不能产生 backend ENDED。按消费进度拉取及释放 HTTP stream 不等于推理已取消；M3 保留发送后未知负债。流式参数必须显式选择，实验数值不作为生产默认。标准 `LifecycleEvent` 桥、可靠对账、进程重启恢复及 MOD 启停仍待实现。
+
 基础在线对象现已有[标准库参考类型和端口](../src/prefix_routing_mod/contracts.py)、[版本化行为样例](../tests/fixtures/component-v0.1.json)及 CPU 组合测试，详见下方 v0.1。生产语言/ABI、事件索引绑定及 MOD 激活仍待宿主准入和人工评审。下表是最低语义，不代表所有数据源已存在。未知使用 null / unknown，不用 0 伪造测量；token 数、block 数、字节数不能混用。进程内耗时用单调时钟；跨主机时间不直接相减。
 
 | 对象 / 唯一写入者 | 必需语义 | 消费者必须遵守 |

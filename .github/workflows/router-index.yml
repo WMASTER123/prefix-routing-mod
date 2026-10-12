@@ -1,0 +1,40 @@
+name: Native index adapter checks
+on:
+  pull_request:
+    paths:
+      - experiments/router-index/**
+      - .github/workflows/router-index.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: router-index-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ROUTER_SOURCE_DIR: ${{ github.workspace }}/artifacts/router-index-ci/input
+      CARGO_TARGET_DIR: ${{ github.workspace }}/artifacts/router-index-ci/target
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the tested Rust toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+      - name: Fetch only the two hash-guarded upstream source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROUTER_SOURCE_DIR/src/kv_index"
+          for module in types indexer; do
+            curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+              "https://raw.githubusercontent.com/vllm-project/router/91b65ee4bdfbe98863a32a2205dced5dbb249ffe/src/kv_index/$module.rs" \
+              --output "$ROUTER_SOURCE_DIR/src/kv_index/$module.rs"
+          done
+          # build.rs verifies the exact reviewed bytes before including them.
+      - name: Format and native semantic checks
+        run: |
+          cargo +1.99.0 fmt --manifest-path experiments/router-index/Cargo.toml --check
+          cargo +1.99.0 test --locked --release --manifest-path experiments/router-index/Cargo.toml
+      - name: Bounded synthetic churn smoke
+        run: cargo +1.99.0 run --locked --release --manifest-path experiments/router-index/Cargo.toml -- adapter 20000 512

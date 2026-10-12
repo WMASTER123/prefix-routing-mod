@@ -18,7 +18,7 @@ def test_router_prototype_patch_touches_only_three_declared_host_files():
     assert {after for before, after in changed if before == after} == expected
     assert (
         len(re.findall(r"^\+\s+guard\.transport_failed\(\);$", patch, re.MULTILINE))
-        == 2
+        == 3
     )
 
 
