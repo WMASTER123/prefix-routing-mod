@@ -2,7 +2,7 @@
 
 ## 当前执行：终态来源验证与进程内在线原型（2026-10-12）
 
-固定 HUST 四文件完整 hash 守卫后，25 项源码方法检查在 Windows CPU 通过；11 项工具守卫与 24 项 journal/在线参考账本回归新增。普通取消没有逐请求确认，stop string 删除映射早于核心取消，核心清理不等于 blocks/设备全部释放。已获用户同意做小范围 CPU observer 评估，但本轮没有安装引擎 hook。Windows 全量 CPU 317+4 skips、mock 3 通过；远端及制品验收结果另记证据，不提前继承。
+固定 HUST 四文件完整 hash 守卫后，25 项源码方法检查在 Windows/Linux aarch64 CPU 通过；11 项工具守卫与 24 项 journal/在线参考账本回归新增。普通取消没有逐请求确认，stop string 删除映射早于核心取消，核心清理不等于 blocks/设备全部释放。已获用户同意做小范围 CPU observer 评估，但本轮没有安装引擎 hook。代码 801b628：Windows 全量 CPU 317+4 skips、Linux 321、mock 各 3、两端新制品及干净安装通过；开销初测、首次构建下载失败及局限见[本轮证据](../evidence/terminal-observer-cpu-2026-10-12.md)。
 
 在线原型不再仅做事后 transcript 重放，但只在单进程连接旧参考账本；consumer 重建保留账本，不代表 Router 整进程恢复。真实关联封口、跨进程投递和长期留存仍未完成，M7→M2 wire/新鲜度/总预算尚未新增实现。[范围与成本](planning/terminal-observer-scope.md)明确接入与否决线。接下来先收敛这些接线，之后冻结首版生产接口。CPU 够用，需 1 张 NPU 时提前通知；MOD import_only 保持。
 
