@@ -1,5 +1,7 @@
 # R1：固定 Router 的窄幅扩展范围评估
 
+2026-10-12 审查收尾：修正空块 idle 漏洞，新增共享 helper 的原生 CI；admission example 增加有界标准传输记录及现有账本重放。宿主 patch 仍是原三处文件，新增实验 helper 的维护成本另计。HTTP 终态不能直接对账的源码原因与生产退出条件见[固定 HUST 终态审计](backend-terminal-evidence.md)。原型尚无可靠在线投递、后台结算或重启恢复。
+
 2026-10-12 后续：[有界适配证据](../../evidence/bounded-router-adapters-2026-10-12.md)补上 E5 单分区规范化输入的恢复/父链/预算与并发 CPU 原型，继续调用原索引。E6 评估显式 pull 选项，仍复用现有 reqwest/HTTP Body；patch 仍三处宿主文件，逻辑增量 202/3。下方 147/3 是上一轮记录。是否通过以新证据的最终原生结果为准；多分区、真实 wire、新鲜度、请求/非流式总预算和标准可靠生命周期仍待实现，不因一个受限原型提前冻结生产交付。
 
 2026-10-12 更新。用户已选择先评估窄幅 Router 扩展；不是授权大面积 fork，也不是修改 HUST 推理引擎。候选 `91b65ee4bdfbe98863a32a2205dced5dbb249ffe` 的原提交完整构建及 CPU/mock 转发通过；另在独立实验副本评估接口接缝，不修改原版准入源码或 HUST。状态及局限见[最新证据](../../evidence/router-cpu-admission-2026-10-12.md)。

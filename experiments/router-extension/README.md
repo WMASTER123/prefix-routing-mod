@@ -1,5 +1,9 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-12 审查收尾：空数据块被过滤，每次 poll 处理一个空块后让出执行权，持续空块不能绕过 idle。已有非空数据优先交付，允许慢消费者暂停后读取缓冲数据；idle 只在消费时检查，完全停止消费时的期限由宿主/下游机制另行验收。`checks/` 直接包含同一 helper 和 `lifecycle_bridge.rs`，使用虚拟时钟运行回归并进入 CI，不代替完整 Router、HTTP/2 或 NPU 验收。
+
+`prefix_extension_probe` 的 Lease 由实验 `TracedLease` 包装，生成 component-v0.1 的有界传输记录；工具在进程退出后重放到既有参考账本并校验幂等。每尝试最多两个事件，不保留逐 token 事件或请求内容，fixture 最多 128 尝试。全记录中的未知数与最后一批 fixture 未决数分别报告，因为原 fixture 中间使用合成 ENDED 清债；记录不伪装真实后端确认。生产可靠投递/留存/重启恢复仍待实现，范围见[终态审计](../../docs/planning/backend-terminal-evidence.md)。
+
 2026-10-12 增加可选 `stream_limits` 与 `DirectStream` CPU 实验。未安装 provider 或未选择该选项时仍走原生路径；选择后从同一 reqwest response 按客户端消费进度拉取，无中间队列或 detached producer。drop/error/超限释放本地 source，生成原有传输证据，不认定 backend ENDED。新 example 为 `stream_extension_probe.rs`，启动工具为 `tools/router_stream_probe.py`。
 
 当前 patch 仍涉及三个原有文件，逻辑增量 202 新增/3 删除行；新增 helper/两个 example 独立计入本项目维护成本。队列消除不代表整个 HTTP 栈内存有硬上限：reqwest/Hyper/socket 缓冲、非流式响应、请求入口和并发准入仍需分别验收。每 chunk/累计响应/idle 限制是显式实验配置，不作为生产默认。
@@ -29,6 +33,8 @@ provider 回调必须本地、有界、无阻塞、不抛 panic；完整决策�
 先用 `bash tools/router_build_probe.sh preflight` 复核固定源文件集合/内容/链接与私有 SDK，再用 `build` 准入原版和执行原生二进制 HTTP probe。内容核查不将共享目录权限重映射误判为源码修改，其他归档/Cargo/RPM hash 守卫保留。该入口只接受已审计的项目私有工具链/归档/SDK，前置材料来源见本轮证据。不是新服务器的一键安装器。
 
 在项目 artifacts 下新建独立实验目录，从已校验原 tar 解包；应用前核对归档 SHA256 `eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f`。该固定提交部分源码是 CRLF，patch 是 LF：在非 Git 的独立副本使用进程级 `GIT_CEILING_DIRECTORIES` 阻止父仓库发现，`git -c core.autocrlf=true -C "$task_prototype" apply --check --whitespace=error <绝对 patch 路径>`，通过后同设置 apply；不改全局 Git 或原版源码。随后仅对 registry.rs、router.rs 运行 `rustfmt --edition 2021 --config newline_style=Unix`，不对 mod.rs 递归格式化子模块。本轮已核对复放输出与实际编译输入逐字节一致，新增/删除行数为规范化后的逻辑增量。本原型 patch 不应应用到原版准入目录或 HUST。把 helper `prefix_extension.rs` 复制到 `src/routers/http/prefix_extension.rs`，把两个 probe `.rs` 复制到 `examples/` 下各自同名文件。共享已锁构建环境/target，运行：
+
+本轮还需将 `lifecycle_bridge.rs` 复制为实验宿主的 `examples/lifecycle_bridge.rs`，并使用更新后的 admission example；它不修改宿主模块注册或引擎。原生 helper 快速检查可独立执行 `cargo test --locked --manifest-path experiments/router-extension/checks/Cargo.toml`。
 
 ```bash
 cargo build --release --locked --example prefix_extension_probe --example stream_extension_probe --manifest-path "$task_prototype/Cargo.toml"

@@ -2,6 +2,9 @@
 //! Uses the actual patched Router library and loopback HTTP backends. Tokens,
 //! instance/control fences and reconciliation proof here are synthetic only.
 use axum::{body::to_bytes, response::Response};
+#[path = "lifecycle_bridge.rs"]
+mod lifecycle_bridge;
+use lifecycle_bridge::{LifecycleTrace, RouterClock, TracedLease};
 use std::{
     any::Any,
     sync::{Arc, Mutex},
@@ -11,6 +14,7 @@ use vllm_router_rs::{
     config::types::{PolicyConfig, RouterConfig, RoutingMode},
     protocols::spec::CompletionRequest,
     routers::http::{
+        prefix_extension,
         prefix_extension::{CloseEvidence, Features, HttpExtension, Lease, Proposal},
         router::Router,
     },
@@ -56,11 +60,19 @@ struct State {
     control: u64,
     reject_send: bool,
     events: Vec<CloseEvidence>,
+    traces: Vec<Arc<Mutex<LifecycleTrace>>>,
 }
 
 #[derive(Debug, Default)]
 struct FixtureProvider {
     state: Arc<Mutex<State>>,
+    clock: Arc<RouterClock>,
+}
+
+impl Default for RouterClock {
+    fn default() -> Self {
+        Self::new("fixture-router-session".into()).unwrap()
+    }
 }
 #[derive(Debug)]
 struct FixtureLease {
@@ -168,9 +180,21 @@ impl HttpExtension for FixtureProvider {
         if features.model == "fixture-config-change" {
             state.control += 1;
         }
-        Ok(Box::new(FixtureLease {
-            state: self.state.clone(),
-            control: features.control,
+        let trace = Arc::new(Mutex::new(LifecycleTrace::new(
+            format!("request-{}", features.request_id),
+            format!("attempt-{}", features.request_id),
+            "fixture-target".into(),
+            "fixture-instance-1".into(),
+            self.clock.clone(),
+        )?));
+        assert!(state.traces.len() < 128, "fixture trace budget");
+        state.traces.push(trace.clone());
+        Ok(Box::new(TracedLease {
+            inner: Box::new(FixtureLease {
+                state: self.state.clone(),
+                control: features.control,
+            }),
+            trace,
         }))
     }
 }
@@ -333,5 +357,16 @@ async fn main() {
     let state = provider.state.lock().unwrap();
     assert_eq!(state.outstanding, 8);
     assert_eq!(state.reserve, state.closed);
+    let traces: Vec<_> = state
+        .traces
+        .iter()
+        .map(|trace| trace.lock().unwrap().snapshot().unwrap())
+        .collect();
+    println!(
+        "{}",
+        serde_json::json!({
+            "lifecycle_schema": "component-v0.1", "traces": traces,
+        })
+    );
     println!("{{\"status\":\"pass\",\"prepare\":{},\"select\":{},\"reserve\":{},\"sent\":{},\"headers\":{},\"closed\":{},\"not_sent\":{},\"unresolved_fixture_debt\":{},\"checks\":[\"default_off\",\"install_once\",\"prepared_tokens\",\"stale_or_foreign_target\",\"reserve_rejection\",\"before_send_control_fence\",\"http_eof_is_unknown\",\"503_no_resend\",\"body_drop\",\"future_cancel\",\"explicit_fallback\",\"bounded_debt\",\"concurrent_reservation\"]}}", state.prepare, state.select, state.reserve, state.sent, state.headers, state.closed, state.not_sent, state.outstanding);
 }

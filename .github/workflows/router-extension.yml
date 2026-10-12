@@ -1,0 +1,24 @@
+name: Native HTTP extension helper checks
+on:
+  pull_request:
+    paths:
+      - experiments/router-extension/**
+      - .github/workflows/router-extension.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: router-extension-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate-helper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the tested Rust toolchain
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+      - name: Check shared helper and deterministic transport regressions
+        run: |
+          cargo +1.99.0 fmt --manifest-path experiments/router-extension/checks/Cargo.toml --check
+          cargo +1.99.0 test --locked --manifest-path experiments/router-extension/checks/Cargo.toml

@@ -132,6 +132,18 @@ impl futures_util::Stream for DirectStream {
         }
         match self.inner.as_mut().unwrap().as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
+                if chunk.is_empty() {
+                    // Empty frames are not progress. Check the deadline even
+                    // when the source is always ready, and yield after one
+                    // frame so a consumer cannot spin inside this poll.
+                    if self.timer.deadline() <= tokio::time::Instant::now()
+                        || self.timer.as_mut().poll(cx).is_ready()
+                    {
+                        return self.error("stream_idle_limit");
+                    }
+                    cx.waker().wake_by_ref();
+                    return Poll::Pending;
+                }
                 let Some(total) = self.bytes.checked_add(chunk.len()) else {
                     return self.error("stream_size_limit");
                 };
@@ -139,10 +151,8 @@ impl futures_util::Stream for DirectStream {
                     return self.error("stream_size_limit");
                 }
                 self.bytes = total;
-                if !chunk.is_empty() {
-                    let deadline = tokio::time::Instant::now() + self.limits.idle;
-                    self.timer.as_mut().reset(deadline);
-                }
+                let deadline = tokio::time::Instant::now() + self.limits.idle;
+                self.timer.as_mut().reset(deadline);
                 Poll::Ready(Some(Ok(chunk)))
             }
             Poll::Ready(Some(Err(_))) => self.error("upstream_stream_error"),
