@@ -61,6 +61,16 @@ def cached_tokens(usage):
 
 def run(args, output, report):
     report["interface"] = inspect_backend(PROFILE)
+    report["model_assets_sha256"] = {
+        name: hashlib.sha256((args.model / name).read_bytes()).hexdigest()
+        for name in (
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "chat_template.jinja",
+        )
+        if (args.model / name).is_file()
+    }
     candidate = json.loads(
         (
             Path(__file__).resolve().parents[1] / "runtime/candidates/hust-cedb477.json"

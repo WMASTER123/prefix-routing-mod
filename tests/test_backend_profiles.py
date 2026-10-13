@@ -1,7 +1,6 @@
 import hashlib
 import importlib.metadata as metadata
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
@@ -55,6 +54,7 @@ def test_interface_check_cannot_promote_runtime_or_recovery(tmp_path, monkeypatc
     assert report["interface_verified"]
     assert not report["runtime_verified"] and not report["routing_ready"]
     assert not report["full_recovery_verified"]
+    assert not report["source_provenance_verified"]
 
 
 @pytest.mark.parametrize("failure", ["missing", "version", "mixed", "bytes", "escape"])
@@ -69,15 +69,37 @@ def test_reject_unqualified_installation(tmp_path, monkeypatch, failure):
     elif failure == "bytes":
         (tmp_path / profile.source_hashes[0][0]).write_bytes(b"changed")
     else:
-        original = distribution
+        # A checked relative file can still escape through a symlink. Use a
+        # path-resolution fixture so this counterexample works on Windows too.
+        original = profiles.Path.resolve
 
-        def distribution(name):
-            dist = original(name)
-            dist.locate_file = lambda path: tmp_path if "/" not in path else Path("/")
-            return dist
+        def redirected(path, *args, **kwargs):
+            if path.name == "kv_events.py":
+                return tmp_path.parent
+            return original(path, *args, **kwargs)
+
+        monkeypatch.setattr(profiles.Path, "resolve", redirected)
 
     with pytest.raises((OSError, RuntimeError)):
         profiles.inspect_backend(NEW, distribution=distribution)
+
+
+def test_editable_source_lookup_does_not_import_engine(tmp_path, monkeypatch):
+    _, _, original = fake_install(tmp_path, monkeypatch)
+
+    def distribution(name):
+        dist = original(name)
+        dist.locate_file = lambda path: tmp_path / "site-packages" / path
+        return dist
+
+    monkeypatch.setattr(
+        profiles.importlib.util,
+        "find_spec",
+        lambda name: NS(origin=str(tmp_path / name / "__init__.py")),
+    )
+    assert profiles.inspect_backend(NEW, distribution=distribution)[
+        "interface_verified"
+    ]
 
 
 def test_backend_doctor_missing_installation_is_structured_error(monkeypatch, capsys):

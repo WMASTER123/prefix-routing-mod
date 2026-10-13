@@ -6,6 +6,7 @@ configuration, instance identity and NPU qualification are separate checks.
 
 import hashlib
 import importlib.metadata as metadata
+import importlib.util
 import json
 from dataclasses import dataclass
 from functools import lru_cache
@@ -88,8 +89,16 @@ def inspect_backend(profile_id: str, *, distribution=None) -> dict:
         ):
             raise ValueError("Invalid profile interface path")
         dist = installed["vllm" if part.parts[0] == "vllm" else ascend_name]
-        root = Path(dist.locate_file(part.parts[0])).resolve(strict=True)
-        path = Path(dist.locate_file(relative)).resolve(strict=True)
+        root = Path(dist.locate_file(part.parts[0]))
+        if not root.is_dir():
+            # Editable installs can keep code outside site-packages. Finding a
+            # top-level spec does not execute the engine module or its parents.
+            spec = importlib.util.find_spec(part.parts[0])
+            if spec is None or not spec.origin:
+                raise RuntimeError("Backend module location is missing")
+            root = Path(spec.origin).parent
+        root = root.resolve(strict=True)
+        path = root.joinpath(*part.parts[1:]).resolve(strict=True)
         if not path.is_relative_to(root):
             raise RuntimeError("Backend interface escapes installed module")
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
@@ -105,6 +114,7 @@ def inspect_backend(profile_id: str, *, distribution=None) -> dict:
         "native_token_snapshot": profile.native_token_snapshot,
         "publisher_hook_available": profile.publisher_hook_available,
         "terminal_observer_available": profile.terminal_observer_available,
+        "source_provenance_verified": False,
         "runtime_verified": False,
         "full_recovery_verified": False,
         "routing_ready": False,
