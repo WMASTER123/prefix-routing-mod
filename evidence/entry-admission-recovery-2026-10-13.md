@@ -32,6 +32,8 @@
 
 构建使用原 Router 91b65ee、原 Cargo.lock SHA256 8675caa4ef6227d0f2cb273ac921e9dd0a6989cdad304b5600887a9795355156、私有 Rust 1.99.0 / OpenSSL SDK；没有改依赖掩盖问题。工具和原生测试进入既有 CPU/helper CI，不将手动固定 HUST 方法执行冒称为 GitHub CI。
 
+收尾 9fe176a 已在两端同步且工作树干净。最终 patch 去除无关提示后再次从原归档复放，三个宿主文件经同样 rustfmt 后与实际编译输入逐字节一致；相对固定上游为 224 新增/3 删除行（registry 19/1、mod 1/0、router 204/2），比前阶段多 22 行，新增 helper/测试维护量另计，不能仅用 patch 行数代表总成本。9fe176a 的 [CPU CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38361057713) 和 [helper CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38361057798) 均按 headSha 核验 completed/success；本段为收尾证据补记，之后提交仍须单独查 CI。
+
 ## 自审修正与限制
 
 - 普通额度/旧决策拒绝此前会把接收 owner 一并置故障；修为提交前的 ReservationRejected 回滚内存候选并保留接收能力，磁盘/生命周期错误仍 fail closed。新增拒绝后继续接收原请求 SEND 的反例。
