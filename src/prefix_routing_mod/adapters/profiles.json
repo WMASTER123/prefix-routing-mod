@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "hust-legacy-publisher-v1": {
+      "core_commit": "13f11da44455d2f85f00f810a04e1bd2eaf30ba6",
+      "ascend_commit": "3a61053d8b4133eae7c468c1567648048750be21",
+      "packages": {
+        "vllm": "0.23.1.post1.dev733+g13f11da44.empty",
+        "vllm-ascend-hust": "0.19.1.post1.dev563+g3a61053d"
+      },
+      "source_hashes": {
+        "vllm/distributed/kv_events.py": "9eca5310ada1d90c4740c1cec06fbdb18aff65fc9d2abb536098fcbd0ddf7d14"
+      },
+      "wire_protocol": "opt-in-epoch-v1",
+      "native_replay": "structured-v0",
+      "cache_spec_kinds": [null, "FullAttentionSpec"],
+      "extra_event_fields": [],
+      "hash_bytes": null,
+      "block_size": null,
+      "native_epoch": true,
+      "native_token_snapshot": false,
+      "publisher_hook_available": true,
+      "terminal_observer_available": false
+    },
+    "hust-cedb477-native-v1": {
+      "core_commit": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
+      "ascend_commit": "b47795c63a8e63e7aed4d311f951428d94e045ab",
+      "packages": {
+        "vllm": "0.30.0+empty",
+        "vllm-ascend": "0.25.1rc2.dev766+hust.20260903.4.gb47795c63"
+      },
+      "source_hashes": {
+        "vllm/distributed/kv_events.py": "de08f01e8736881560256c350a3b6418999dd4aa30f9c6ec9159527f7ed6899a",
+        "vllm/v1/core/kv_cache_utils.py": "2666c9f113584e52e7521058efd2c0d9598544559dc942d3a3da87001a3fedf2",
+        "vllm/utils/hashing.py": "89b4bd2bd246a5bfdcf00d766ea38a8182376aecfd6b6b7d5c47d96b1559243e",
+        "vllm/tokenizers/registry.py": "077f11649db9c6e086eeb60f9dd81ed5667cadd83a29e66a0870c1ed5b1680a5",
+        "vllm_ascend/worker/worker.py": "23097be63048125e23d5fe7e7fcd23d7d22040e8728995cb137cf5490b63c53e",
+        "vllm_ascend/utils.py": "bd7900d551ac4cb432f5794da113b664c98dc4fd771d5de0fb8e371b84ebe29c"
+      },
+      "wire_protocol": "native-sequence-v1",
+      "native_replay": "sequence-end-v1",
+      "cache_spec_kinds": ["full_attention"],
+      "extra_event_fields": ["locality", "ownership", "session_id"],
+      "hash_bytes": 32,
+      "block_size": 128,
+      "native_epoch": false,
+      "native_token_snapshot": false,
+      "publisher_hook_available": false,
+      "terminal_observer_available": false
+    }
+  }
+}

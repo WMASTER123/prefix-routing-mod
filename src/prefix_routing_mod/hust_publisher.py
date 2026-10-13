@@ -13,9 +13,12 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-PUBLISHER_SHA256 = "9eca5310ada1d90c4740c1cec06fbdb18aff65fc9d2abb536098fcbd0ddf7d14"
-CORE_VERSION = "0.23.1.post1.dev733+g13f11da44.empty"
-ASCEND_VERSION = "0.19.1.post1.dev563+g3a61053d"
+from .adapters.profiles import get_profile
+
+_PROFILE = get_profile("hust-legacy-publisher-v1")
+PUBLISHER_SHA256 = dict(_PROFILE.source_hashes)["vllm/distributed/kv_events.py"]
+CORE_VERSION = dict(_PROFILE.packages)["vllm"]
+ASCEND_VERSION = dict(_PROFILE.packages)["vllm-ascend-hust"]
 PLUGIN_NAME = "prefix_routing_publisher"
 
 

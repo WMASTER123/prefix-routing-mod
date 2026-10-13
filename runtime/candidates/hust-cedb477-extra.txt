@@ -1,0 +1,10 @@
+# Supplemental A2/aarch64 dependency from Ascend b47795c Dockerfile.openEuler
+# and .github/workflows/_selected_tests.yaml; not a Router wheel dependency.
+# Install with --require-hashes --no-deps and the verified wheel's --find-links.
+# Preserve the original 184-package runtime lock and record both input hashes.
+flash-linear-attention-npu-a2==26.9.1+deva4a7958 \
+    --hash=sha256:7c3d3d07419a9cb1a17ca0d683d4d5de82d69c6523ada96396c9d6d0317e583a
+# FLA declares expecttest; the original runtime lock did not include it.
+expecttest==0.3.0 \
+    --hash=sha256:60f88103086e1754240b42175f622be83b6ffeac419434691ee5a5be819d0544 \
+    --hash=sha256:6e8512fb86523ada1f94fd1b14e280f924e379064bb8a29ee399950e513eeccd
