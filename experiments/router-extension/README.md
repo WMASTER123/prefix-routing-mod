@@ -1,5 +1,11 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-13 新增可选 `reserve_async`，默认 provider 仍调用原 reserve；宿主改为 await 后再建立 guard，实际发送前的 registry/control 检查保留。同步 Lease 回调仍不得进行磁盘/网络阻塞。可选 `request_id_header` 只作关联：宿主替换全部客户端 X-Request-Id，未提供 carrier 时保留原转发行为；它不是后端鉴权。固定 HUST 来源审计证明 header 优先于 body.request_id，真正引擎 hook 尚未安装。
+
+新的 `--online --dynamic` 模式启动空账本，原生请求通过 admission_bridge.rs 等待提交后才转发；第二请求由同一账本的额度拒绝。观测仍走原通道，无第二个生产状态 owner。实验 RPC 只限 loopback/显式 capability，最多八个阻塞 I/O job、每个交换总期限两秒；取消等待后 job 可在期限内收尾，不能自行发送 HTTP，已提交但未确认的预留保留。此模式是 CPU 接线，不是建议将逐请求 TCP/SQLite/线程池用于生产。
+
+构建时另将 admission_bridge.rs 复制到 experiments 宿主 examples/，重放最新三文件 patch；旧源、原版 binary 和 lock 保留。新增 helper、完整 host、默认关闭、旧在线和 stream 测试分别记录，见[本次证据](../../evidence/entry-admission-recovery-2026-10-13.md)。下方旧行数/未实现说明是历史阶段，不代表本轮增量。
+
 2026-10-13 新增显式 `--online` 接收实验：`online_bridge.rs` 控制线程读取已有 LifecycleTrace 的待确认观察，提交成功才推进游标。Lease 回调没有网络或磁盘操作。源观察序号与账本转换序号分离；有界留存、丢确认重投、断连锁派发和停止后拒绝均独立测试。不开启选项不启动控制线程。原三文件宿主 patch 不变，不新增生产代理/账本服务。
 
 可同时指定 `--lose-first-ack`：在实际接收提交后丢第一次确认，宿主只允许第一个请求到后端，重投确认后仍拒绝新派发。该显式故障选项必须与 `--online` 同用；不覆盖原正常/关闭回归。探测结果只在所有在线断言和接收上下文关闭成功后标 pass。

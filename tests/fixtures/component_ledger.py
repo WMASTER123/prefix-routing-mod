@@ -24,6 +24,7 @@ MAX_ATTEMPT_EVENTS = 8  # Lifecycle transitions only, never per-token events.
 class Attempt:
     decision: RouteDecision
     created_at_ns: int
+    clock_id: str
     state: str = "reserved"
     charged: bool = True
     events: list[LifecycleEvent] = field(default_factory=list)
@@ -49,6 +50,7 @@ class ReferenceLedger:
         self._capacity = capacity
         self._per_worker_limit = per_worker_limit
         self._config_version = config_version
+        self._runtime_clocks = {worker.clock_id for worker in workers}
         self._lock = RLock()
 
     def snapshot(self) -> tuple[WorkerState, ...]:
@@ -93,7 +95,9 @@ class ReferenceLedger:
                 raise ReservationRejected("bounded attempt retention full")
             if self.outstanding(worker.ref) >= self._per_worker_limit:
                 raise ReservationRejected("worker admission limit reached")
-            self._attempts[decision.attempt_id] = Attempt(decision, context.now_ns)
+            self._attempts[decision.attempt_id] = Attempt(
+                decision, context.now_ns, context.clock_id
+            )
             self._refresh_count(worker.ref, context.now_ns)
 
     def _refresh_count(self, ref: WorkerRef, at_ns: int) -> None:
@@ -133,9 +137,22 @@ class ReferenceLedger:
             if (
                 event.sequence != len(attempt.events) + 1
                 or len(attempt.events) >= MAX_ATTEMPT_EVENTS
-                or event.clock_id != worker.clock_id
-                or event.at_ns < attempt.created_at_ns
-                or (attempt.events and event.at_ns < attempt.events[-1].at_ns)
+                or (
+                    event.clock_id != attempt.clock_id
+                    and not (
+                        event.confirmation is BackendConfirmation.ENDED
+                        and event.clock_id == worker.clock_id
+                    )
+                )
+                or (
+                    event.clock_id == attempt.clock_id
+                    and event.at_ns < attempt.created_at_ns
+                )
+                or (
+                    attempt.events
+                    and event.clock_id == attempt.events[-1].clock_id
+                    and event.at_ns < attempt.events[-1].at_ns
+                )
             ):
                 raise LifecycleRejected("event sequence, clock or bound violation")
             state = attempt.state
@@ -187,7 +204,12 @@ class ReferenceLedger:
             attempt.events.append(event)
             attempt.state = target
             attempt.charged = target != "released"
-            self._refresh_count(event.worker, event.at_ns)
+            # Replayed observations retain the attempt's original clock. They
+            # update counts but cannot stamp the current view with an old epoch.
+            observed_at = worker.local_outstanding.at_ns
+            if event.clock_id == worker.clock_id:
+                observed_at = max(observed_at, event.at_ns)
+            self._refresh_count(event.worker, observed_at)
             return "applied"
 
     def outstanding(self, ref: WorkerRef) -> int:

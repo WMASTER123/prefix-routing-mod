@@ -15,20 +15,24 @@ from threading import Event, Thread
 from prefix_routing_mod.contracts import (
     Health,
     Observation,
+    Precision,
     ReadContext,
+    RequestFeatures,
+    ReservationRejected,
     RouteDecision,
     WorkerRef,
     WorkerState,
 )
 from tools.durable_ledger_prototype import DurableLedger
+from tools.transport_receiver_probe import SCHEMA as TRANSPORT_SCHEMA
 from tools.transport_receiver_probe import Receiver
 
 REF = WorkerRef("fixture-target", "fixture-instance-1")
 CLOCK = "fixture-router-session"
 
 
-def bootstrap(path):
-    worker = WorkerState(
+def fixture_worker():
+    return WorkerState(
         REF,
         "fixture-domain",
         0,
@@ -39,7 +43,10 @@ def bootstrap(path):
         Observation(None, "fixture", "whole_instance", CLOCK, 0),
         Observation(0, "local_ledger", "router_session", CLOCK, 0),
     )
-    with DurableLedger(path, create=True, workers=(worker,)) as store:
+
+
+def bootstrap(path):
+    with DurableLedger(path, create=True, workers=(fixture_worker(),)) as store:
         operations = []
         for index in range(1, 65):
             decision = RouteDecision(
@@ -64,9 +71,63 @@ def bootstrap(path):
         store.receive_batch(tuple(operations))
 
 
+class AdmissionReceiver(Receiver):
+    """One CPU owner for admission and observations, not a production service.
+
+    Only this fixture's fixed worker/domain/config are accepted. The caller's
+    clock is synthetic; no cross-host timestamp or real health claim is made.
+    """
+
+    def handle(self, message):
+        if isinstance(message, dict) and message.get("schema") == TRANSPORT_SCHEMA:
+            return super().handle(message)
+        import hmac
+
+        if (
+            not isinstance(message, dict)
+            or set(message)
+            != {"schema", "token", "request_id", "attempt_id", "clock_id", "at_ns"}
+            or message["schema"] != "admission-cpu-v1"
+            or not isinstance(message["token"], str)
+            or not hmac.compare_digest(message["token"], self.token)
+            or message["clock_id"] != CLOCK
+        ):
+            raise ValueError("invalid admission capability or binding")
+        context = ReadContext(CLOCK, message["at_ns"], 300_000_000_000)
+        features = RequestFeatures(
+            message["request_id"],
+            "fixture-domain",
+            None,
+            None,
+            None,
+            None,
+            Precision.UNKNOWN,
+        )
+        decision = RouteDecision(
+            message["attempt_id"],
+            message["request_id"],
+            message["attempt_id"],
+            REF,
+            0,
+            "fixture",
+            "config-1",
+            "fixture_only",
+        )
+        try:
+            result = self.store.reserve(features, decision, context)
+        except ReservationRejected:
+            result = "rejected"
+        response = {key: value for key, value in message.items() if key != "token"}
+        response["result"] = result
+        return response
+
+
 @contextmanager
-def online_receiver(path, producer_alive, *, lose_first_ack=False):
-    bootstrap(path)
+def online_receiver(path, producer_alive, *, lose_first_ack=False, dynamic=False):
+    if dynamic and lose_first_ack:
+        raise ValueError("separate admission and observation fault experiments")
+    if not dynamic:
+        bootstrap(path)
     token = secrets.token_hex(32)
     stopping, ready = Event(), Queue(maxsize=1)
     report = {"ack_attempts_while_producer_alive": 0, "rejected_connections": 0}
@@ -74,7 +135,15 @@ def online_receiver(path, producer_alive, *, lose_first_ack=False):
 
     def run():
         try:
-            with DurableLedger(path) as store, socket.socket() as listener:
+            with (
+                DurableLedger(
+                    path,
+                    create=dynamic,
+                    workers=(fixture_worker(),) if dynamic else (),
+                    per_worker_limit=1 if dynamic else 64,
+                ) as store,
+                socket.socket() as listener,
+            ):
                 lost_ack = False
 
                 def committed():
@@ -85,7 +154,8 @@ def online_receiver(path, producer_alive, *, lose_first_ack=False):
                         lost_ack = True
                         raise ConnectionError("injected loss after commit")
 
-                receiver = Receiver(store, token, committed)
+                receiver_type = AdmissionReceiver if dynamic else Receiver
+                receiver = receiver_type(store, token, committed)
                 listener.bind(("127.0.0.1", 0))
                 listener.listen(8)
                 listener.settimeout(0.1)
@@ -102,6 +172,7 @@ def online_receiver(path, producer_alive, *, lose_first_ack=False):
                         except (OSError, ValueError, TypeError, KeyError, RuntimeError):
                             report["rejected_connections"] += 1
                 report["receipts"] = len(store.transport_receipts)
+                report["reservations"] = len(store.oracle._attempts)
                 attempts = store.oracle._attempts
                 report["unused_fixture_reservations"] = sum(
                     not a.events for a in attempts.values()
@@ -129,6 +200,9 @@ def online_receiver(path, producer_alive, *, lose_first_ack=False):
             os.environ, PREFIX_PROBE_PORT=str(port), PREFIX_PROBE_TOKEN=token
         )
         environment.pop("PREFIX_PROBE_FAULT_DROP_ACK", None)
+        environment.pop("PREFIX_PROBE_DYNAMIC", None)
+        if dynamic:
+            environment["PREFIX_PROBE_DYNAMIC"] = "1"
         if lose_first_ack:
             environment["PREFIX_PROBE_FAULT_DROP_ACK"] = "1"
         yield environment, report

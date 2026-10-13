@@ -1,5 +1,15 @@
 # 进度与下一步
 
+## 当前执行：完整入口、动态准入与显式恢复（2026-10-13）
+
+在 codex/entry-admission-recovery 基于 054ae0a 推进。固定 HUST 的真实 serving→AsyncLLM 方法已验证多 prompt × sampling child 总关联、stream、部分失败/取消；不是安装到引擎的真实 hook。Router 增加异步准入及可选自有 X-Request-Id 载体，复用原转发/回调/账本；CPU 实验从空账本按请求预留。显式恢复保存新 runtime，旧债不清、旧许可拒绝、旧事件仍可对账；真实健康/身份获取和旧 dispatcher 停止依然是待接入前置条件。
+
+初轮 Windows 434+4 skips、Linux 438、Linux integration 3、原生 helper 21 通过；审查后又补独立进程交接退出和普通拒绝反例，最终全量及完整宿主回归进行中，成绩不继承旧分支。自审修正正常准入拒绝误停接收、跨时钟时间比较和补丁缺少上下文；详细最终状态见[本轮证据](../evidence/entry-admission-recovery-2026-10-13.md)。
+
+尚未接真实 HUST 前后端绑定/终态 observer、生产自动恢复或真实 KV 订阅；没有 NPU/吞吐收益结论，不冻结生产 ABI。下一步先补这些控制边界的真实适配，再接已有 publisher/目录，不扩算法。当前 CPU 足够，单后端现场需要时提前通知 1 张 NPU；MOD 仍 import_only，人工独立审查与合并待团队完成。
+
+下方保留上一阶段过程，优先以上述当前状态及新证据为准。
+
 ## 当前执行：原生回调在线接收与故障回归（2026-10-13）
 
 [草稿 PR #15](https://github.com/WMASTER123/prefix-routing-mod/pull/15) 基于 PR #14。原生 Router Lease 的有限 trace 由显式控制线程在线投递至同一参考账本；提交后确认，源观察序号与账本转换序号分离。实际 Router 存活期间 46 条观察全部接收，22 个发送后未决请求保留负债、2 个明确未发送释放；这是跨进程传输观察闭环，动态 HTTP 准入仍未联通。

@@ -2,6 +2,8 @@
 //! Uses the actual patched Router library and loopback HTTP backends. Tokens,
 //! instance/control fences and reconciliation proof here are synthetic only.
 use axum::{body::to_bytes, response::Response};
+#[path = "admission_bridge.rs"]
+mod admission_bridge;
 #[path = "lifecycle_bridge.rs"]
 mod lifecycle_bridge;
 #[path = "online_bridge.rs"]
@@ -71,6 +73,7 @@ struct FixtureProvider {
     state: Arc<Mutex<State>>,
     clock: Arc<RouterClock>,
     outbox: Option<Arc<Outbox>>,
+    admission: Option<admission_bridge::AdmissionClient>,
 }
 
 impl Default for RouterClock {
@@ -82,9 +85,13 @@ impl Default for RouterClock {
 struct FixtureLease {
     state: Arc<Mutex<State>>,
     control: u64,
+    carrier: Option<String>,
 }
 
 impl Lease for FixtureLease {
+    fn request_id_header(&self) -> Option<&str> {
+        self.carrier.as_deref()
+    }
     fn before_send(&self) -> Result<(), &'static str> {
         let state = self.state.lock().unwrap();
         if state.reject_send || state.control != self.control {
@@ -114,6 +121,38 @@ impl Lease for FixtureLease {
 }
 
 impl HttpExtension for FixtureProvider {
+    fn reserve_async<'a>(
+        &'a self,
+        features: &'a dyn Features,
+        proposal: &'a Proposal,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Box<dyn Lease>, &'static str>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            if let Some(admission) = &self.admission {
+                if !self
+                    .outbox
+                    .as_ref()
+                    .is_some_and(|outbox| outbox.admissible())
+                {
+                    return Err("observer_not_ready");
+                }
+                let id = features
+                    .as_any()
+                    .downcast_ref::<FixtureFeatures>()
+                    .unwrap()
+                    .request_id;
+                admission
+                    .reserve(
+                        format!("request-{id}"),
+                        format!("attempt-{id}"),
+                        self.clock.now_ns(),
+                    )
+                    .await?;
+            }
+            self.reserve(features, proposal)
+        })
+    }
     fn prepare(
         &self,
         request: &serde_json::Value,
@@ -200,6 +239,10 @@ impl HttpExtension for FixtureProvider {
             inner: Box::new(FixtureLease {
                 state: self.state.clone(),
                 control: features.control,
+                carrier: self
+                    .admission
+                    .as_ref()
+                    .map(|_| format!("attempt-{}", features.request_id)),
             }),
             trace,
         };
@@ -238,8 +281,22 @@ async fn consume(response: Response, status: u16, stream: bool) {
 }
 
 async fn route(router: &Router, model: &str, stream: bool) -> Response {
+    let mut headers = axum::http::HeaderMap::new();
+    headers.append(
+        "x-request-id",
+        axum::http::HeaderValue::from_static("client-untrusted-A"),
+    );
+    headers.append(
+        "x-request-id",
+        axum::http::HeaderValue::from_static("client-untrusted-B"),
+    );
     router
-        .route_typed_request(None, &request(model, stream), "/v1/completions", None)
+        .route_typed_request(
+            Some(&headers),
+            &request(model, stream),
+            "/v1/completions",
+            None,
+        )
         .await
 }
 
@@ -280,6 +337,19 @@ async fn main() {
     consume(route(&off_router, "fixture-error", false).await, 503, false).await;
 
     let online = std::env::var("PREFIX_PROBE_PORT").ok();
+    let dynamic = std::env::var("PREFIX_PROBE_DYNAMIC").as_deref() == Ok("1");
+    let admission = dynamic.then(|| {
+        admission_bridge::AdmissionClient::new(
+            format!(
+                "127.0.0.1:{}",
+                online.as_ref().expect("dynamic requires online")
+            )
+            .parse()
+            .unwrap(),
+            std::env::var("PREFIX_PROBE_TOKEN").expect("explicit capability"),
+        )
+        .unwrap()
+    });
     let outbox = online.as_ref().map(|_| Arc::new(Outbox::new(64).unwrap()));
     let controller = online.map(|port| {
         Controller::start(
@@ -291,6 +361,7 @@ async fn main() {
     });
     let provider = Arc::new(FixtureProvider {
         outbox,
+        admission,
         ..FixtureProvider::default()
     });
     let ctx = Arc::new(AppContext::new(config, client, 16, None, vec![]).unwrap());
@@ -302,11 +373,13 @@ async fn main() {
         .install_http_extension(provider.clone())
         .is_err());
     let router = Router::new(workers, &ctx).await.unwrap();
-    if std::env::var("PREFIX_PROBE_FAULT_DROP_ACK").as_deref() == Ok("1") {
+    if dynamic || std::env::var("PREFIX_PROBE_FAULT_DROP_ACK").as_deref() == Ok("1") {
         let controller = controller.as_ref().expect("fault requires online mode");
         consume(route(&router, "fixture", false).await, 200, false).await;
         controller.drain(Duration::from_secs(10)).unwrap();
-        assert!(!provider.outbox.as_ref().unwrap().admissible());
+        if !dynamic {
+            assert!(!provider.outbox.as_ref().unwrap().admissible());
+        }
         consume(route(&router, "fixture", false).await, 503, false).await;
         let state = provider.state.lock().unwrap();
         assert_eq!(
@@ -324,7 +397,9 @@ async fn main() {
         );
         println!(
             "{}",
-            serde_json::json!({"status": "pass", "checks": ["online_ack_loss_replay", "fault_latches_admission", "no_backend_resend"]})
+            serde_json::json!({"status": "pass", "checks": if dynamic {
+                vec!["dynamic_commit_before_send", "durable_quota_reject", "no_backend_resend"]
+            } else { vec!["online_ack_loss_replay", "fault_latches_admission", "no_backend_resend"] }})
         );
         return;
     }

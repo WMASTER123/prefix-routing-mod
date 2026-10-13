@@ -3,7 +3,8 @@
 SQLite is an experimental receipt log, not the selected production M3 store.
 Only reservation/lifecycle metadata is retained, never prompts or token IDs.
 The reference clock is replayed for historical validation; admission remains
-paused after reopening until a production clock/observation handover exists.
+paused after reopening. Explicit CPU handover requires fresh observations and
+operator confirmation that the old dispatcher is stopped; not distributed HA.
 """
 
 import hashlib
@@ -251,6 +252,8 @@ class DurableLedger:
     def _apply_to(oracle, operation):
         if not isinstance(operation, dict):
             raise ValueError("operation must be an object")
+        if operation.get("kind") == "runtime":
+            return apply_runtime(oracle, operation)
         if operation.get("kind") == "reserve":
             if set(operation) != {
                 "kind",
@@ -322,9 +325,52 @@ class DurableLedger:
 
     def apply(self, event):
         with self.lock:
-            if event.kind is EventKind.SEND_STARTED and not self.admission_ready:
-                raise ReservationRejected("restart cannot authorize a new send")
+            if event.kind is EventKind.SEND_STARTED:
+                self._check_send_runtime(event.attempt_id, event.clock_id)
             return self._receive({"kind": "event", "event": asdict(event)})
+
+    def resume(self, workers, context, *, previous_dispatcher_stopped=False):
+        """Explicit CPU takeover. Caller must establish exclusive dispatch first.
+
+        No health/network/OS evidence is obtained here. Same service instances
+        only; old unknown/reserved work remains charged, old permits are fenced.
+        """
+        with self.lock:
+            if previous_dispatcher_stopped is not True or not isinstance(
+                workers, tuple
+            ):
+                raise ReservationRejected(
+                    "exclusive dispatcher stop confirmation required"
+                )
+            if self.admission_ready:
+                raise ReservationRejected("pause/reopen before runtime takeover")
+            result = self._receive(
+                {
+                    "kind": "runtime",
+                    "workers": [asdict(worker) for worker in workers],
+                    "context": asdict(context),
+                }
+            )
+            self.admission_ready = True
+            return result
+
+    def _check_send_runtime(self, attempt_id, clock_id):
+        attempt = self.oracle._attempts.get(attempt_id)
+        worker = (
+            self.oracle._workers.get(attempt.decision.worker.worker_id)
+            if attempt
+            else None
+        )
+        if (
+            not self.admission_ready
+            or self.failed
+            or attempt is None
+            or worker is None
+            or worker.ref != attempt.decision.worker
+            or clock_id != worker.clock_id
+            or clock_id != attempt.clock_id
+        ):
+            raise ReservationRejected("restart cannot authorize an old or unknown send")
 
     def receive_batch(self, operations):
         """Bounded group-commit experiment; all successes return AFTER commit.
@@ -348,6 +394,15 @@ class DurableLedger:
                     or event_from(operation["event"]).kind is EventKind.SEND_STARTED
                 ):
                     raise ReservationRejected("restart cannot authorize new work")
+                if (
+                    operation["kind"] == "event"
+                    and event_from(operation["event"]).kind is EventKind.SEND_STARTED
+                ):
+                    # A preceding reservation in THIS atomic batch is checked
+                    # by the oracle; preexisting attempts must be current-runtime.
+                    record = event_from(operation["event"])
+                    if record.attempt_id in self.oracle._attempts:
+                        self._check_send_runtime(record.attempt_id, record.clock_id)
             return self._receive_many(operations)
 
     def notify_transport(self, attempt_id, kind, context):
@@ -366,8 +421,8 @@ class DurableLedger:
                 or (kind is EventKind.SEND_STARTED and attempt.state != "reserved")
             ):
                 return "no_transition"
-            if kind is EventKind.SEND_STARTED and not self.admission_ready:
-                raise ReservationRejected("restart cannot authorize a new send")
+            if kind is EventKind.SEND_STARTED:
+                self._check_send_runtime(attempt_id, context.clock_id)
             sequence = len(attempt.events) + 1
             decision = attempt.decision
             generated = LifecycleEvent(
@@ -472,6 +527,7 @@ class DurableLedger:
             raise RuntimeError("receipt owner failed; reopen for recovery")
         encoded = tuple(encode(operation) for operation in operations)
         normalized = tuple(decode(payload) for payload in encoded)
+        transaction_started = False
         try:
             results, new_payloads = [], []
             for operation, payload in zip(normalized, encoded, strict=True):
@@ -489,6 +545,7 @@ class DurableLedger:
                 or self.payload_bytes + added_bytes > self.max_payload_bytes
             ):
                 raise RuntimeError("receipt retention full")
+            transaction_started = True
             self.connection.execute("BEGIN IMMEDIATE")
             self.connection.executemany(
                 "INSERT INTO receipts VALUES(?,?)",
@@ -503,11 +560,15 @@ class DurableLedger:
             self.payload_bytes += added_bytes
             self.fault("after_commit_before_ack")
             return tuple(results)
-        except BaseException:
+        except BaseException as error:
             if self.connection.in_transaction:
                 self.connection.execute("ROLLBACK")
-            self.failed = True
-            self.admission_ready = False
+            # Full capacity/stale decisions are normal admission rejections,
+            # not an observation-channel failure. Undo speculative mutations
+            # without disabling receipt processing for already-running work.
+            if not isinstance(error, ReservationRejected) or transaction_started:
+                self.failed = True
+                self.admission_ready = False
             self._reload()
             raise
 
@@ -594,7 +655,7 @@ def transport_transition(oracle, source):
         or source.worker != decision.worker
         or worker is None
         or worker.ref != source.worker
-        or source.clock_id != worker.clock_id
+        or source.clock_id != attempt.clock_id
         or source.at_ns < attempt.created_at_ns
     ):
         raise LifecycleRejected("transport binding mismatch")
@@ -609,3 +670,37 @@ def transport_transition(oracle, source):
         event_id=hashlib.sha256(encode(asdict(source)).encode()).hexdigest(),
         sequence=len(attempt.events) + 1,
     )
+
+
+def apply_runtime(oracle, operation):
+    if set(operation) != {"kind", "workers", "context"}:
+        raise ValueError("invalid runtime handover")
+    context = ReadContext(**operation["context"])
+    if context.clock_id in oracle._runtime_clocks:
+        raise ReservationRejected("runtime clock must never be reused")
+    workers = tuple(worker_from(value) for value in operation["workers"])
+    if len(workers) != len(oracle._workers) or len(
+        {worker.ref.worker_id for worker in workers}
+    ) != len(workers):
+        raise ReservationRejected("complete existing worker observations required")
+    for worker in workers:
+        previous = oracle._workers.get(worker.ref.worker_id)
+        if (
+            previous is None
+            or worker.ref != previous.ref
+            or worker.domain != previous.domain
+            or worker.version <= previous.version
+            or worker.clock_id != context.clock_id
+            or not worker.eligible_for(previous.domain, context)
+            or worker.backend_running.clock_id != context.clock_id
+            or not context.fresh(context.clock_id, worker.backend_running.at_ns)
+            or not context.fresh(context.clock_id, worker.local_outstanding.at_ns)
+            or worker.local_outstanding.value != oracle.outstanding(worker.ref)
+        ):
+            raise ReservationRejected(
+                "fresh same-instance observation and retained debt required"
+            )
+    for worker in workers:
+        oracle.update_worker(worker)
+    oracle._runtime_clocks.add(context.clock_id)
+    return "applied"

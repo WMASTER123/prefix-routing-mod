@@ -159,7 +159,7 @@ index f7140ac..14147ee 100644
 +                            )
 +                                .into_response();
 +                        };
-+                        let lease = match extension.reserve(features.as_ref(), &proposal) {
++                        let lease = match extension.reserve_async(features.as_ref(), &proposal).await {
 +                            Ok(lease) => lease,
 +                            Err(error) => {
 +                                return (StatusCode::SERVICE_UNAVAILABLE, error).into_response()
@@ -223,7 +223,41 @@ index f7140ac..14147ee 100644
              headers,
              route,
              worker_url,
-@@ -1454,6 +1564,19 @@ impl Router {
+@@ -1428,12 +1538,23 @@ impl Router {
+                 )
+             };
+ 
++        let correlation = prefix_attempt.as_ref().and_then(|guard| guard.request_id_header());
++        let correlation = match correlation {
++            Some(value) if value.is_empty() || value.len() > 96
++                || !value.bytes().all(|b| b.is_ascii_graphic()) => {
++                return (StatusCode::SERVICE_UNAVAILABLE, "invalid_attempt_carrier").into_response();
++            }
++            Some(value) => Some(HeaderValue::from_str(value).expect("validated ASCII header")),
++            None => None,
++        };
++
+         // Copy all headers from original request if provided, skipping
+         // Content-Type/Content-Length (.json() sets them) and trace headers
+         // (propagate_trace_headers below injects fresh context).
+         if let Some(headers) = headers {
+             for (name, value) in headers {
+                 if *name != CONTENT_TYPE
++                    && !(correlation.is_some() && name.as_str().eq_ignore_ascii_case("x-request-id"))
+                     && *name != CONTENT_LENGTH
+                     && !header_utils::TRACE_HEADER_NAMES
+                         .iter()
+@@ -1444,6 +1565,9 @@ impl Router {
+             }
+         }
+ 
++        if let Some(value) = correlation {
++            request_builder = request_builder.header("X-Request-Id", value);
++        }
+         // Add X-data-parallel-rank header for DP-aware routing
+         if let Some(dp_rank) = extracted_dp_rank {
+             request_builder = request_builder.header("X-data-parallel-rank", dp_rank.to_string());
+@@ -1454,6 +1578,19 @@ impl Router {
          let stages_on = crate::backend::stages_enabled();
  
          let t_send = Instant::now();

@@ -1,5 +1,7 @@
 # 组件联调与三人工作包：component-v0.1
 
+2026-10-13 入口/准入/恢复：完整 HTTP family 和新 runtime 语义已补 CPU 接缝，Router 增加可等待准入和自有 carrier；不是三人生产接口冻结。真实 HUST 安装、启动排他/观测、终态业务结果组合及 KV 订阅仍是整体门槛；暂不分配人员。具体测试层级与剩余工作见[本轮记录](../../evidence/entry-admission-recovery-2026-10-13.md)。
+
 2026-10-13 B/C 包增量：原生 M5 传输观察增加有限在线接收/事务确认；保持统一 ledger owner，不建立第二状态机。动态 HTTP 准入、实际终态关联、重启派发及长期 GC 仍是生产冻结门槛，暂不分派人员。见[本轮证据](../../evidence/online-transport-2026-10-13.md)。
 
 2026-10-12 接线增量：B/C 包已有原生方法驱动关联封口、持久接收/统一序号及实际子进程退出恢复实验；A 包已有原生 KV codec 合成四帧→复用索引和控制 lease/全池额度实验。生产桥接、HTTP 总组数、时钟重建、GC 和真实服务仍未完成；暂不分工，见[接线边界](capture-recovery-wire-boundaries.md)。

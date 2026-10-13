@@ -115,6 +115,9 @@ pub struct OnlineLease {
 }
 
 impl Lease for OnlineLease {
+    fn request_id_header(&self) -> Option<&str> {
+        self.inner.request_id_header()
+    }
     fn before_send(&self) -> Result<(), &'static str> {
         if !self.outbox.admissible() {
             return Err("outbox_disconnected");

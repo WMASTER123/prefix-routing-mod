@@ -5,6 +5,7 @@ use axum::{body::Body, response::Response};
 use std::{
     any::Any,
     fmt::Debug,
+    future::Future,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -32,6 +33,11 @@ pub enum CloseEvidence {
 }
 
 pub trait Lease: Debug + Send + Sync {
+    /// Router-owned correlation only, not authentication. The host replaces
+    /// client X-Request-Id values only when this optional carrier is present.
+    fn request_id_header(&self) -> Option<&str> {
+        None
+    }
     /// Recheck M3 control/configuration fences immediately before sending.
     fn before_send(&self) -> Result<(), &'static str>;
     fn sent(&self);
@@ -40,7 +46,19 @@ pub trait Lease: Debug + Send + Sync {
     fn closed(&self, sent: bool, evidence: CloseEvidence);
 }
 
+pub type AdmissionFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Box<dyn Lease>, &'static str>> + Send + 'a>>;
+
 pub trait HttpExtension: Debug + Send + Sync {
+    /// Optional asynchronous durable admission seam. Dropping this future must
+    /// never cause a send; a possibly committed reservation remains unresolved.
+    fn reserve_async<'a>(
+        &'a self,
+        features: &'a dyn Features,
+        proposal: &'a Proposal,
+    ) -> AdmissionFuture<'a> {
+        Box::pin(async move { self.reserve(features, proposal) })
+    }
     /// Explicit experiment option; existing providers keep native transport.
     fn stream_limits(&self) -> Option<StreamLimits> {
         None
@@ -186,6 +204,11 @@ pub struct AttemptGuard {
 }
 
 impl AttemptGuard {
+    pub fn request_id_header(&self) -> Option<&str> {
+        self.lease
+            .as_ref()
+            .and_then(|lease| lease.request_id_header())
+    }
     pub fn new(lease: Box<dyn Lease>, proposal: Proposal) -> Self {
         Self {
             lease: Some(lease),
