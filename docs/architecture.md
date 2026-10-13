@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
+
 2026-10-13 进程恢复收尾：CPU supervisor 复用同一 Router/接收器/账本，验证实际旧 Router 退出后保留旧债的新 runtime 与再次重启额度约束。工具日志增加本地 OS owner 排他锁；它不充当 dispatcher 停止或真实服务身份凭据。没有增加生产服务/组件，安装与真实后端链路按[后续清单](planning/hust-first-real-chain.md)验收；本轮状态见[ADR](decisions/2026-10-13-router-process-recovery.md)。
 
 2026-10-13 入口/准入/恢复增量：复用固定 HUST 的 serving→AsyncLLM 方法验证完整总关联；Router 窄幅接缝增加可等待的 reserve，原同步 provider 有默认适配。CPU 实验接收器同时处理按请求预留与既有传输事件，没有增加生产服务。恢复通过显式新 runtime/同实例观测交接保留旧债，拒绝旧发送许可；真实观测器安装、完整启动编排与 KV 订阅仍待接通。范围及后续门槛见[ADR](decisions/2026-10-13-entry-recovery.md)。

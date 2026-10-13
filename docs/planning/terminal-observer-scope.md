@@ -1,5 +1,7 @@
 # 可选终态观测：CPU 原型范围与生产接线门槛
 
+2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
+
 2026-10-13 当前状态：真实 serving 方法的总关联、在线传输接收、工具账本持久化与实际 Router/接收器重启组合已补 CPU 验证；下方 PR #13 过程中的“仅 consumer 重建/未持久化”等是当时状态。真实终态观测适配仍未安装，generic ended 与业务结果仍须分开。下一次现场接入的具体范围与停止扩张条件见[单后端清单](hust-first-real-chain.md)。用户本轮要求先审查，等待下一次 NPU 分配。
 
 2026-10-12 后续增量：关联已增加 begin/bind/seal/abandon，固定源 ID/AsyncLLM 方法驱动提前结束/部分提交反例；接收侧增加实际进程退出后的事务重建，不再局限于保留原账本的 consumer 重建。仍未安装引擎或实现真实跨进程控制通道，历史时钟不能直接恢复新派发。详细[当前范围](capture-recovery-wire-boundaries.md)优先于下方 PR #13 初版状态。

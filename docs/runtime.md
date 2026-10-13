@@ -1,8 +1,14 @@
 # 服务运行环境：准入与重建边界
 
+2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
+
 更新：2026-10-11。**统一恢复入口已在全新目录通过，本机研发 G1 技术证据齐备，正式冻结待人工复核。** 见[本次恢复证据](../evidence/w1-runtime-restore-2026-10-11.md)。继续 G2 事件测试；可移植发布制品与完整兼容尚未验收。
 
-## 最新执行：指定 HUST 隔离候选
+## 当前执行：cedb477 wheel 候选
+
+当前单后端研发目标为HUST Core ced6857 / Ascend b47795c；188包隔离环境、全新重建和两卡顺序单实例FP16/eager子集通过，见[本轮证据](../evidence/hust-version-adapters-2026-10-14.md)。推荐入口为 `python -m tools.restore_wheel_runtime`，依赖固定wheelhouse，见[迁移指南](planning/hust-version-adapters.md)。下方旧editable配方只用于旧提交；旧环境保留，未升级系统。
+
+## 历史执行：归档 HUST 隔离候选（2026-10-11）
 
 用户纠正后，目标改为两份指定 HUST 归档 main，不再盲选官方版本。新服务器预装 origin 已核实指向上游。HUST 的联合依赖可以满足，两个无 system-site-packages 的服务 venv 均通过窄 CANN 路径下的 Python 依赖审计；真实 Qwen2.5-14B eager、IPC BlockStored 和干净 venv 重建复验均通过。私有全新 import cache 对照也通过；[逐次证据](../evidence/hust-runtime-candidate-2026-10-11.md)保留此前失败。已可用于下一步局部验证，不等于整栈制品冻结、图/完整恢复/性能放行。
 
@@ -10,7 +16,7 @@
 
 W2 增量只把本项目无运行依赖的 wheel 安装到该服务 venv，用于可选 publisher 实验；未改引擎 editable 源码、全局依赖或原锁。实验 general plugin 默认关闭，仅支持固定整栈及 publisher 源文件指纹，不从 G1 结果推导任意版本的 hook 兼容。复用本项目内来源为本地 clone 的恢复源码时，身份工具逐级核对干净固定提交和 canonical origin；不重写 origin 或放宽到任意本地路径。
 
-## 统一恢复入口（W1）
+## 历史归档组合恢复入口（W1，固定旧提交）
 
 在确认设备空闲、HTTP 端口可用后手动执行。输入为本项目内干净且完整历史的两份 HUST 源码；目标目录必须是新的、位于本项目 artifacts 下。执行会下载锁定依赖、构建 editable 引擎并启动临时单卡模型，不用于重建系统环境。
 

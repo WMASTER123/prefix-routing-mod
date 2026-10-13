@@ -1,5 +1,7 @@
 # HUST 候选锁，不是发布支持声明
 
+2026-10-13 当前新增目标为 Core ced6857 / Ascend b47795c，见[迁移入口](../../docs/planning/hust-version-adapters.md)。`hust-cedb477.json`、`hust-cedb477-py312-aarch64.txt` 和 `hust-cedb477-extra.txt` 为独立配方，不能与下方归档锁拼用。新入口恢复已核验的 owner-local wheel；完整公开源码构建/分发还未交付。下方继续保留旧组合的恢复和证据范围。
+
 目标：Linux aarch64 / Python 3.12.13 / 910B2。源码必须固定为 [ADR](../../docs/decisions/2026-10-11-hust-runtime-candidate.md) 中的两个完整提交；禁止把此锁用于最新主干或上游 Ascend。
 
 - `hust-legacy-20260831-py312-aarch64.txt`：两仓库 common/runtime/empty build requirements 联合解析所得 186 包，包含制品 SHA256。文件本身的 LF SHA256 为 `7bd3f97e9a632833a55209a285b2f3e2ff855e9ec1ce2136465a7de5f008d587`；不含两个本地 editable 引擎，源码提交与构建另锁。
