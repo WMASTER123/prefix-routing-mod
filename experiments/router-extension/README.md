@@ -2,6 +2,8 @@
 
 2026-10-13 新增显式 `--online` 接收实验：`online_bridge.rs` 控制线程读取已有 LifecycleTrace 的待确认观察，提交成功才推进游标。Lease 回调没有网络或磁盘操作。源观察序号与账本转换序号分离；有界留存、丢确认重投、断连锁派发和停止后拒绝均独立测试。不开启选项不启动控制线程。原三文件宿主 patch 不变，不新增生产代理/账本服务。
 
+可同时指定 `--lose-first-ack`：在实际接收提交后丢第一次确认，宿主只允许第一个请求到后端，重投确认后仍拒绝新派发。该显式故障选项必须与 `--online` 同用；不覆盖原正常/关闭回归。探测结果只在所有在线断言和接收上下文关闭成功后标 pass。
+
 在下方隔离构建步骤中，还需将 `online_bridge.rs` 复制到同一宿主 `examples/` 目录。构建完成后执行 `python -m tools.router_extension_probe --binary <刚构建的 example> --output <新的 artifacts 目录> --online`，再省略 `--online` 做关闭回归。工具在启动前持久化 64 条合成预留；未使用预留保持负债并单独报告，不声称真实动态 reserve 已联通。原子提交仍用实验 SQLite，不能把异步投递解释为性能问题解决。详细边界和结果见[本轮证据](../../evidence/online-transport-2026-10-13.md)。
 
 2026-10-12 审查收尾：空数据块被过滤，每次 poll 处理一个空块后让出执行权，持续空块不能绕过 idle。已有非空数据优先交付，允许慢消费者暂停后读取缓冲数据；idle 只在消费时检查，完全停止消费时的期限由宿主/下游机制另行验收。`checks/` 直接包含同一 helper 和 `lifecycle_bridge.rs`，使用虚拟时钟运行回归并进入 CI，不代替完整 Router、HTTP/2 或 NPU 验收。

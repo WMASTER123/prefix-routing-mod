@@ -302,6 +302,32 @@ async fn main() {
         .install_http_extension(provider.clone())
         .is_err());
     let router = Router::new(workers, &ctx).await.unwrap();
+    if std::env::var("PREFIX_PROBE_FAULT_DROP_ACK").as_deref() == Ok("1") {
+        let controller = controller.as_ref().expect("fault requires online mode");
+        consume(route(&router, "fixture", false).await, 200, false).await;
+        controller.drain(Duration::from_secs(10)).unwrap();
+        assert!(!provider.outbox.as_ref().unwrap().admissible());
+        consume(route(&router, "fixture", false).await, 503, false).await;
+        let state = provider.state.lock().unwrap();
+        assert_eq!(
+            (state.reserve, state.sent, state.closed, state.outstanding),
+            (1, 1, 1, 1)
+        );
+        let traces: Vec<_> = state
+            .traces
+            .iter()
+            .map(|trace| trace.lock().unwrap().snapshot().unwrap())
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({"lifecycle_schema": "component-v0.1", "traces": traces})
+        );
+        println!(
+            "{}",
+            serde_json::json!({"status": "pass", "checks": ["online_ack_loss_replay", "fault_latches_admission", "no_backend_resend"]})
+        );
+        return;
+    }
     for stream in [false, true] {
         consume(route(&router, "fixture", stream).await, 200, stream).await;
         assert_eq!(provider.state.lock().unwrap().outstanding, 1);

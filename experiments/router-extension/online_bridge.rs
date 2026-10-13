@@ -357,6 +357,24 @@ mod tests {
         serde_json::from_slice(&payload).unwrap()
     }
 
+    fn accept(listener: &TcpListener) -> TcpStream {
+        listener.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).unwrap();
+                    return stream;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "test peer accept deadline");
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("test peer accept: {error}"),
+            }
+        }
+    }
+
     fn reply(stream: &mut TcpStream, request: &serde_json::Value) {
         let event = &request["event"];
         let payload = serde_json::to_vec(&serde_json::json!({
@@ -379,14 +397,14 @@ mod tests {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = listener.local_addr().unwrap();
         let peer = thread::spawn(move || {
-            let (mut first, _) = listener.accept().unwrap();
+            let mut first = accept(&listener);
             let original = request(&mut first);
             drop(first); // Simulates a lost ACK after the receiver committed.
-            let (mut retry, _) = listener.accept().unwrap();
+            let mut retry = accept(&listener);
             let repeated = request(&mut retry);
             assert_eq!(original, repeated);
             reply(&mut retry, &repeated);
-            let (mut second, _) = listener.accept().unwrap();
+            let mut second = accept(&listener);
             let close = request(&mut second);
             assert_eq!(close["event"]["kind"], "outcome_unknown");
             reply(&mut second, &close);
@@ -425,7 +443,7 @@ mod tests {
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
             let address = listener.local_addr().unwrap();
             let peer = thread::spawn(move || {
-                let (mut stream, _) = listener.accept().unwrap();
+                let mut stream = accept(&listener);
                 let mut value = request(&mut stream);
                 if oversized {
                     stream.write_all(&8193u32.to_be_bytes()).unwrap();
@@ -505,7 +523,7 @@ mod tests {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = listener.local_addr().unwrap();
         let peer = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let mut stream = accept(&listener);
             request(&mut stream);
             thread::sleep(Duration::from_millis(1250));
         });

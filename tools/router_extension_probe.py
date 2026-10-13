@@ -37,7 +37,9 @@ def prototype_result(path: Path) -> dict:
     return records[0]
 
 
-def run(binary: Path, output: Path, *, online=False) -> dict:
+def run(binary: Path, output: Path, *, online=False, lose_first_ack=False) -> dict:
+    if lose_first_ack and not online:
+        raise ValueError("fault injection requires explicit online experiment")
     if os.name != "posix":
         raise ValueError("prototype probe requires Linux process groups")
     binary = binary.resolve(strict=True)
@@ -53,6 +55,7 @@ def run(binary: Path, output: Path, *, online=False) -> dict:
     disabled_environment = dict(os.environ)
     disabled_environment.pop("PREFIX_PROBE_PORT", None)
     disabled_environment.pop("PREFIX_PROBE_TOKEN", None)
+    disabled_environment.pop("PREFIX_PROBE_FAULT_DROP_ACK", None)
 
     class ProbeHandler(Handler):
         def before_reply(self, request):
@@ -75,6 +78,7 @@ def run(binary: Path, output: Path, *, online=False) -> dict:
             online_receiver(
                 output / "receipts.sqlite",
                 lambda: process is not None and process.poll() is None,
+                lose_first_ack=lose_first_ack,
             )
             if online
             else nullcontext(None) as channel,
@@ -96,31 +100,40 @@ def run(binary: Path, output: Path, *, online=False) -> dict:
             report["lifecycle_replay"] = validate_log(output / "prototype.log")
             with lock:
                 report["backend_attempts"] = dict(counts)
-            if report["backend_attempts"] != {
-                "fixture": 21,
-                "fixture-error": 2,
-                "fixture-stall": 1,
-                "fixture-fallback": 1,
-                "fixture-disconnect": 1,
-            }:
+            expected_attempts = (
+                {"fixture": 3, "fixture-error": 1}
+                if lose_first_ack
+                else {
+                    "fixture": 21,
+                    "fixture-error": 2,
+                    "fixture-stall": 1,
+                    "fixture-fallback": 1,
+                    "fixture-disconnect": 1,
+                }
+            )
+            if report["backend_attempts"] != expected_attempts:
                 raise ValueError("unexpected resend or failed send-fence isolation")
             report["prototype"] = result
-            report["status"] = "pass"
         if online:
             report["online_transport"] = channel[1]
             observed = report["online_transport"]
             if not (
-                observed["receipts"] == 46
-                and observed["online_applied_while_producer_alive"] == 46
-                and observed["transport_unknown"] == 22
-                and observed["not_sent"] == 2
-                and observed["unused_fixture_reservations"] == 40
-                and observed["outstanding_including_unused"] == 62
-                and observed["rejected_connections"] == 0
+                observed["receipts"] == (2 if lose_first_ack else 46)
+                and observed["ack_attempts_while_producer_alive"]
+                == (3 if lose_first_ack else 46)
+                and observed["transport_unknown"] == (1 if lose_first_ack else 22)
+                and observed["not_sent"] == (0 if lose_first_ack else 2)
+                and observed["unused_fixture_reservations"]
+                == (63 if lose_first_ack else 40)
+                and observed["outstanding_including_unused"]
+                == (64 if lose_first_ack else 62)
+                and observed["rejected_connections"] == int(lose_first_ack)
                 and observed["admission_ready"] is False
             ):
                 raise ValueError("online receipt/debt mismatch")
+        report["status"] = "pass"
     except Exception as error:
+        report["status"] = "fail"
         report["error"] = f"{type(error).__name__}: {error}"
     finally:
         if process is not None:
@@ -140,8 +153,11 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--online", action="store_true")
+    parser.add_argument("--lose-first-ack", action="store_true")
     args = parser.parse_args()
-    report = run(args.binary, args.output, online=args.online)
+    report = run(
+        args.binary, args.output, online=args.online, lose_first_ack=args.lose_first_ack
+    )
     print(json.dumps(report))
     return 0 if report["status"] == "pass" else 1
 

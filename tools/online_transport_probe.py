@@ -65,20 +65,25 @@ def bootstrap(path):
 
 
 @contextmanager
-def online_receiver(path, producer_alive):
+def online_receiver(path, producer_alive, *, lose_first_ack=False):
     bootstrap(path)
     token = secrets.token_hex(32)
     stopping, ready = Event(), Queue(maxsize=1)
-    report = {"online_applied_while_producer_alive": 0, "rejected_connections": 0}
+    report = {"ack_attempts_while_producer_alive": 0, "rejected_connections": 0}
     failures = []
 
     def run():
         try:
             with DurableLedger(path) as store, socket.socket() as listener:
+                lost_ack = False
 
                 def committed():
+                    nonlocal lost_ack
                     if producer_alive():
-                        report["online_applied_while_producer_alive"] += 1
+                        report["ack_attempts_while_producer_alive"] += 1
+                    if lose_first_ack and not lost_ack:
+                        lost_ack = True
+                        raise ConnectionError("injected loss after commit")
 
                 receiver = Receiver(store, token, committed)
                 listener.bind(("127.0.0.1", 0))
@@ -123,6 +128,9 @@ def online_receiver(path, producer_alive):
         environment = dict(
             os.environ, PREFIX_PROBE_PORT=str(port), PREFIX_PROBE_TOKEN=token
         )
+        environment.pop("PREFIX_PROBE_FAULT_DROP_ACK", None)
+        if lose_first_ack:
+            environment["PREFIX_PROBE_FAULT_DROP_ACK"] = "1"
         yield environment, report
     finally:
         stopping.set()

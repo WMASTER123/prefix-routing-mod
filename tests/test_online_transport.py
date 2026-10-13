@@ -335,3 +335,43 @@ def test_full_fixture_commits_before_launch_and_retains_unused_slots(tmp_path):
     assert report["unused_fixture_reservations"] == 63
     assert report["outstanding_including_unused"] == 63
     assert report["admission_ready"] is False
+
+
+def test_probe_validation_failure_cannot_leave_pass_status(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from tools import router_extension_probe as probe
+
+    monkeypatch.setattr(
+        probe,
+        "os",
+        SimpleNamespace(name="posix", access=lambda *a: True, X_OK=1, environ={}),
+    )
+    monkeypatch.setattr(
+        probe, "online_receiver", lambda *a, **k: nullcontext(({}, {"receipts": 99}))
+    )
+    monkeypatch.setattr(probe, "prototype_result", lambda path: {"status": "pass"})
+    monkeypatch.setattr(probe, "validate_log", lambda path: {})
+    monkeypatch.setattr(
+        probe, "stop_owned_group", lambda process: {"forced_group_cleanup": False}
+    )
+    process = SimpleNamespace(returncode=0, wait=lambda **k: None, poll=lambda: 0)
+    monkeypatch.setattr(probe.subprocess, "Popen", lambda *a, **k: process)
+    first = True
+
+    def backend(handler):
+        nonlocal first
+        if first:
+            for model in ["fixture"] * 3 + ["fixture-error"]:
+                handler.before_reply(None, {"model": model})
+            first = False
+        return nullcontext("http://127.0.0.1:1")
+
+    monkeypatch.setattr(probe, "mock_backend", backend)
+    report = probe.run(
+        Path(sys.executable), tmp_path / "report", online=True, lose_first_ack=True
+    )
+    assert report["status"] == "fail"
+    assert "online receipt/debt mismatch" in report["error"]
