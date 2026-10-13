@@ -25,6 +25,8 @@
 
 初始 e1ee5a3 的 CI 已核验：Python 3.11/3.12 [运行](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38348104195)、原生 helper [运行](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38348104184) 均 success。后续故障/审查增量的 CI 按确切提交另外核验，不继承初始成绩。
 
+最终代码提交 `ce36e48bf884218320351000f1ea9b66751c73c2` 已单独核验：Python 3.11/3.12 [运行](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38348885779)、原生 helper [运行](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38348885827) 均 completed/success，headSha 与代码一致。本地、GitHub、服务器已同步该提交；服务器本轮暂存源码逐文件对照一致后保存在可恢复 stash，再 fast-forward，未覆盖不明修改。
+
 ## 失败与自审
 
 首次单测中 socketpair 返回 tuple，不能整体作为 context manager；已改为分别管理两个 socket，四项失败保留在本轮命令记录，复测通过。

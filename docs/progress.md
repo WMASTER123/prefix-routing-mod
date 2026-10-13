@@ -4,6 +4,8 @@
 
 [草稿 PR #15](https://github.com/WMASTER123/prefix-routing-mod/pull/15) 基于 PR #14。原生 Router Lease 的有限 trace 由显式控制线程在线投递至同一参考账本；提交后确认，源观察序号与账本转换序号分离。实际 Router 存活期间 46 条观察全部接收，22 个发送后未决请求保留负债、2 个明确未发送释放；这是跨进程传输观察闭环，动态 HTTP 准入仍未联通。
 
+最终代码 ce36e48 的 Python 3.11/3.12 与原生 helper CI 均已按 headSha 核验 success，本地/GitHub/服务器同步。后续文档提交的检查另以对应 head 为准。
+
 实际宿主提交后丢 ACK 的故障测试通过：原载荷重投，2 个唯一观察/3 次确认尝试；新请求被拒绝，后端没有重复发送。关闭在线选项和既有 stream 回归均通过。401/405 的初始 Python 成绩已由最终 Windows 402+4 skips、Linux 406、两端 integration 各 3 替代；原生 helper 17，两端新制品/干净安装通过。自审修复期限、停止派发和验证失败误报 pass 等边界；另一成员独立审查待完成。详细范围、失败与代码/制品证据见[本轮记录](../evidence/online-transport-2026-10-13.md)。
 
 设计不增加生产账本服务：Python/loopback/SQLite 和 64 条预持久化合成预留仅用于 CPU 接线。40 个未使用预留仍被保留，没有因“未见发送”清账。异步投递不代表持久化性能已解决；生产语义、语言和恢复方案仍需收敛。
