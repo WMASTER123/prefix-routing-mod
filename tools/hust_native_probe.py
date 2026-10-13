@@ -38,9 +38,25 @@ def command(executable, model, port, output):
     config.update(replay_endpoint=ipc_endpoint(output / "replay.sock"), buffer_steps=16)
     argv[config_at] = json.dumps(config)
     argv.extend(
-        ["--seed", "0", "--prefix-caching-hash-algo", "sha256", "--block-size", "128"]
+        [
+            "--seed",
+            "0",
+            "--prefix-caching-hash-algo",
+            "sha256",
+            "--block-size",
+            "128",
+            "--enable-prompt-tokens-details",
+        ]
     )
     return argv
+
+
+def cached_tokens(usage):
+    details = usage.get("prompt_tokens_details")
+    value = details.get("cached_tokens") if isinstance(details, dict) else None
+    if value is not None and (type(value) is not int or value < 0):
+        raise ValueError("Invalid backend cached-token count")
+    return value
 
 
 def run(args, output, report):
@@ -126,7 +142,7 @@ def run(args, output, report):
             ):
                 raise ValueError("Request rendering/count differs")
             usage = result["usage"]
-            cached = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+            cached = cached_tokens(usage)
             results.append({"id": result["id"], "route": route, "usage": usage})
             if len(results) == 2 and (type(cached) is not int or cached <= 0):
                 raise ValueError("Repeated request lacks reported cache reuse")

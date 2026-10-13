@@ -64,6 +64,7 @@ def test_native_probe_uses_explicit_single_replica_and_new_config(tmp_path):
     assert argv[argv.index("--block-size") + 1] == "128"
     assert "--enable-prefix-routing" not in argv
     assert "--enforce-eager" in argv
+    assert "--enable-prompt-tokens-details" in argv
     config = json.loads(argv[argv.index("--kv-events-config") + 1])
     assert config["buffer_steps"] == 16 and config["replay_endpoint"].startswith(
         "ipc://"
@@ -83,4 +84,17 @@ def test_native_probe_rejects_existing_evidence(tmp_path, monkeypatch):
                 "--device",
                 "0",
             ]
+        )
+
+
+@pytest.mark.parametrize("details", [None, {}, {"cached_tokens": None}])
+def test_absent_cache_details_remain_unknown(details):
+    assert hust_native_probe.cached_tokens({"prompt_tokens_details": details}) is None
+
+
+@pytest.mark.parametrize("value", [False, -1, "128"])
+def test_invalid_cache_details_cannot_be_promoted_to_observed(value):
+    with pytest.raises(ValueError):
+        hust_native_probe.cached_tokens(
+            {"prompt_tokens_details": {"cached_tokens": value}}
         )
