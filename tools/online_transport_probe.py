@@ -78,6 +78,13 @@ class AdmissionReceiver(Receiver):
     clock is synthetic; no cross-host timestamp or real health claim is made.
     """
 
+    def __init__(
+        self, store, token, after_commit=None, *, clock_id=CLOCK, after_admission=None
+    ):
+        super().__init__(store, token, after_commit)
+        self.clock_id = clock_id
+        self.after_admission = after_admission or (lambda: None)
+
     def handle(self, message):
         if isinstance(message, dict) and message.get("schema") == TRANSPORT_SCHEMA:
             return super().handle(message)
@@ -90,10 +97,10 @@ class AdmissionReceiver(Receiver):
             or message["schema"] != "admission-cpu-v1"
             or not isinstance(message["token"], str)
             or not hmac.compare_digest(message["token"], self.token)
-            or message["clock_id"] != CLOCK
+            or message["clock_id"] != self.clock_id
         ):
             raise ValueError("invalid admission capability or binding")
-        context = ReadContext(CLOCK, message["at_ns"], 300_000_000_000)
+        context = ReadContext(self.clock_id, message["at_ns"], 300_000_000_000)
         features = RequestFeatures(
             message["request_id"],
             "fixture-domain",
@@ -108,7 +115,7 @@ class AdmissionReceiver(Receiver):
             message["request_id"],
             message["attempt_id"],
             REF,
-            0,
+            self.store.oracle.snapshot()[0].version,
             "fixture",
             "config-1",
             "fixture_only",
@@ -117,6 +124,8 @@ class AdmissionReceiver(Receiver):
             result = self.store.reserve(features, decision, context)
         except ReservationRejected:
             result = "rejected"
+        if result == "applied":
+            self.after_admission()
         response = {key: value for key, value in message.items() if key != "token"}
         response["result"] = result
         return response
@@ -201,6 +210,12 @@ def online_receiver(path, producer_alive, *, lose_first_ack=False, dynamic=False
         )
         environment.pop("PREFIX_PROBE_FAULT_DROP_ACK", None)
         environment.pop("PREFIX_PROBE_DYNAMIC", None)
+        for key in (
+            "PREFIX_PROBE_CLOCK",
+            "PREFIX_PROBE_NAMESPACE",
+            "PREFIX_PROBE_SCENARIO",
+        ):
+            environment.pop(key, None)
         if dynamic:
             environment["PREFIX_PROBE_DYNAMIC"] = "1"
         if lose_first_ack:
