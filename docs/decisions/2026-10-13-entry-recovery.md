@@ -1,6 +1,6 @@
 # 入口关联与启动恢复的 CPU 接缝
 
-状态：CPU 实现与宿主验证中；不冻结生产 ABI，不安装引擎 hook。
+状态：CPU 接缝与实际宿主动态 HTTP 验证通过；不冻结生产 ABI，不安装引擎 hook。完整限制与回归见[证据](../../evidence/entry-admission-recovery-2026-10-13.md)。
 
 本轮先补一个 HTTP attempt 对全部 prompt × sampling child 的关联，再补按请求准入及恢复。复用固定 HUST 的入口、ID 分配和 fanout 方法，不复制其 ID 生成规则。标准文本 completion/chat 为范围；beam search、流式输入、多模态、动态采样分叉不以本次证据宣称支持。
 

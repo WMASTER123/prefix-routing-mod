@@ -60,7 +60,6 @@ index fa2acae..354d3b0 100644
  pub mod router;
  pub mod vllm_pd_router;
  pub mod vllm_service_discovery;
-warning: in the working copy of 'artifacts/router-source/router.rs', CRLF will be replaced by LF the next time Git touches it
 diff --git a/src/routers/http/router.rs b/src/routers/http/router.rs
 index f7140ac..14147ee 100644
 --- a/src/routers/http/router.rs
