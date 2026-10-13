@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-13 进程恢复收尾：CPU supervisor 复用同一 Router/接收器/账本，验证实际旧 Router 退出后保留旧债的新 runtime 与再次重启额度约束。工具日志增加本地 OS owner 排他锁；它不充当 dispatcher 停止或真实服务身份凭据。没有增加生产服务/组件，安装与真实后端链路按[后续清单](planning/hust-first-real-chain.md)验收；本轮状态见[ADR](decisions/2026-10-13-router-process-recovery.md)。
+
 2026-10-13 入口/准入/恢复增量：复用固定 HUST 的 serving→AsyncLLM 方法验证完整总关联；Router 窄幅接缝增加可等待的 reserve，原同步 provider 有默认适配。CPU 实验接收器同时处理按请求预留与既有传输事件，没有增加生产服务。恢复通过显式新 runtime/同实例观测交接保留旧债，拒绝旧发送许可；真实观测器安装、完整启动编排与 KV 订阅仍待接通。范围及后续门槛见[ADR](decisions/2026-10-13-entry-recovery.md)。
 
 2026-10-13 在线传输接线：复用 LifecycleTrace 的有限记录，显式控制线程投递观察；账本 owner 独立分配生命周期序号并在提交后确认。loopback Python 接收器仅用于跨进程 CPU 实验，生产仍按一个 Router owner 设计。动态准入、终态适配安装、恢复后派发和长期 GC 未完成，见[ADR](decisions/2026-10-13-online-transport.md)。下方按日期保留各阶段的历史范围。

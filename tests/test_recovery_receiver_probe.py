@@ -5,6 +5,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -18,7 +19,7 @@ from tools.transport_receiver_probe import read_frame, write_frame
 TOKEN = "ab" * 32
 
 
-def child(path, report, clock, *, resume=False, fault="none"):
+def child(path, report, clock, *, resume=False, fault="none", commit_signal=None):
     command = [
         sys.executable,
         "-m",
@@ -34,6 +35,8 @@ def child(path, report, clock, *, resume=False, fault="none"):
     ]
     if resume:
         command.append("--resume")
+    if commit_signal is not None:
+        command.extend(("--commit-signal", str(commit_signal)))
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -146,3 +149,41 @@ def test_native_probe_requires_linux_and_executable(tmp_path):
         with pytest.raises(ValueError, match="Linux"):
             run(Path("not-a-binary"), tmp_path / "output")
     assert not (tmp_path / "output").exists()
+
+
+def test_recovery_rejects_oversized_or_missing_transcript(tmp_path):
+    from tools.router_extension_probe import MAX_LOG_BYTES
+    from tools.router_recovery_probe import read_transcript
+
+    path = tmp_path / "log"
+    path.write_bytes(b"x" * (MAX_LOG_BYTES + 1))
+    with pytest.raises(ValueError, match="budget"):
+        read_transcript(path)
+    path.write_text('{"status":"pass"}\n')
+    with pytest.raises(ValueError, match="one lifecycle"):
+        read_transcript(path)
+
+
+def test_two_way_barrier_prevents_admission_ack_until_caller_cancels(tmp_path):
+    signal = tmp_path / "committed"
+    report = tmp_path / "report.json"
+    process, port = child(
+        tmp_path / "log", report, "runtime-a", fault="cancel", commit_signal=signal
+    )
+    connection = socket.create_connection(("127.0.0.1", port), timeout=2)
+    try:
+        write_frame(connection, admission("runtime-a"))
+        deadline = time.monotonic() + 3
+        while not signal.is_file():
+            assert time.monotonic() < deadline, "post-commit signal missing"
+            time.sleep(0.005)
+        connection.settimeout(0.05)
+        with pytest.raises(TimeoutError):
+            connection.recv(1)
+        # The commit marker precedes cancellation, and the response follows it.
+        connection.close()
+        signal.with_name(signal.name + ".cancelled").write_bytes(b"cancelled\n")
+    finally:
+        connection.close()
+        stop(process, port)
+    assert json.loads(report.read_text())["final"]["outstanding"] == 1

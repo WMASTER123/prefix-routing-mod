@@ -1,5 +1,13 @@
 # 进度与下一步
 
+## 当前执行：实际 Router 进程恢复与审查收尾（2026-10-13）
+
+在 codex/router-recovery-faults 基于 2177297 推进。同一工具账本增加 OS 排他 owner 锁，新 Router 使用新的 clock/请求命名空间。实际 Router 与独立接收进程的六阶段组合通过：提交后丢准入 ACK/取消等待均零扩展发送，恢复保留 1 笔旧债并允许剩余额度，再重启保留 2 笔占用且不额外发送；旧观察重复幂等。恢复前实际确认旧 Router 及其进程组退出，取消组另覆盖接收器异常终止；这不是任意并发 kill 或真实后端自动恢复。
+
+初始代码 Windows 446+4 skips、Linux 450、integration 两端各 3、helper 21、实际 default-off/online/dynamic/观察 ACK 丢失/stream 回归、两端新制品/干净安装均通过。自审发现恢复证据的额外 transcript 读取没有独立上限，已改为有限读取并复用既有验证器，补反例；最终成绩另见[本轮记录](../evidence/router-process-recovery-2026-10-13.md)。独立人工审查与合并仍待完成。
+
+用户要求本轮先审查，真实 HUST/NPU 联调待下一次提供服务器；届时先 1 张 NPU/公共 Qwen14B。下一项按[单后端接入清单](planning/hust-first-real-chain.md)推进实际关联/终态和恢复，再接 publisher/目录。真实 HUST 适配未安装，KV 订阅/GC/MOD 启停与 SLO 容量未验收，不冻结生产 ABI。下方为历史阶段。
+
 ## 当前执行：完整入口、动态准入与显式恢复（2026-10-13）
 
 在 codex/entry-admission-recovery 基于 054ae0a 推进，[草稿 PR #16](https://github.com/WMASTER123/prefix-routing-mod/pull/16) 基于 PR #15。固定 HUST 的真实 serving→AsyncLLM 方法已验证多 prompt × sampling child 总关联、stream、部分失败/取消；不是安装到引擎的真实 hook。Router 增加异步准入及可选自有 X-Request-Id 载体，复用原转发/回调/账本；实际宿主从空账本按请求预留后转发、重复客户端 header 覆盖、额度拒绝均通过。显式恢复保存新 runtime，旧债不清、旧许可拒绝、旧事件仍可对账；真实健康/身份获取和旧 dispatcher 停止依然是待接入前置条件。

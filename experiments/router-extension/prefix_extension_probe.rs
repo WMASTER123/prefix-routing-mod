@@ -404,12 +404,26 @@ async fn main() {
     let router = Router::new(workers, &ctx).await.unwrap();
     if !scenario.is_empty() {
         if scenario == "admission-cancel" {
-            assert!(tokio::time::timeout(
-                Duration::from_millis(50),
-                route(&router, "fixture", false)
-            )
-            .await
-            .is_err());
+            let signal =
+                std::env::var("PREFIX_PROBE_COMMIT_SIGNAL").expect("explicit commit barrier");
+            let mut pending = Box::pin(route(&router, "fixture", false));
+            let committed = async {
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while !tokio::fs::try_exists(&signal).await.unwrap() {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .expect("commit barrier deadline");
+            };
+            tokio::select! {
+                _ = &mut pending => panic!("route completed before post-commit cancellation"),
+                _ = committed => {}
+            }
+            drop(pending);
+            tokio::fs::write(format!("{signal}.cancelled"), b"cancelled\n")
+                .await
+                .unwrap();
             // Let the finite RPC finish, but no caller receives its permit.
             tokio::time::sleep(Duration::from_millis(750)).await;
         } else {

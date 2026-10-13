@@ -1,5 +1,7 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-13 进程恢复 probe：`python -m tools.router_recovery_probe --binary <本次构建的prefix_extension_probe> --output <新目录>` 使用同一持久工具账本，启动实际 Router/独立接收器，组合准入 ACK 丢失、等待取消、接收器异常终止、新 clock/命名空间交接、再重启额度拒绝和旧观察幂等。接收器故障注入时暂停新准入；恢复前 supervisor 必须实际停止其拥有的旧 Router 进程组。工具日志通过 OS 锁排他打开，锁不充当旧派发停止证明。真实服务身份仍为 fixture，参见[证据](../../evidence/router-process-recovery-2026-10-13.md)。原三文件 patch、Cargo 依赖和生产进程划分均未增加。
+
 2026-10-13 新增可选 `reserve_async`，默认 provider 仍调用原 reserve；宿主改为 await 后再建立 guard，实际发送前的 registry/control 检查保留。同步 Lease 回调仍不得进行磁盘/网络阻塞。可选 `request_id_header` 只作关联：宿主替换全部客户端 X-Request-Id，未提供 carrier 时保留原转发行为；它不是后端鉴权。固定 HUST 来源审计证明 header 优先于 body.request_id，真正引擎 hook 尚未安装。
 
 新的 `--online --dynamic` 模式启动空账本，原生请求通过 admission_bridge.rs 等待提交后才转发；第二请求由同一账本的额度拒绝。观测仍走原通道，无第二个生产状态 owner。实验 RPC 只限 loopback/显式 capability，最多八个阻塞 I/O job、每个交换总期限两秒；取消等待后 job 可在期限内收尾，不能自行发送 HTTP，已提交但未确认的预留保留。此模式是 CPU 接线，不是建议将逐请求 TCP/SQLite/线程池用于生产。

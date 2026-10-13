@@ -19,11 +19,29 @@ from threading import Lock, Thread
 from tests.fixtures.mock_backend import Handler, mock_backend
 from tools.durable_ledger_prototype import DurableLedger
 from tools.online_transport_probe import REF
-from tools.router_extension_probe import prototype_result
+from tools.router_extension_probe import MAX_LOG_BYTES, prototype_result
 from tools.smoke_backend import stop_owned_group
 from tools.transport_receiver_probe import SCHEMA, read_frame, write_frame
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def read_transcript(path):
+    with path.open("rb") as stream:
+        payload = stream.read(MAX_LOG_BYTES + 1)
+    if len(payload) > MAX_LOG_BYTES:
+        raise ValueError("recovery transcript exceeded evidence budget")
+    records = [
+        json.loads(line)
+        for line in payload.decode().splitlines()
+        if line.startswith('{"lifecycle_schema":')
+    ]
+    if len(records) != 1:
+        raise ValueError("one lifecycle transcript required")
+    from tools.lifecycle_trace_probe import validate_transcript
+
+    validate_transcript(records[0])
+    return records[0]
 
 
 def exchange(port, message):
@@ -69,6 +87,10 @@ def phase(
     ]
     if index > 1:
         command.append("--resume")
+    if fault == "cancel":
+        signal = output / "admission-committed"
+        command.extend(("--commit-signal", str(signal)))
+        environment["PREFIX_PROBE_COMMIT_SIGNAL"] = str(signal)
     receiver = router = None
     reader = None
     report = {"phase": index, "scenario": scenario, "clock_id": clock}
@@ -126,6 +148,13 @@ def phase(
             if router.returncode:
                 raise RuntimeError(f"Router probe exited {router.returncode}")
             report["router"] = prototype_result(output / "router.log")
+            if fault == "cancel":
+                if not signal.is_file() or signal.read_bytes() != b"committed\n":
+                    raise RuntimeError("post-commit cancellation barrier missing")
+                cancelled = signal.with_name(signal.name + ".cancelled")
+                if not cancelled.is_file() or cancelled.read_bytes() != b"cancelled\n":
+                    raise RuntimeError("native cancellation release missing")
+                report["cancelled_after_commit_signal"] = True
             cleanup = stop_owned_group(router)
             if cleanup["forced_group_cleanup"]:
                 raise RuntimeError("Router descendants required forced cleanup")
@@ -210,15 +239,8 @@ def run(binary, output):
                     crash_receiver=fault == "cancel",
                 )
                 recovered = phase(binary, directory / "recovered", database, (a, b), 2)
-                lines = (
-                    (directory / "recovered" / "router.log").read_text().splitlines()
-                )
-                transcript = [
-                    json.loads(line)
-                    for line in lines
-                    if line.startswith('{"lifecycle_schema":')
-                ]
-                old_event = transcript[0]["traces"][0][0]
+                transcript = read_transcript(directory / "recovered" / "router.log")
+                old_event = transcript["traces"][0][0]
                 saturated = phase(
                     binary,
                     directory / "saturated",

@@ -1,5 +1,7 @@
 # 关联、恢复与 wire：当前候选接线与生产退出条件
 
+2026-10-13 进程级组合补验：旧 Router 进程组实际退出、接收器重启/异常结束、准入丢确认或等待取消与同日志恢复现已组合通过；工具日志增加排他 owner。新派发保留旧债且继续受额度约束。现场服务观测、终态适配安装、GC 与真实 KV 订阅仍待接通；按[本轮记录](../../evidence/router-process-recovery-2026-10-13.md)区分 CPU 与真实服务证明。下表保留原阶段边界，不能把旧“未实现”当成最新状态。
+
 2026-10-13 本次更新：HTTP serving 的多 prompt 总关联已在固定源码方法执行中补齐，包含普通 AsyncLLM 分支和实际 ID；renderer/IPC 为替身，尚非网络端到端或已安装 hook。动态按请求 reserve 与接收旧观察共用一个 CPU 账本 owner；新 runtime 的显式交接保留旧负债，旧许可不能再发送。异步准入的宿主改动仅原 reserve 调用加 await，继续在实际 send 前检查 registry/control fence。剩余是 Router 自有身份 carrier 到真实 HUST 适配器安装、可信服务身份/启动排他与现场观测、终态组合及真实 KV 订阅；不能把 CPU takeover 调用当完整生产恢复。下方为历史过程，最新范围见[ADR](../decisions/2026-10-13-entry-recovery.md)。
 
 2026-10-13 更新：M5 原生 trace 已增加独立控制线程与有限 loopback 投递端，M3 接收观察后提交/确认并独立编号；真实 socket 与接收进程重建已回归。完整宿主结果见[本轮证据](../../evidence/online-transport-2026-10-13.md)。该通道只覆盖传输观察；真实 HTTP 总关联、动态预留、后端终态观察和启动时钟交接仍未完成。Python 接收端仅是实验，不增加生产进程。下表保留 2026-10-12 原始候选边界。

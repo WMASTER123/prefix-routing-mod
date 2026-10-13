@@ -31,7 +31,16 @@ def summary(store):
     }
 
 
-def serve(database, report_path, clock, token, *, resume=False, fault="none"):
+def serve(
+    database,
+    report_path,
+    clock,
+    token,
+    *,
+    resume=False,
+    fault="none",
+    commit_signal=None,
+):
     if fault not in ("none", "lost", "cancel"):
         raise ValueError("unknown admission fault")
     report = {
@@ -78,9 +87,22 @@ def serve(database, report_path, clock, token, *, resume=False, fault="none"):
                 return
             report["admission_faults"] += 1
             store.admission_ready = False
+            if commit_signal is not None:
+                with commit_signal.open("xb") as signal:
+                    signal.write(b"committed\n")
             if fault == "lost":
                 raise ConnectionError("injected admission ACK loss after commit")
-            time.sleep(0.5)  # Explicit fixture stall, never production callback.
+            if commit_signal is None:
+                time.sleep(0.5)  # Explicit Python disconnect fixture only.
+            else:
+                # The native probe cancels its future before releasing this
+                # two-way test barrier. Never used by a production observer.
+                cancelled = commit_signal.with_name(commit_signal.name + ".cancelled")
+                deadline = time.monotonic() + 2
+                while not cancelled.is_file():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("cancellation barrier deadline")
+                    time.sleep(0.005)
 
         receiver = AdmissionReceiver(
             store, token, clock_id=clock, after_admission=after_admission
@@ -134,6 +156,7 @@ def main():
     parser.add_argument("--clock", required=True)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--fault", choices=("none", "lost", "cancel"), default="none")
+    parser.add_argument("--commit-signal", type=Path)
     args = parser.parse_args()
     report = serve(
         args.database,
@@ -142,6 +165,7 @@ def main():
         os.environ["PREFIX_PROBE_TOKEN"],
         resume=args.resume,
         fault=args.fault,
+        commit_signal=args.commit_signal,
     )
     return 0 if report["status"] == "pass" else 1
 
