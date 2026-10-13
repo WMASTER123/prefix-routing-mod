@@ -4,7 +4,7 @@
 
 在 codex/router-recovery-faults 基于 2177297 推进。同一工具账本增加 OS 排他 owner 锁，新 Router 使用新的 clock/请求命名空间。实际 Router 与独立接收进程的六阶段组合通过：提交后丢准入 ACK/取消等待均零扩展发送，恢复保留 1 笔旧债并允许剩余额度，再重启保留 2 笔占用且不额外发送；旧观察重复幂等。恢复前实际确认旧 Router 及其进程组退出，取消组另覆盖接收器异常终止；这不是任意并发 kill 或真实后端自动恢复。
 
-初始代码 Windows 446+4 skips、Linux 450、integration 两端各 3、helper 21、实际 default-off/online/dynamic/观察 ACK 丢失/stream 回归、两端新制品/干净安装均通过。自审发现恢复证据的额外 transcript 读取没有独立上限，已改为有限读取并复用既有验证器，补反例；最终成绩另见[本轮记录](../evidence/router-process-recovery-2026-10-13.md)。独立人工审查与合并仍待完成。
+最终执行代码 71f0c95：Windows 448+4 skips、Linux 452、integration 两端各 3、helper 21、实际 default-off/online/dynamic/观察 ACK 丢失/stream 与新屏障恢复回归、两端新制品/干净安装均通过。自审修复额外 transcript 的读取上限，并将固定时间取消改成提交后双向通知屏障，补 2 项反例；该提交 CPU/helper CI success。最终结果见[本轮记录](../evidence/router-process-recovery-2026-10-13.md)，后续记录提交按其 head 另核验。独立人工审查与合并仍待完成。
 
 用户要求本轮先审查，真实 HUST/NPU 联调待下一次提供服务器；届时先 1 张 NPU/公共 Qwen14B。下一项按[单后端接入清单](planning/hust-first-real-chain.md)推进实际关联/终态和恢复，再接 publisher/目录。真实 HUST 适配未安装，KV 订阅/GC/MOD 启停与 SLO 容量未验收，不冻结生产 ABI。下方为历史阶段。
 
