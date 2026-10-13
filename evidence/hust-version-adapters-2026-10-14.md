@@ -49,6 +49,8 @@ M7 增加集中 profile、安装接口检查及 backend-doctor；旧 publisher �
 - 首次递归SCP备份包含socket和过长的Windows bytecode路径，失败后停止本任务SCP；改为排除cache/socket的日志归档，双端SHA一致。原始NPU报告和服务器缓存未删除。
 - 自审完成；独立人工审查/合并待完成。原生Router/helper源码未改，本轮未重复其历史全矩阵；新CI必须绑定实际head，不继承PR17的success。
 
+草稿 [PR18](https://github.com/WMASTER123/prefix-routing-mod/pull/18) 已建立并附任务，基于未合并的Router恢复分支。CPU checks [run38429895042](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38429895042) 已核对head为1761f57864cee63c75c77266eb191d04c09a7953，Python3.11/3.12的CPU/integration/build/wheel均success。后续记录提交另按其head核验，不继承本段成绩，不自动合并。
+
 ## 证据和未完成
 
 原始目录位于本项目artifacts：hust-cedb477-20261013、hust-cedb477-rebuild-20261013、cedb477-npu-01、cedb477-npu-02、cedb477-npu-reviewed。必要报告/日志备份到本机artifacts，原件和失败不进入Git。

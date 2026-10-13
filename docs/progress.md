@@ -10,6 +10,8 @@
 
 下方旧固定源码、当时机器和下一步仅适用于各段日期；当前优先本段和[迁移入口](planning/hust-version-adapters.md)。
 
+交付：[草稿PR18](https://github.com/WMASTER123/prefix-routing-mod/pull/18)，基于未合并PR17。本机/GitHub/服务器代码文档同步，原报告/日志双端归档SHA一致。1761f57的Python3.11/3.12 CPU、integration、build/wheel CI已核验success；后续记录提交以对应head另查。独立人工审查/合并待完成。
+
 ## 当前执行：实际 Router 进程恢复与审查收尾（2026-10-13）
 
 在 codex/router-recovery-faults 基于 2177297 推进。同一工具账本增加 OS 排他 owner 锁，新 Router 使用新的 clock/请求命名空间。实际 Router 与独立接收进程的六阶段组合通过：提交后丢准入 ACK/取消等待均零扩展发送，恢复保留 1 笔旧债并允许剩余额度，再重启保留 2 笔占用且不额外发送；旧观察重复幂等。恢复前实际确认旧 Router 及其进程组退出，取消组另覆盖接收器异常终止；这不是任意并发 kill 或真实后端自动恢复。
