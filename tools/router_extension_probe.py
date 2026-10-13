@@ -10,12 +10,13 @@ import os
 import socket
 import subprocess
 import time
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from pathlib import Path
 from threading import Lock
 
 from tests.fixtures.mock_backend import Handler, mock_backend
 from tools.lifecycle_trace_probe import validate_log
+from tools.online_transport_probe import online_receiver
 from tools.smoke_backend import stop_owned_group
 
 MAX_LOG_BYTES = 1_048_576
@@ -36,7 +37,7 @@ def prototype_result(path: Path) -> dict:
     return records[0]
 
 
-def run(binary: Path, output: Path) -> dict:
+def run(binary: Path, output: Path, *, online=False) -> dict:
     if os.name != "posix":
         raise ValueError("prototype probe requires Linux process groups")
     binary = binary.resolve(strict=True)
@@ -49,6 +50,9 @@ def run(binary: Path, output: Path) -> dict:
     process = None
     lock = Lock()
     counts = {}
+    disabled_environment = dict(os.environ)
+    disabled_environment.pop("PREFIX_PROBE_PORT", None)
+    disabled_environment.pop("PREFIX_PROBE_TOKEN", None)
 
     class ProbeHandler(Handler):
         def before_reply(self, request):
@@ -68,6 +72,12 @@ def run(binary: Path, output: Path) -> dict:
 
     try:
         with (
+            online_receiver(
+                output / "receipts.sqlite",
+                lambda: process is not None and process.poll() is None,
+            )
+            if online
+            else nullcontext(None) as channel,
             mock_backend(ProbeHandler) as worker_a,
             mock_backend(ProbeHandler) as worker_b,
         ):
@@ -77,6 +87,7 @@ def run(binary: Path, output: Path) -> dict:
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
+                    env=channel[0] if channel else disabled_environment,
                 )
                 process.wait(timeout=30)
             if process.returncode:
@@ -95,6 +106,20 @@ def run(binary: Path, output: Path) -> dict:
                 raise ValueError("unexpected resend or failed send-fence isolation")
             report["prototype"] = result
             report["status"] = "pass"
+        if online:
+            report["online_transport"] = channel[1]
+            observed = report["online_transport"]
+            if not (
+                observed["receipts"] == 46
+                and observed["online_applied_while_producer_alive"] == 46
+                and observed["transport_unknown"] == 22
+                and observed["not_sent"] == 2
+                and observed["unused_fixture_reservations"] == 40
+                and observed["outstanding_including_unused"] == 62
+                and observed["rejected_connections"] == 0
+                and observed["admission_ready"] is False
+            ):
+                raise ValueError("online receipt/debt mismatch")
     except Exception as error:
         report["error"] = f"{type(error).__name__}: {error}"
     finally:
@@ -114,8 +139,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--online", action="store_true")
     args = parser.parse_args()
-    report = run(args.binary, args.output)
+    report = run(args.binary, args.output, online=args.online)
     print(json.dumps(report))
     return 0 if report["status"] == "pass" else 1
 

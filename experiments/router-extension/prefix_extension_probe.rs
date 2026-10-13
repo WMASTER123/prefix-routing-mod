@@ -4,7 +4,10 @@
 use axum::{body::to_bytes, response::Response};
 #[path = "lifecycle_bridge.rs"]
 mod lifecycle_bridge;
+#[path = "online_bridge.rs"]
+mod online_bridge;
 use lifecycle_bridge::{LifecycleTrace, RouterClock, TracedLease};
+use online_bridge::{Controller, OnlineLease, Outbox};
 use std::{
     any::Any,
     sync::{Arc, Mutex},
@@ -67,6 +70,7 @@ struct State {
 struct FixtureProvider {
     state: Arc<Mutex<State>>,
     clock: Arc<RouterClock>,
+    outbox: Option<Arc<Outbox>>,
 }
 
 impl Default for RouterClock {
@@ -174,8 +178,6 @@ impl HttpExtension for FixtureProvider {
         assert_eq!(decision.control, state.control);
         assert_eq!(decision.request_id, features.request_id);
         assert_eq!(decision.instance_epoch, 1);
-        state.reserve += 1;
-        state.outstanding += 1;
         state.reject_send = features.model == "fixture-send-deny";
         if features.model == "fixture-config-change" {
             state.control += 1;
@@ -187,15 +189,28 @@ impl HttpExtension for FixtureProvider {
             "fixture-instance-1".into(),
             self.clock.clone(),
         )?));
+        if let Some(outbox) = &self.outbox {
+            outbox.register(trace.clone())?;
+        }
+        state.reserve += 1;
+        state.outstanding += 1;
         assert!(state.traces.len() < 128, "fixture trace budget");
         state.traces.push(trace.clone());
-        Ok(Box::new(TracedLease {
+        let inner = TracedLease {
             inner: Box::new(FixtureLease {
                 state: self.state.clone(),
                 control: features.control,
             }),
             trace,
-        }))
+        };
+        Ok(if let Some(outbox) = &self.outbox {
+            Box::new(OnlineLease {
+                inner,
+                outbox: outbox.clone(),
+            })
+        } else {
+            Box::new(inner)
+        })
     }
 }
 
@@ -264,7 +279,20 @@ async fn main() {
     consume(route(&off_router, "fixture", true).await, 200, true).await;
     consume(route(&off_router, "fixture-error", false).await, 503, false).await;
 
-    let provider = Arc::new(FixtureProvider::default());
+    let online = std::env::var("PREFIX_PROBE_PORT").ok();
+    let outbox = online.as_ref().map(|_| Arc::new(Outbox::new(64).unwrap()));
+    let controller = online.map(|port| {
+        Controller::start(
+            outbox.as_ref().unwrap().clone(),
+            format!("127.0.0.1:{port}").parse().unwrap(),
+            std::env::var("PREFIX_PROBE_TOKEN").expect("explicit capability"),
+        )
+        .unwrap()
+    });
+    let provider = Arc::new(FixtureProvider {
+        outbox,
+        ..FixtureProvider::default()
+    });
     let ctx = Arc::new(AppContext::new(config, client, 16, None, vec![]).unwrap());
     ctx.policy_registry
         .install_http_extension(provider.clone())
@@ -354,6 +382,9 @@ async fn main() {
     }))
     .await;
     assert_eq!(replies.iter().filter(|&&s| s == 200).count(), 8);
+    if let Some(controller) = &controller {
+        controller.drain(Duration::from_secs(10)).unwrap();
+    }
     let state = provider.state.lock().unwrap();
     assert_eq!(state.outstanding, 8);
     assert_eq!(state.reserve, state.closed);
