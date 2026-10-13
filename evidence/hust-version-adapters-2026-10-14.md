@@ -46,11 +46,14 @@ M7 增加集中 profile、安装接口检查及 backend-doctor；旧 publisher �
 - 自审修正END_SEQ字节、缺包CLI结构化失败、editable位置、finally关闭，以及接口验证不得宣称全部源码来源。路径反例fixture随定位调整后曾未触发，已修正并重新通过，没有削弱真实检查。
 - 两个通过目录在主动停服后仍记录HUST EngineDeadError；正常请求和自有进程清理通过。该日志是下一阶段启停诊断的实际问题，不计请求失败，也不宣布G3完整通过。DeepSelect/Mamba warning不扩大dense/eager资格。
 - 干净wheel检查中pip更新提示的TLS查询失败，但本地安装与离线检查exit0；没有关闭TLS或改环境掩盖错误。
+- 首次递归SCP备份包含socket和过长的Windows bytecode路径，失败后停止本任务SCP；改为排除cache/socket的日志归档，双端SHA一致。原始NPU报告和服务器缓存未删除。
 - 自审完成；独立人工审查/合并待完成。原生Router/helper源码未改，本轮未重复其历史全矩阵；新CI必须绑定实际head，不继承PR17的success。
 
 ## 证据和未完成
 
 原始目录位于本项目artifacts：hust-cedb477-20261013、hust-cedb477-rebuild-20261013、cedb477-npu-01、cedb477-npu-02、cedb477-npu-reviewed。必要报告/日志备份到本机artifacts，原件和失败不进入Git。
+
+双端日志归档 `cedb477-evidence-20261014.tar.gz` SHA256为 `c5a852ef953841e7e0ae128d5b214fab7d31bf1730f84e6ddcc7068a1067cb92`；排除可重建cache和socket，保留失败、报告、原始backend日志及规范化输入。不是公开下载链接。
 
 | 报告 | SHA256 |
 |---|---|
