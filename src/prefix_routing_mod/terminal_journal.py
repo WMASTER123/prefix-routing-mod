@@ -1,8 +1,8 @@
 """Bounded single-owner terminal journal for optional observation experiments.
 
-Mappings are complete synthetic families, registered before simulated dispatch.
-The prototype never infers a family from request-ID suffixes or HTTP completion.
-No persistence, IPC, authentication, threads or device operations are provided.
+Explicit capture supplies complete families before core submission. This journal
+never infers ownership from ID suffixes or HTTP completion. Transport, persistence,
+authentication and device operations belong to callers, not this state machine.
 """
 
 from collections import deque

@@ -184,6 +184,43 @@ def test_partial_send_keeps_unsealed_family():
     asyncio.run(run())
 
 
+def test_capture_context_is_only_needed_for_first_submission():
+    _, state = frontend()
+
+    class Output:
+        def add_request(self, request):
+            pass
+
+    class Front:
+        output_processor = Output()
+
+        async def add_request(self, *args):
+            pass
+
+        async def generate(self, *args):
+            assert adapter._context.get() is not None
+            yield "first"
+            assert adapter._context.get() is None
+            yield "second"
+
+    front = Front()
+    patches = adapter.attach_frontend(front, state, (), guard=lambda *a: None)
+    capture = adapter.Capture(
+        "prm-first", adapter.EntryCapture(state.journal, "prm-first", (1,))
+    )
+    token = adapter._context.set(capture)
+    stream = front.generate("prompt", NS(n=1), "external")
+    adapter._context.reset(token)
+
+    async def run():
+        try:
+            assert [value async for value in stream] == ["first", "second"]
+        finally:
+            patches.restore()
+
+    asyncio.run(run())
+
+
 def test_stream_context_does_not_escape_yield_or_cross_task_close():
     _, state, front, _, patches = fixture()
     capture = adapter.Capture("prm-cross-task")

@@ -157,14 +157,17 @@ def attach_frontend(frontend, state, serving_types, *, guard=verify_callable):
                 prompt, params, request_id, *args, **kwargs
             )
             try:
-                while True:
-                    token = _context.set(capture)
-                    try:
-                        output = await anext(iterator)
-                    except StopAsyncIteration:
-                        return
-                    finally:
-                        _context.reset(token)
+                # Fixed normal-input AsyncLLM finishes add_request before its
+                # first output. Later token chunks need no capture operations.
+                token = _context.set(capture)
+                try:
+                    output = await anext(iterator)
+                except StopAsyncIteration:
+                    return
+                finally:
+                    _context.reset(token)
+                yield output
+                async for output in iterator:
                     yield output
             finally:
                 # Never carry a ContextVar token across yield. Streaming close
