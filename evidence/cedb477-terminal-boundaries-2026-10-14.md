@@ -20,7 +20,9 @@
 | integration | 3 passed；仍是原 loopback 合成后端 |
 | 格式/静态/差异 | ruff check/format、git diff --check 通过 |
 | 制品 | 离线 sdist/wheel 构建、源码外干净安装、默认关闭及包资源检查通过；运行 wheel 字节与上一轮相同，因为本轮只改 tools/tests/CI |
-| Linux/CI/NPU | 本轮本地未运行 Linux/NPU；GitHub 新 job 的最终结果按实际 head 单独记录，不继承旧 CI |
+| Linux x86_64 CI | Python3.11/3.12各CPU503 passed、3 skipped，integration各3；构建/干净安装均通过 |
+| 专用源码 CI | Python3.11/3.12下载/校验十文件、3项显式测试、终态26 checks与入口26 checks全部通过；本地TLS故障未在CI复现 |
+| aarch64/NPU | 本轮未运行；服务器不可连接，不继承上一轮成绩 |
 
 26 个入口 checks 来自单进程调用完整源码方法；IPC、真实 detokenizer、业务结果、健康与时钟都为替身。正常完成从 core cleanup 入口开始，不包含真实 scheduler step/model output。consumer ACK 丢失是调用级注入，不冒充跨进程网络故障。当前仍缺新版真实 HTTP/终态跨进程链路、在线 KV 目录和性能证据。
 
@@ -32,6 +34,10 @@
 | sdist | ce7275d25e897e67feb548299253b96fd4b81a0a49921821ca4e02d9ea4ca19b |
 
 原始文件在本项目 artifacts/cedb477-terminal-20261014；报告和失败不覆盖。文档收尾若重建制品，另记 hash，不改写上述代码制品。
+
+草稿[PR19](https://github.com/WMASTER123/prefix-routing-mod/pull/19)已建立并附任务，基于未合并PR18；[CI run38503332456](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38503332456)的head已核实为3517c745de2b7773dd5a5bed1a74b7b913dc6641，四个job全部success。后续记录提交以其head另核验，不自动继承成绩。源码job的3.12产物已下载到本机artifacts/cedb477-terminal-20261014/ci-py312。
+
+本地主要报告/两个TLS失败/最终检查已归档为artifacts/cedb477-terminal-evidence-20261014.tar.gz，SHA256为59c846655c4fec15b988d0ac97e39207d4ca7d3dab6ae840701f6d08a5f52c59。该归档未包含模型/提示词/凭据，不在Git中。服务器同步待可用分配。
 
 ## 失败、自审与判断
 

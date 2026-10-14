@@ -6,6 +6,8 @@
 
 Windows CPU499+7 skips、显式固定源码反例3、integration3、格式/静态/新制品及干净安装通过。新增独立Python3.11/3.12源码CI job，下载固定十文件后执行；其结果按实际head另验。7 skips含原4项与专用gate显式运行的3项源码测试。本机urllib下载TLS失败保留，未降低hash或TLS检查；见[本轮证据](../evidence/cedb477-terminal-boundaries-2026-10-14.md)。
 
+交付[草稿PR19](https://github.com/WMASTER123/prefix-routing-mod/pull/19)，基于PR18。3517c74的[CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38503332456)四个job均success；Linux x86_64 3.11/3.12各CPU503+3 skips、integration3，专用源码各3测试及26/26 checks通过。后续记录提交按其head另验。代码文档已推GitHub，服务器本轮未同步，独立人工审查待完成。
+
 服务器32099两次握手前拒绝连接，本轮没有服务器同步或新NPU运行。下一步等可用分配，用1张卡验证新版实际安装方法和跨进程关联/终态，随后接在线KV；受控闭环通过即开展2×TP1强基线/Host开销测量，不等待所有长期交付项完成才测性能。完整安装、生产ABI/GC/MOD启停尚未验收；MOD仍import_only，独立人工审查待完成。具体范围见[现场接线计划](planning/cedb477-terminal-boundaries.md)。
 
 ## 上一轮：HUST 版本映射与新版实机子集（2026-10-14）
