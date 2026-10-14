@@ -5,6 +5,7 @@ include!(concat!(env!("OUT_DIR"), "/upstream.rs"));
 mod directory;
 #[cfg(test)]
 mod directory_tests;
+mod online;
 mod pool;
 mod wire;
 use kv_index::{
@@ -91,6 +92,13 @@ mod resource_counterexamples {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mode = args.get(1).map(String::as_str).unwrap_or("original");
+    if mode == "online" {
+        if let Err(error) = online::run() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if mode == "wire" {
         if let Err(error) = wire::run(args.get(2).expect("wire requires explicit input path")) {
             eprintln!("{error}");
