@@ -110,11 +110,12 @@ class TerminalJournal:
         self._begin(attempt_id, expected, managed=False)
 
     def begin_owned(self, expected):
-        """Allocate a never-reused attempt ID owned by this observer epoch.
+        """Allocate a non-reused attempt ID within this observer epoch.
 
         Only owner-allocated families can be retired. Callers using arbitrary
         external IDs retain the original finite behavior because the journal
-        cannot prove those IDs will never be reused.
+        cannot prove those IDs will never be reused. Production restart must
+        restore this counter or allocate a new observer epoch before dispatch.
         """
         counter = self.next_attempt
         self.next_attempt += 1
