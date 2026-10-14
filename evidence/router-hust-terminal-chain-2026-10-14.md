@@ -40,7 +40,7 @@ Router固定91b65ee4bdfbe98863a32a2205dced5dbb249ffe、vllm_router_rs0.1.16。�
 
 Python3.11/3.12 [CPU CI38513607903](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38513607903)四job全部success；专用源码也执行固定HUST方法和26/26 checks。[共享helper CI38513607926](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38513607926)success，另校验新example格式，不冒称该job完整编译Router。真实完整release是上述aarch64手动证据。
 
-新制品经隔离hatchling1.32.4构建，两端干净安装另验。初次错误选--no-isolation且开发venv未装hatchling失败，随后按原隔离构建流程成功；不往服务/全局环境补依赖。Windows wheel SHA fc7ecf793a217b77abd2e427a86010860e381b4b45b8ac8deee3978cf2b6377e，sdist SHA 9892a70033e1fe70ee3796046c808d5c48bf2006c513c1127c0840e1f9c21fa3；不混同实际后端沿用的旧MOD wheel。
+新制品经隔离hatchling1.32.4构建，Windows与Linux x86_64 CI干净安装通过；新wheel的aarch64干净安装未执行，见下方服务器同步状态。初次错误选--no-isolation且开发venv未装hatchling失败，随后按原隔离构建流程成功；不往服务/全局环境补依赖。Windows wheel SHA fc7ecf793a217b77abd2e427a86010860e381b4b45b8ac8deee3978cf2b6377e，sdist SHA 9892a70033e1fe70ee3796046c808d5c48bf2006c513c1127c0840e1f9c21fa3；不混同实际后端沿用的旧MOD wheel。
 
 自审增加完整批次family校验后才应用、迟到close反例、有界脱敏stdout、真实非空流输出/正常finish_reason检查、最终后端family集合检查、异常后准入fence。未扩兼容、生产schema或性能声明；另一成员独立人工审查/合并待完成。
 
@@ -51,3 +51,11 @@ Python3.11/3.12 [CPU CI38513607903](https://github.com/WMASTER123/prefix-routing
 下一步按批准顺序接M7→原M2索引，先受控空起点/连续覆盖/控制新鲜度与全池预算；已热/超窗恢复仍须新版共同边界。再用现有两卡开展2×TP1强基线与分层开销，不加新算法或额外卡。生产HTTP装配和长期恢复/GC随真实接缝收敛，不提前冻结ABI。
 
 原始archive双端SHA **6fbdef99e26fca5336bc052eee0d96b7aae151630fb1589ec81bfef3446e9f4f**，server artifacts/router-live-chain-20261014/evidence-01.tar.gz，本机同相对路径。包含npu-01报告/脱敏Router输出/backend日志/SQLite、两次build log和Linux最终checks，排除cache/socket/权重/整个源码树。report.json SHA fa4c85ffdc4f93d8ee26b0f15cf822720d4572007c184ee89beb560e9f212dcd；router-chain-report.json SHA 1e688d926f63d1bea731df854b6378e8373642bb2032c250dd3abf300646a241。交付[草稿PR21](https://github.com/WMASTER123/prefix-routing-mod/pull/21)，基于未合并PR20；最终记录head的CI另核验。
+
+## 收尾与未完成同步
+
+功能代码cc2478b已在服务器运行；0ea2615及后续本轮记录仅文档/说明修正，未产生新硬件资格。0ea261577e8d76fa4f00b9813e4c2aa061827846的[CPU/源码CI38514511969](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38514511969)与[helper CI38514511920](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38514511920)全部success，后续记录提交以对应head另查。
+
+原始archive拷回并核SHA后，32068在最后同步时拒绝SSH，两次读取均未能进入；原因未知，不能擅自判断资源回收。故服务器目前最后确认功能head为cc2478b，**最终文档同步、新wheel拷贝/aarch64干净安装和本轮结束时再次pip check未执行**，不写成三端全同步。原模型/Router退出及NPU无进程是在失联前已核验的事实。未连接其他目标、扩大凭据或运行保活负载。
+
+本地/GitHub保留全部代码、活文档和校验一致的实机archive，workspace三份规划同步当前范围。待有效分配恢复后，先确认原目录/dirty状态/版本，再ff同步和补缺少检查；不因为SSH失败就换一套引擎。正式双副本容量的业务SLO数值仍待用户确认，多阈值/长度分组方案已提出，不据此擅自选有利阈值。

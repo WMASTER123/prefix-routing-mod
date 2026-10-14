@@ -8,6 +8,8 @@ Windows CPU545+7 skips、aarch64549+3 skips、integration各3；3.11/3.12 CPU/�
 
 当前仅是实际typed Router库的有限控制程序，不是生产外部HTTP宿主或完整前缀路由产品。M1精确token、在线M2、生产M3/IPC、双副本性能、长期GC/图/完整恢复/MOD启停均未验收；MOD import_only、生产ABI不冻结。下一步接M7→原M2受控空起点/连续流/身份与新鲜度/全池限额，之后现有两卡做强基线和开销，不增加新算法。具体[组合范围与后续计划](planning/router-hust-terminal-chain.md)。
 
+收尾：0ea2615的CPU/源码与helper CI全部success，后续记录head另查。实机archive已先拷回且SHA一致；随后32068两次SSH被拒，原因未确认。服务器最后确认head为已通过实机的cc2478b；**最后活文档同步与新wheel的aarch64干净安装未执行**，不能称三端全同步。本地/GitHub与workspace规划已更新，独立人工审查仍待完成。CPU接线可继续，下一次实机前需有效分配并补同步；卡数量仍2张足够。
+
 ## 上一阶段：单后端真实入口/核心终态闭环（2026-10-14）
 
 新分配 32068 两张 910B2，继续固定 HUST ced6857/b47795c 与原隔离环境；排除 SDK PYTHONPATH 后 189 包兼容，没有换引擎或改全局环境。最终功能代码 92cc06c、两卡顺序单实例复验：真实 completion/chat、2 prompts×n2、stop string 和 stream 断连，4 family/8 child 接回同一账本。HTTP 结束/断连不清债，完整封口与实际核心正终态确认后结清；stop string 和断连的核心 FINISHED_ABORTED 均实际断言。重放、重复投递、账本重开及自有包装恢复通过。
