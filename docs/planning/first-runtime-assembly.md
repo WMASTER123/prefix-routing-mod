@@ -1,6 +1,6 @@
 # 首版运行时装配与接口冻结清单
 
-2026-10-14。在线目录子集通过后的下一实现包。固定Router内候选组合层和第一批回收原语已经实现并通过CPU检查；typed公开链的双loopback fixture探针已补但因服务器回收尚未执行，见[ADR](../decisions/2026-10-14-first-runtime-composition.md)与[证据](../../evidence/first-runtime-composition-2026-10-14.md)。真实端口装配和生产ABI仍未完成。
+2026-10-14。在线目录子集通过后的下一实现包。固定Router内候选组合层和第一批回收原语已经实现并通过CPU检查；typed公开链的双loopback fixture探针也已在固定Router宿主通过。探针发现并修正了“误把worker数组位置当身份”的夹具错误，因此生产M2必须按稳定worker URL与instance epoch关联目录。见[ADR](../decisions/2026-10-14-first-runtime-composition.md)与[证据](../../evidence/first-runtime-composition-2026-10-14.md)。真实端口装配和生产ABI仍未完成。
 
 ## 运行形态与代码归属
 

@@ -66,8 +66,11 @@ impl FeaturePort for FixtureFeatures {
     }
 }
 
-#[derive(Debug, Default)]
-struct FixtureSnapshot;
+#[derive(Debug)]
+struct FixtureSnapshot {
+    base_url: String,
+    cache_url: String,
+}
 
 impl SnapshotPort for FixtureSnapshot {
     fn candidates(
@@ -75,12 +78,15 @@ impl SnapshotPort for FixtureSnapshot {
         features: &RequestView,
         available: &[String],
     ) -> Result<Vec<Candidate>, &'static str> {
-        if available.len() != 2 {
+        if available.len() != 2
+            || !available.contains(&self.base_url)
+            || !available.contains(&self.cache_url)
+        {
             return Err("two_workers_required");
         }
         Ok(vec![
             Candidate {
-                worker_url: available[0].clone(),
+                worker_url: self.base_url.clone(),
                 instance_epoch: "worker-a-epoch".into(),
                 worker_version: 1,
                 config_version: 1,
@@ -90,7 +96,7 @@ impl SnapshotPort for FixtureSnapshot {
                 matched_blocks: Some(0),
             },
             Candidate {
-                worker_url: available[1].clone(),
+                worker_url: self.cache_url.clone(),
                 instance_epoch: "worker-b-epoch".into(),
                 worker_version: 1,
                 config_version: 1,
@@ -217,7 +223,10 @@ async fn main() {
     let state = Arc::new(Mutex::new(ProbeState::default()));
     let provider = Arc::new(RuntimeProvider::new(
         Arc::new(FixtureFeatures),
-        Arc::new(FixtureSnapshot),
+        Arc::new(FixtureSnapshot {
+            base_url: workers[0].clone(),
+            cache_url: workers[1].clone(),
+        }),
         Arc::new(FixtureAdmission {
             next: AtomicU64::new(1),
             state: state.clone(),
