@@ -287,7 +287,10 @@ def _run(opener, origin, output, token, report):
             or store.outstanding(ref) != 1
         ):
             raise ValueError("Actual stop-string response differs")
-        completed.append({"case": "stop_string", "family": settle(store, attempt, 1)})
+        family = settle(store, attempt, 1)
+        if family["core_statuses"] != {"FINISHED_ABORTED": 1}:
+            raise ValueError("Stop-string core abort not observed")
+        completed.append({"case": "stop_string", "family": family})
 
         attempt = "prm-cancel-" + uuid.uuid4().hex[:12]
         outcomes[attempt] = EventKind.CANCEL_CONFIRMED
@@ -320,9 +323,10 @@ def _run(opener, origin, output, token, report):
         store.notify_transport(attempt, EventKind.OUTCOME_UNKNOWN, context())
         if store.outstanding(ref) != 1:
             raise ValueError("Client disconnect released debt")
-        completed.append(
-            {"case": "stream_disconnect", "family": settle(store, attempt, 1)}
-        )
+        family = settle(store, attempt, 1)
+        if family["core_statuses"] != {"FINISHED_ABORTED": 1}:
+            raise ValueError("Disconnected stream did not observe core abort")
+        completed.append({"case": "stream_disconnect", "family": family})
         operations = store.operation_count
     with DurableLedger(path) as store:
         recovered = control(0, 0)
@@ -371,6 +375,7 @@ def _run(opener, origin, output, token, report):
         actual_http_frontend_verified=True,
         same_existing_ledger_verified=True,
         client_disconnect_retains_debt=True,
+        core_abort_reason_verified=True,
         retained_positive_recovery_verified=True,
         owned_restoration_verified=True,
         finite_retention=True,

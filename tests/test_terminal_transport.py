@@ -31,7 +31,7 @@ def test_core_ack_duplicate_and_finite_retention():
     assert source.observe("a") and source.observe("a") and source.boundary == 1
     assert len(source.poll(source.epoch, 0, 0)["records"]) == 1
     assert source.poll(source.epoch, 1, 1)["records"] == []
-    assert not source.records and source.seen == {"a"}
+    assert not source.records and set(source.seen) == {"a"}
     assert source.observe("b")
     assert not source.observe("c") and source.failed
     with pytest.raises(RuntimeError, match="unavailable"):
@@ -148,3 +148,10 @@ def test_corrupt_batch_tail_cannot_apply_valid_head():
     with pytest.raises(ValueError):
         asyncio.run(state.read(None, 0, 0))
     assert not state.journal.families["prm-a"].ended and state.cursor == 0
+
+
+def test_same_child_cannot_change_terminal_reason():
+    source = CoreEnds()
+    assert source.observe("child", "FINISHED_ABORTED")
+    assert not source.observe("child", "FINISHED_STOPPED")
+    assert source.failed

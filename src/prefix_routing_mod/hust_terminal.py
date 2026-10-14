@@ -61,7 +61,10 @@ def _core_poll(core, epoch, after, acknowledge, disable=False):
         def cleanup(scheduler, request, *args, **kwargs):
             result = original(request, *args, **kwargs)
             try:
-                source.observe(request.request_id)
+                source.observe(
+                    request.request_id,
+                    getattr(getattr(request, "status", None), "name", "unknown"),
+                )
             except Exception:
                 source.failed = True
             return result

@@ -153,6 +153,7 @@ def test_lazy_stream_retains_own_context_and_complete_family(stream):
                 "ended": 4,
                 "sealed": True,
                 "abandoned": False,
+                "core_statuses": {"unknown": 4},
             }
             assert reply["boundary"] == 1
         finally:
@@ -239,7 +240,7 @@ def test_core_observer_preserves_cleanup_and_restores_owned_instance(monkeypatch
     with pytest.raises(LookupError, match="original"):
         scheduler._free_request(NS(request_id="b", fail=True))
     reply = adapter._core_poll(core, bootstrap["epoch"], 0, 0)
-    assert reply["records"] == [{"sequence": 1, "child": "a"}]
+    assert reply["records"] == [{"sequence": 1, "child": "a", "status": "unknown"}]
     assert (
         adapter._core_poll(core, bootstrap["epoch"], 1, 1, True)[
             "cleanup_observer_installed"

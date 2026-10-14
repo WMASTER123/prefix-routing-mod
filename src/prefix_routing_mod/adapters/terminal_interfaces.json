@@ -2,6 +2,7 @@
   "schema_version": 1,
   "profile_id": "hust-cedb477-native-v1",
   "sources": {
+    "vllm/v1/request.py": "da610d5203e72d2d524adc5fb39df11502a23520f2f31d9a44cf13d343f9c25d",
     "vllm/v1/core/sched/scheduler.py": "c1db45f3bbad3a875dd8638331b8870c4380ac1ab4734265ba5c863833a82884",
     "vllm/v1/engine/core.py": "268bf40534a853812867ae8e80040f190983cb364b41182b55969aace20c93f5",
     "vllm/v1/engine/output_processor.py": "e47b86cd69ce1c1e3f53dac655eaa75c32a4057d10f4a1db16bb83a397f2a329",

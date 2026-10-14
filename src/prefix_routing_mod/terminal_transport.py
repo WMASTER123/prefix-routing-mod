@@ -7,12 +7,23 @@ finite journals stop enhanced admission at their budgets; no long-term GC claim.
 import asyncio
 import os
 import uuid
-from collections import deque
+from collections import Counter, deque
 from dataclasses import asdict
 
 from .terminal_journal import Binding, TerminalJournal
 
 CORE_METHOD = "_prefix_routing_terminal_poll_v1"
+END_STATUSES = frozenset(
+    {
+        "unknown",
+        "FINISHED_STOPPED",
+        "FINISHED_LENGTH_CAPPED",
+        "FINISHED_ABORTED",
+        "FINISHED_IGNORED",
+        "FINISHED_ERROR",
+        "FINISHED_REPETITION",
+    }
+)
 
 
 class CoreEnds:
@@ -23,24 +34,34 @@ class CoreEnds:
         self.epoch = uuid.uuid4().hex
         self.pid = os.getpid()
         self.records = deque()
-        self.seen = set()
+        self.seen = {}
         self.boundary = self.acknowledged = 0
         self.failed = False
 
-    def observe(self, child):
+    def observe(self, child, status="unknown"):
         if self.failed:
             return False
-        if not isinstance(child, str) or not child or len(child.encode()) > 512:
+        if (
+            not isinstance(child, str)
+            or not child
+            or len(child.encode()) > 512
+            or status not in END_STATUSES
+        ):
             self.failed = True
             return False
         if child in self.seen:
+            if self.seen[child] != status:
+                self.failed = True
+                return False
             return True
         if len(self.seen) >= self.limit:
             self.failed = True
             return False
         self.boundary += 1
-        self.seen.add(child)
-        self.records.append({"sequence": self.boundary, "child": child})
+        self.seen[child] = status
+        self.records.append(
+            {"sequence": self.boundary, "child": child, "status": status}
+        )
         return True
 
     def poll(self, epoch, after, acknowledge):
@@ -88,6 +109,7 @@ class FrontendEnds:
         self.core_epoch = bootstrap["epoch"]
         self.core_pid = bootstrap["pid"]
         self.cursor = 0
+        self.child_statuses = {}
         self.journal = TerminalJournal(
             Binding(worker_id, self.core_epoch, uuid.uuid4().hex),
             max_families=64,
@@ -122,23 +144,23 @@ class FrontendEnds:
             for sequence, record in enumerate(reply["records"], self.cursor + 1):
                 if (
                     not isinstance(record, dict)
-                    or set(record) != {"sequence", "child"}
+                    or set(record) != {"sequence", "child", "status"}
                     or type(record["sequence"]) is not int
                     or record["sequence"] != sequence
                     or not isinstance(record["child"], str)
                     or not record["child"]
                     or len(record["child"].encode()) > 512
+                    or not isinstance(record["status"], str)
+                    or record["status"] not in END_STATUSES
                 ):
                     raise ValueError("Core terminal record malformed or gapped")
             for record in reply["records"]:
                 # Managed children bind before their first core IPC await. Other
                 # traffic has no matching owner and cannot close a managed family.
-                if record[
-                    "child"
-                ] in self.journal.owners and not self.journal.observe_core_end(
-                    record["child"]
-                ):
-                    raise RuntimeError("Frontend terminal journal unavailable")
+                if record["child"] in self.journal.owners:
+                    if not self.journal.observe_core_end(record["child"]):
+                        raise RuntimeError("Frontend terminal journal unavailable")
+                    self.child_statuses[record["child"]] = record["status"]
             self.cursor = reply["boundary"]
         except (Exception, asyncio.CancelledError):
             self.journal.failed = True
@@ -182,6 +204,11 @@ class FrontendEnds:
                         "ended": len(family.ended),
                         "sealed": family.sealed,
                         "abandoned": family.abandoned,
+                        "core_statuses": dict(
+                            Counter(
+                                self.child_statuses[child] for child in family.ended
+                            )
+                        ),
                     }
                     for name, family in self.journal.families.items()
                 ],
