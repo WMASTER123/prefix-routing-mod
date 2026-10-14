@@ -74,8 +74,9 @@ def bootstrap(path):
 class AdmissionReceiver(Receiver):
     """One CPU owner for admission and observations, not a production service.
 
-    Only this fixture's fixed worker/domain/config are accepted. The caller's
-    clock is synthetic; no cross-host timestamp or real health claim is made.
+    Defaults retain the CPU fixture. Controlled live experiments may supply an
+    explicit worker/domain and a pre-reservation health/binding check. Producer
+    timestamps stay in their own clock domain; this receiver invents no health.
     """
 
     def __init__(

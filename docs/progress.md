@@ -1,6 +1,14 @@
 # 进度与下一步
 
-## 当前：单后端真实入口/核心终态闭环（2026-10-14）
+## 当前：实际Router库与真实HUST终态组合（2026-10-14）
+
+功能代码cc2478b：复用原Router三文件补丁/准入/生命周期/账本，在32068的1张910B2上通过普通n2、流式首个非空输出后drop、确认前额度拒绝/确认后准入、提交后丢许可ACK无额外受管family、重开保债。2个family/3个真实child；正常核心LENGTH_CAPPED×2，取消ABORTED×1。另1笔未获许可的预留故意保留，重开暂停，不是NPU仍有请求。模型进程和Router均正常退出，两张卡无进程。
+
+Windows CPU545+7 skips、aarch64549+3 skips、integration各3；3.11/3.12 CPU/源码CI及共享helper CI通过。原宿主三个文件逐字节一致，aarch64完整release与原Cargo锁通过，无HUST源码/设备栈修改。新case、失败构建与完整边界见[本轮证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，[草稿PR21](https://github.com/WMASTER123/prefix-routing-mod/pull/21)基于PR20，独立人工审查/合并待完成；后续记录head另验CI。
+
+当前仅是实际typed Router库的有限控制程序，不是生产外部HTTP宿主或完整前缀路由产品。M1精确token、在线M2、生产M3/IPC、双副本性能、长期GC/图/完整恢复/MOD启停均未验收；MOD import_only、生产ABI不冻结。下一步接M7→原M2受控空起点/连续流/身份与新鲜度/全池限额，之后现有两卡做强基线和开销，不增加新算法。具体[组合范围与后续计划](planning/router-hust-terminal-chain.md)。
+
+## 上一阶段：单后端真实入口/核心终态闭环（2026-10-14）
 
 新分配 32068 两张 910B2，继续固定 HUST ced6857/b47795c 与原隔离环境；排除 SDK PYTHONPATH 后 189 包兼容，没有换引擎或改全局环境。最终功能代码 92cc06c、两卡顺序单实例复验：真实 completion/chat、2 prompts×n2、stop string 和 stream 断连，4 family/8 child 接回同一账本。HTTP 结束/断连不清债，完整封口与实际核心正终态确认后结清；stop string 和断连的核心 FINISHED_ABORTED 均实际断言。重放、重复投递、账本重开及自有包装恢复通过。
 

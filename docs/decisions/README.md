@@ -1,5 +1,7 @@
 # 决策索引
 
+- [2026-10-14：原Router准入/转发与HUST终态有限组合](2026-10-14-router-live-chain.md)；沿用原宿主/观察/账本，不冻结生产IPC或增加索引。
+
 - [2026-10-14：复用 HUST utility/endpoint 的有限终态实机接线](2026-10-14-live-terminal-utility.md)；默认关闭、8处可逆包装，不冻结生产ABI。
 
 - [2026-10-13：HUST cedb477 迁移与版本适配](2026-10-13-hust-version-adapters.md)；新旧映射、能力边界、只读制品复用与独立环境。
