@@ -51,7 +51,7 @@
 
 92cc06c：Windows CPU **534 pass / 7 skip / 3 deselect**；Linux aarch64 CPU **538 pass / 3 skip / 3 deselect**；integration 两端各 **3 pass**；ruff/format 和两端全新 wheel 安装/默认关闭入口、包资源检查通过。Windows 多出的 4 skip 是平台符号链接限制；3 个固定源码执行项普通 CPU 明确 skip，由专用源码门槛另跑，不等于 7 项均未验证。
 
-最终 Windows 显式固定源码门槛 **3 pass**，新版终态和入口账本分别 **26/26 checks**；固定原方法/hash 未变。常规 Python 调错解释器及显式源码目录指错曾失败，修正命令后复验；未修改断言或降低守卫。GitHub CI 另按实际提交核验，不继承旧 PR 成绩。
+最终 Windows 和 Linux aarch64 显式固定源码门槛各 **3 pass**，新版终态和入口账本在 Windows 分别 **26/26 checks**；固定原方法/hash 未变。常规 Python 调错解释器及显式源码目录指错曾失败，修正命令后复验；未修改断言或降低守卫。GitHub CI 另按实际提交核验，不继承旧 PR 成绩。
 
 自审覆盖模块移动单一实现、foreign patch 所有权、版本拒绝、完整批次校验、ACK/恢复、部分提交保债、预算溢出、轮询取消、流式跨 task 关闭。修正先 fence 再等待关闭、lazy generator 关联与 ContextVar 跨 yield 问题，补首次提交后无需逐输出块设置上下文测试；无采样装置进入热路径。失败请求改非贪心并保存有界错误/部分报告，stop string 与取消补真实核心原因断言。源码 API 仍属实验，另一成员独立人工审查待完成。
 
@@ -63,4 +63,10 @@
 - 主动停服后原生 HUST output_handler 仍报告 EngineDeadError，含无 hook 基线；记录 exit0/无残留不等于证明所有 shutdown 时序正常。保留原日志和 G3 未决项，不吞异常“修复”。
 - 无可报告的观测开销/性能容量提升，runtime profile 基础 terminal 能力仍 false，MOD import_only；仅独立实机子集报告 terminal_observer_verified=true。
 
-原始证据 archive（排除 cache/socket）双端 SHA256 一致：**ab032cbed01629da8dcb562bc7c542e552935815dc0850b51c114bc58a8a9913**。服务器 `artifacts/cedb477-live-terminal-20261014-evidence.tar.gz`；本机 `artifacts/live-terminal-20261014/cedb477-live-terminal-20261014-evidence.tar.gz`。归档含上述六次实机目录及 Linux 最终 CPU/integration 报告；固定源码单独成绩在本机 checks-reviewed-final。GitHub 交付/CI 以收尾记录为准。
+原始证据 archive（排除 cache/socket）双端 SHA256 一致：**ab032cbed01629da8dcb562bc7c542e552935815dc0850b51c114bc58a8a9913**。服务器 `artifacts/cedb477-live-terminal-20261014-evidence.tar.gz`；本机 `artifacts/live-terminal-20261014/cedb477-live-terminal-20261014-evidence.tar.gz`。归档含上述六次实机目录及 Linux 最终 CPU/integration 报告；固定源码单独成绩在本机 checks-reviewed-final。
+
+## 交付与 CI
+
+[草稿 PR20](https://github.com/WMASTER123/prefix-routing-mod/pull/20) 基于未合并 PR19，人工独立审查/合并待完成。代码和活文档已同步本地、GitHub 和32068项目目录，workspace三份中文规划的最新段落一致。GitHub最初TLS推送失败，未关闭校验；显式使用本机既有Git和网络配置后推送成功。
+
+文档/代码提交 **7c3bd4be733496ec900e9b8aebc9612f08ceb67b** 的[CI run38508875672](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38508875672)四个job均success：Linux x86_64 Python3.11/3.12各CPU538+3 skips、integration3、构建及干净wheel通过；两个专用源码job各3测试及26/26 checks通过。3.12 CI产物另下载至本机artifacts/live-terminal-20261014/ci-7c3bd4b-py312。后续仅记录提交仍以其确切head另核验，不把这些CPU CI当新增NPU资格。

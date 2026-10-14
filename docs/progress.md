@@ -10,6 +10,8 @@
 
 下一步先将已有 Router 自有 attempt、动态准入/传输生命周期与本次终态消费组合到同一 owner，再接真实 KV 订阅到原索引；受控完整链路成立即做两副本强基线和 Host 开销，不继续堆算法。现在2张卡足够：单后端1张、双TP1共2张，无需额外卡。详见[新执行清单](planning/cedb477-live-terminal.md)。下方同日 CPU 段落及旧机器描述是历史过程，不是当前待申请状态。
 
+交付[草稿PR20](https://github.com/WMASTER123/prefix-routing-mod/pull/20)，基于未合并PR19；7c3bd4b的[CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38508875672)四个job全部success，3.11/3.12各CPU538+3 skips、integration3和新制品通过，专用源码各3项及26/26 checks通过。源码/文档已同步新服务器和GitHub，原始证据双端校验一致；后续记录提交按对应head另查。独立人工审查与合并仍待完成。
+
 ## 当前执行：新版入口/终态到同一账本的 CPU 接线（2026-10-14）
 
 基于8997ae8，在codex/cedb477-terminal-boundaries推进；代码e9f3a5b复用原审计、EntryCapture/TerminalJournal/OnlineConsumer/DurableLedger。新版终态26 checks、入口账本26 checks通过；旧源码25/25 checks回归。完整关联后核心清理成功才结清，部分提交/准入拒绝/清理失败保债，stop string早删映射与提交后丢ACK恢复均覆盖。固定输出接收方法的取消→EngineDeadError路径已CPU复现，与旧停服日志相符；完整现场因果待验。
