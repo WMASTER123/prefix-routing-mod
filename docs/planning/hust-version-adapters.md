@@ -1,5 +1,7 @@
 # 版本适配与 cedb477 迁移
 
+2026-10-14 后续现场更新：32068 的可选终态有限子集已真实安装验证，4 family/8 child、核心 abort 原因、原账本/重放/重开/自有包装恢复通过。尚未接原生 Router 或在线 KV；有限留存、完整恢复/图/MOD启停未过。当前优先阅读[实机接线说明](cedb477-live-terminal.md)和[证据](../../evidence/cedb477-live-terminal-2026-10-14.md)，下方“未安装/待服务器”只描述此前阶段。
+
 2026-10-14后续：新版入口与可靠终态的固定方法已接原实验账本完成CPU验证；实际安装/跨进程链路仍待现场。审计profile集中在tools，runtime的terminal能力保持false。当前范围与下一步见[接线计划](cedb477-terminal-boundaries.md)。
 
 日期：2026-10-13。本页是当前迁移入口；历史旧 HUST 成绩保留原范围。决策见 [ADR](../decisions/2026-10-13-hust-version-adapters.md)。

@@ -1,5 +1,7 @@
 # MOD / 插件规范映射
 
+2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+
 ## 已采用的真实来源
 
 - [extension-template](https://github.com/vLLM-HUST/extension-template/tree/0d537f3193f217b21cf730a32f0a2629b631244b)，通过 tools/new_extension.py --kind import_only 生成。

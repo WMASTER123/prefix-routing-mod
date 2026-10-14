@@ -1,5 +1,7 @@
 # 新实验服务器操作基线
 
+2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+
 2026-10-11 当前分配为 CPU-only aarch64、16 核 CPU 配额、64 GiB RAM、16 GiB /dev/shm、0 NPU。项目目录仍为 /root/work/prefix-routing-mod；仅开展 CPU 契约、构建和模拟转发。需要真实 G2/G3 时申请 1 张 NPU，G4 申请 2 张，执行前重新盘点。
 
 此前最近一次 NPU 分配为 4 张 Ascend 910B2，物理枚举 0/1/2/7、每张 HBM 65536 MiB、128 GiB RAM、32 GiB /dev/shm，身份/hook 主回归只使用逻辑 0。该分配及更早的卡映射、磁盘和四卡测试均为历史记录，不能用于当前操作。下面真实推理命令仅在新 NPU 分配核验通过后执行。

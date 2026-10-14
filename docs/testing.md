@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+
 2026-10-14：新增`hust-source-methods`独立job（Python3.11/3.12），显式下载HUST ced6857的十个固定SHA文件，运行新版终态审计和入口→原账本组合；另执行缺seal失败、意外异常传播等3项测试。`tools.fetch_hust_audit_sources`只写全新项目artifacts目录；TLS/网络或SHA失败会使job失败。普通CPU测试的3项源码执行在未设HUST_AUDIT_SOURCE_DIR时skip，专用job必须显式设置有效目录。没有HUST安装或NPU/真实HTTP资格；复现命令和边界见[现场计划](planning/cedb477-terminal-boundaries.md)。下方“源码未纳入CI”只描述此前日期的状态。
 
 2026-10-13 入口/恢复新增：自动 CPU 测试覆盖总组数/提前结束、普通额度拒绝后的继续对账、旧许可 fencing、时钟不复用、交接提交前/后独立进程退出；原 helper CI 直接编译 admission_bridge.rs，覆盖精确回执、丢回执、取消等待及八个 RPC 槽位上限。固定 HUST 入口方法审计手动执行 `python -m tools.audit_http_entry --source-directory <原七文件目录> --entry-directory <三个 serving 文件目录> --output <新报告>`，须通过全部 hash 守卫，renderer/IPC/core 仍是替身。完整 Router 新增 `--online --dynamic` 验证零预填预留、提交早于后端到达和第二请求额度拒绝；旧 `--online` 及默认关闭路径保留。不是 NPU/真实 hook 或性能验收。
