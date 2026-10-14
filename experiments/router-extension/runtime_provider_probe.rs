@@ -121,8 +121,15 @@ impl AdmissionPort for FixtureAdmission {
         decision: &'a Decision,
     ) -> host_extension::AdmissionFuture<'a> {
         Box::pin(async move {
-            if decision.request_id != features.request_id {
-                return Err("request_fence");
+            if decision.request_id != features.request_id
+                || decision.worker_version != 1
+                || decision.config_version != 1
+                || !matches!(
+                    decision.instance_epoch.as_str(),
+                    "worker-a-epoch" | "worker-b-epoch"
+                )
+            {
+                return Err("decision_fence");
             }
             self.state
                 .lock()
