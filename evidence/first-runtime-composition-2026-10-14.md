@@ -19,7 +19,7 @@
 
 首次远端检查因命令PATH未保留 `/usr/bin` 而找不到`cc`；纠正为显式系统PATH后继续。第一次完整宿主检查误把OpenSSL前缀写成`build-sysroot`，实际完整前缀为`build-sysroot/usr`；旧的完整`cargo check`已用正确前缀通过。本次release example在改正前缀后继续编译，但服务器随后拒绝SSH，结果记为中断而非代码失败。未安装系统包、未修改全局Rust/OpenSSL或设备环境。
 
-本地隔离sdist/wheel首次构建在临时环境获取hatchling时遇到PyPI TLS EOF；无隔离重试因当前venv未安装hatchling而明确失败。旧制品没有被覆盖，本项留给CI/恢复后的隔离环境重跑，不能以网络错误判断包代码不兼容。
+本地隔离sdist/wheel首次构建在临时环境获取hatchling时遇到PyPI TLS EOF；第二次已成功构建sdist，但从sdist创建wheel的新隔离环境再次在相同TLS阶段失败；无隔离重试因当前venv未安装hatchling而明确失败。旧制品没有被覆盖，完整wheel/干净安装留给CI或网络恢复后的隔离环境重跑，不能以网络错误判断包代码不兼容。
 
 ## 尚未证明
 
