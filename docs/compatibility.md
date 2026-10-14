@@ -1,5 +1,7 @@
 # 支持与候选矩阵
 
+2026-10-14补充：cedb477新版终态/入口方法与原账本的CPU组合通过，旧归档方法亦回归；不扩大安装/运行能力。32099分配当前拒绝SSH，本轮无新NPU资格或服务器同步。固定源码门槛与未完成项见[现场计划](planning/cedb477-terminal-boundaries.md)。
+
 2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
 
 最新方向：用户已纠正目标为指定 HUST 仓库。两份完整 Git 历史已校验并在新服务器隔离构建，见[候选决策](decisions/2026-10-11-hust-runtime-candidate.md)。HUST 的 NumPy 依赖联合解析成功；预装上游的冲突不能移植为 HUST 结论。下面早期预装记录保留历史范围，不代表新候选已验收。
