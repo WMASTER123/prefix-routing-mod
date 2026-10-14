@@ -21,6 +21,9 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/artifacts/router-index-ci/target
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Install the tested Rust toolchain
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt
       - name: Fetch only the two hash-guarded upstream source files

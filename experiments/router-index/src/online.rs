@@ -187,6 +187,11 @@ impl Owner {
             }
             Command::Disconnect { binding } => {
                 let binding = binding.into_binding();
+                if self.sessions.get(&binding.worker).is_some_and(|session| {
+                    session.binding == binding && !session.valid
+                }) {
+                    return Ok(json!({}));
+                }
                 self.session(&binding)?;
                 self.pool.disconnect(&binding)?;
                 self.session(&binding)?.valid = false;
@@ -301,6 +306,8 @@ mod tests {
             ]}}),
         );
         assert_eq!(result, Err(Fault::MissingParent));
+        assert_eq!(lookup(&mut owner, &b), Value::Null);
+        command(&mut owner, json!({"kind": "disconnect", "binding": b})).unwrap();
         assert_eq!(lookup(&mut owner, &b), Value::Null);
         assert_eq!(
             command(&mut owner, json!({"kind": "begin_control", "binding": b})),
