@@ -28,6 +28,10 @@ Repository = "https://github.com/WMASTER123/prefix-routing-mod"
 
 [project.entry-points."vllm.general_plugins"]
 prefix_routing_publisher = "prefix_routing_mod.hust_publisher:load_plugin"
+prefix_routing_terminal = "prefix_routing_mod.hust_terminal:load_plugin"
+
+[project.entry-points."vllm.endpoint_plugins"]
+prefix_routing_terminal = "prefix_routing_mod.hust_terminal:endpoint_plugin"
 
 [tool.hatch.metadata]
 allow-direct-references = true

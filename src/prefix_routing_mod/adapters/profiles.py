@@ -55,7 +55,9 @@ def get_profile(profile_id: str) -> BackendProfile:
     )
 
 
-def inspect_backend(profile_id: str, *, distribution=None) -> dict:
+def inspect_backend(
+    profile_id: str, *, distribution=None, additional_sources=()
+) -> dict:
     """Check installed package versions and interface bytes; never activate hooks."""
     distribution = metadata.distribution if distribution is None else distribution
     profile = get_profile(profile_id)
@@ -76,7 +78,7 @@ def inspect_backend(profile_id: str, *, distribution=None) -> dict:
         pass
     else:
         raise RuntimeError("Conflicting Ascend distributions share vllm_ascend")
-    for relative, expected in profile.source_hashes:
+    for relative, expected in (*profile.source_hashes, *additional_sources):
         part = PurePosixPath(relative)
         if (
             part.is_absolute()
