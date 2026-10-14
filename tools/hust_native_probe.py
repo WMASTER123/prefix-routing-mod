@@ -97,7 +97,9 @@ def run(args, output, report):
         messages, tokenize=True, add_generation_prompt=True, return_dict=False
     )
     report["input_tokens"] = {"completion": len(tokens), "chat": len(chat_tokens)}
-    env = build_environment(args.device, output)
+    env = build_environment(
+        args.device, output, pycache_root=getattr(args, "pycache_root", None)
+    )
     for name in (
         "PYTHONPATH",
         "PYTHONHOME",
@@ -245,6 +247,7 @@ def main(argv=None):
     parser.add_argument("--device", type=int, required=True)
     parser.add_argument("--port", type=int, default=18146)
     parser.add_argument("--terminal-observer", action="store_true")
+    parser.add_argument("--pycache-root", type=Path)
     args = parser.parse_args(argv)
     try:
         output = private_path(args.output)

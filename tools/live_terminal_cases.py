@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from contextlib import suppress
 
 from prefix_routing_mod.contracts import (
     EventKind,
@@ -44,12 +45,10 @@ def request_json(opener, origin, route, *, body=None, headers=None):
             raw = error.read(MAX_REPLY + 1)
             detail = "unavailable"
             if len(raw) <= MAX_REPLY:
-                try:
+                with suppress(ValueError, AttributeError):
                     detail = str(
                         json.loads(raw).get("error", {}).get("message", "unavailable")
                     )[:512]
-                except (ValueError, AttributeError):
-                    pass
             raise RuntimeError(
                 f"Controlled HUST request {route}: HTTP {error.code}: {detail}"
             ) from error
