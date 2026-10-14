@@ -8,7 +8,7 @@
 - 上阶段功能cc2478b的真实 Router→HUST→同一账本有限闭环，已在新分配两张卡顺序复验通过。最终文档050b7bd已同步，上一阶段新wheel的aarch64干净安装补过。050b7bd的CPU/源码与helper CI五个检查全部success；独立人工审查/合并未完成。
 - M7原生事件→常驻原M2索引新增在线接线；原Directory/Pool和91b65ee原索引继续复用。两张卡的首轮在线目录+真实Router终态组合均通过：3个完整前缀块匹配，订阅关闭后unknown。后续审查修改和双副本结果以[本阶段证据](../evidence/online-kv-directory-2026-10-14.md)为准，不能自动继承首轮硬件资格。
 - 最终功能24d78d3的双TP1实机`r2`通过：同一原索引owner、单边驻留隔离、两端实际cached_tokens0→384、一侧订阅退出而另一侧继续服务。两卡均已用于真实模型实验且自有进程清理，证据本地/服务器SHA一致。Windows CPU562、aarch64566，integration各3，原生62/进程5组、新wheel两端干净安装通过。b35ffef的5个CI检查全部success；[草稿PR22](https://github.com/WMASTER123/prefix-routing-mod/pull/22)待独立人工审查，后续纯记录head另查。
-- 首版请求链0f05ae8已在新分配32064重新通过双TP1在线目录资格：物理2/3两张910B2、固定HUST与Qwen14B，实际cached_tokens分别0→384，隔离/断连和正常清理通过；同时固定Router宿主typed链fixture探针已通过真实HTTP转发、准入和终态回调。两项仍分别是数据面与组合接口证据，不相加冒充真实公开Router全链或性能收益。
+- 首版请求链0f05ae8已在新分配32064重新通过双TP1在线目录资格；469d06c又在32049的物理5/6两张910B2复验同一结论：固定HUST与Qwen14B的实际cached_tokens分别0→384，隔离/断连和正常清理通过。固定Router宿主typed链fixture探针已通过真实HTTP转发、准入和终态回调；M1候选还在固定Router/HUST之间通过449-token及3个完整块摘要的一致性对照。三项仍分别是数据面、组合接口与特征身份的证据，不相加冒充真实公开Router全链或性能收益。
 
 本阶段只支持受控空起点的已发布事件观测。原生流没有publisher epoch和完整共同水位token快照；本地连接绑定不冒充后端epoch。模型请求历史、计划和预留不能产生驻留事实。
 
