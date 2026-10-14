@@ -59,14 +59,26 @@ def request_json(opener, origin, route, *, body=None, headers=None):
 
 
 def run(opener, origin, output, token):
-    headers = {"X-Prefix-Routing-Control": token}
-    route = "/prefix-routing/terminal"
     report = {
         "status": "fail",
         "native_router_verified": False,
         "full_recovery_verified": False,
         "performance_verified": False,
     }
+    try:
+        return _run(opener, origin, output, token, report)
+    except Exception as error:
+        report["error"] = f"{type(error).__name__}: {error}"
+        raise
+    finally:
+        with (output / "terminal-report.json").open("x", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2)
+            stream.write("\n")
+
+
+def _run(opener, origin, output, token, report):
+    headers = {"X-Prefix-Routing-Control": token}
+    route = "/prefix-routing/terminal"
     try:
         request_json(opener, origin, route)
     except urllib.error.HTTPError as error:
@@ -109,6 +121,7 @@ def run(opener, origin, output, token):
     cursor = 0
     outcomes = {}
     completed = []
+    report["cases"] = completed
 
     def control(after, acknowledge):
         query = urllib.parse.urlencode(
@@ -226,7 +239,7 @@ def run(opener, origin, output, token):
                 opener,
                 origin,
                 endpoint,
-                body={"model": MODEL, "max_tokens": 8, "temperature": 0, **body},
+                body={"model": MODEL, "max_tokens": 8, "temperature": 0.7, **body},
                 headers={"X-Request-Id": attempt},
             )
             if len(result.get("choices", [])) != expected or any(
@@ -285,7 +298,7 @@ def run(opener, origin, output, token):
                 {
                     "model": MODEL,
                     "prompt": "Write a long numbered list of interesting facts.",
-                    "temperature": 0.7,
+                    "temperature": 0,
                     "max_tokens": 512,
                     "ignore_eos": True,
                     "stream": True,
