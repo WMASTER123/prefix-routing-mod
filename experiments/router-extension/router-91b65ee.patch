@@ -52,11 +52,12 @@ diff --git a/src/routers/http/mod.rs b/src/routers/http/mod.rs
 index fa2acae..354d3b0 100644
 --- a/src/routers/http/mod.rs
 +++ b/src/routers/http/mod.rs
-@@ -6,6 +6,7 @@ pub mod openai_router;
+@@ -6,6 +6,8 @@ pub mod openai_router;
  pub mod pd_router;
  pub mod pd_types;
  mod program_adapter;
 +pub mod prefix_extension;
++pub mod runtime_provider;
  pub mod router;
  pub mod vllm_pd_router;
  pub mod vllm_service_discovery;

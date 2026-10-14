@@ -306,3 +306,255 @@ fn lifecycle_identity_rejects_control_bytes_and_event_id_overflow() {
         .is_err());
     }
 }
+
+mod runtime_composition {
+    use crate::{
+        prefix_extension::{CloseEvidence, HttpExtension, Lease},
+        runtime_provider::{
+            AdmissionPort, Candidate, FeaturePort, RequestView, RuntimeProvider, SnapshotPort,
+        },
+    };
+    use serde_json::{json, Value};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug)]
+    struct FeatureFixture;
+    impl FeaturePort for FeatureFixture {
+        fn extract(&self, request: &Value, route: &str) -> Result<RequestView, &'static str> {
+            if route != "/v1/completions" {
+                return Err("unsupported_feature_route");
+            }
+            Ok(RequestView {
+                request_id: request["request_id"].as_str().ok_or("request_id")?.into(),
+                identity: "qwen14b-profile-a".into(),
+                block_hashes: vec!["ab".repeat(32), "ac".repeat(32), "ad".repeat(32)].into(),
+                exact: true,
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct SnapshotFixture {
+        values: Vec<Candidate>,
+    }
+    impl SnapshotPort for SnapshotFixture {
+        fn candidates(
+            &self,
+            _: &RequestView,
+            _: &[String],
+        ) -> Result<Vec<Candidate>, &'static str> {
+            Ok(self.values.clone())
+        }
+    }
+
+    #[derive(Debug)]
+    struct Permit;
+    impl Lease for Permit {
+        fn before_send(&self) -> Result<(), &'static str> {
+            Ok(())
+        }
+        fn sent(&self) {}
+        fn headers(&self, _: u16) {}
+        fn closed(&self, _: bool, _: CloseEvidence) {}
+    }
+
+    #[derive(Debug, Default)]
+    struct AdmissionFixture {
+        sequence: Mutex<u64>,
+        reserved: Mutex<Vec<String>>,
+    }
+    impl AdmissionPort for AdmissionFixture {
+        fn allocate_attempt(&self, request_id: &str) -> Result<String, &'static str> {
+            let mut sequence = self.sequence.lock().unwrap();
+            *sequence += 1;
+            Ok(format!("runtime-a:{sequence}:{request_id}"))
+        }
+        fn reserve_async<'a>(
+            &'a self,
+            _: &'a RequestView,
+            decision: &'a crate::runtime_provider::Decision,
+        ) -> crate::prefix_extension::AdmissionFuture<'a> {
+            Box::pin(async move {
+                self.reserved
+                    .lock()
+                    .unwrap()
+                    .push(decision.attempt_id.clone());
+                Ok(Box::new(Permit) as Box<dyn Lease>)
+            })
+        }
+    }
+
+    fn candidate(url: &str, matched_blocks: Option<u32>, outstanding: u32) -> Candidate {
+        Candidate {
+            worker_url: url.into(),
+            instance_epoch: format!("instance-{url}"),
+            worker_version: 1,
+            config_version: 3,
+            healthy: true,
+            draining: false,
+            local_outstanding: outstanding,
+            matched_blocks,
+        }
+    }
+
+    fn make_provider(values: Vec<Candidate>) -> (RuntimeProvider, Arc<AdmissionFixture>) {
+        let admission = Arc::new(AdmissionFixture::default());
+        (
+            RuntimeProvider::new(
+                Arc::new(FeatureFixture),
+                Arc::new(SnapshotFixture { values }),
+                admission.clone(),
+            ),
+            admission,
+        )
+    }
+
+    #[tokio::test]
+    async fn known_cache_depth_then_load_selects_and_reserves_one_attempt() {
+        let (provider, admission) = make_provider(vec![
+            candidate("http://a", Some(1), 0),
+            candidate("http://b", Some(3), 7),
+        ]);
+        let features = provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        let proposal = provider
+            .select(
+                features.as_ref(),
+                &["http://a".into(), "http://b".into()],
+                9,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(proposal.worker_url, "http://b");
+        assert_eq!(proposal.registry_revision, 9);
+        assert_eq!(
+            provider.reserve(features.as_ref(), &proposal).unwrap_err(),
+            "async_admission_required"
+        );
+        provider
+            .reserve_async(features.as_ref(), &proposal)
+            .await
+            .unwrap();
+        assert_eq!(
+            admission.reserved.lock().unwrap().as_slice(),
+            ["runtime-a:1:request-a"]
+        );
+    }
+
+    #[test]
+    fn all_unknown_cache_views_fall_back_to_stable_least_load() {
+        let (provider, _) = make_provider(vec![
+            candidate("http://b", None, 2),
+            candidate("http://a", None, 2),
+        ]);
+        let features = provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        let proposal = provider
+            .select(
+                features.as_ref(),
+                &["http://a".into(), "http://b".into()],
+                1,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(proposal.worker_url, "http://a");
+    }
+
+    #[test]
+    fn trusted_miss_and_unknown_both_use_base_load_without_fake_cache_score() {
+        let (provider, _) = make_provider(vec![
+            candidate("http://known-miss", Some(0), 9),
+            candidate("http://unknown", None, 1),
+        ]);
+        let features = provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        let proposal = provider
+            .select(
+                features.as_ref(),
+                &["http://known-miss".into(), "http://unknown".into()],
+                1,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(proposal.worker_url, "http://unknown");
+    }
+
+    #[test]
+    fn unhealthy_foreign_and_malformed_inputs_fail_before_admission() {
+        let mut unhealthy = candidate("http://a", Some(3), 0);
+        unhealthy.healthy = false;
+        let (unhealthy_provider, admission) = make_provider(vec![unhealthy]);
+        let features = unhealthy_provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        assert_eq!(
+            unhealthy_provider
+                .select(features.as_ref(), &["http://a".into()], 1)
+                .unwrap_err(),
+            "no_eligible_worker"
+        );
+        assert!(admission.reserved.lock().unwrap().is_empty());
+
+        let (foreign, _) = make_provider(vec![candidate("http://foreign", Some(1), 0)]);
+        let features = foreign
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        assert_eq!(
+            foreign
+                .select(features.as_ref(), &["http://a".into()], 1)
+                .unwrap_err(),
+            "snapshot_contains_foreign_worker"
+        );
+        assert!(foreign.prepare(&json!({}), "/v1/completions").is_err());
+        assert!(foreign
+            .prepare(&json!({"request_id":"request-a"}), "/v1/chat/completions")
+            .is_err());
+    }
+
+    #[test]
+    fn inconsistent_or_impossible_snapshot_is_rejected() {
+        let mut too_deep = candidate("http://a", Some(4), 0);
+        let (provider, _) = make_provider(vec![too_deep.clone()]);
+        let features = provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        assert_eq!(
+            provider
+                .select(features.as_ref(), &["http://a".into()], 1)
+                .unwrap_err(),
+            "invalid_candidate_snapshot"
+        );
+
+        too_deep.matched_blocks = Some(1);
+        let mut other = candidate("http://b", None, 0);
+        other.config_version = 4;
+        let (provider, _) = make_provider(vec![too_deep.clone(), other]);
+        let features = provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        assert_eq!(
+            provider
+                .select(
+                    features.as_ref(),
+                    &["http://a".into(), "http://b".into()],
+                    1,
+                )
+                .unwrap_err(),
+            "mixed_config_snapshot"
+        );
+
+        let (provider, _) = make_provider(vec![too_deep.clone(), too_deep]);
+        let features = provider
+            .prepare(&json!({"request_id":"request-a"}), "/v1/completions")
+            .unwrap();
+        assert_eq!(
+            provider
+                .select(features.as_ref(), &["http://a".into()], 1)
+                .unwrap_err(),
+            "snapshot_contains_duplicate_worker"
+        );
+    }
+}

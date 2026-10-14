@@ -1,6 +1,6 @@
 # 首版运行时装配与接口冻结清单
 
-2026-10-14。在线目录子集通过后的下一实现包；当前是可审查的装配方案，不表示以下代码或生产ABI已经完成。
+2026-10-14。在线目录子集通过后的下一实现包。固定Router内候选组合层和第一批回收原语已经实现并通过CPU检查；typed公开链的双loopback fixture探针已补但因服务器回收尚未执行，见[ADR](../decisions/2026-10-14-first-runtime-composition.md)与[证据](../../evidence/first-runtime-composition-2026-10-14.md)。真实端口装配和生产ABI仍未完成。
 
 ## 运行形态与代码归属
 
@@ -10,8 +10,8 @@
 |---|---|---|
 | M1 | contracts.RequestFeatures、真实Qwen tokenizer/template对照 | 本地特征端口；一次解析/分词，完整身份与精度；先确定completion/chat及采样参数覆盖，不支持的输入明确拒绝/降级 |
 | M2 | 原KvBlockIndexer、Directory/Pool、online原型 | Router内索引owner；异步更新，短只读查询，不把stdio进程作为生产服务；当前仅受控冷起点具资格 |
-| M3 | ReferenceLedger、DurableLedger及真实终态闭环 | 一个状态/账本owner；reserve异步返回许可，M4读不可变快照；确定持久化与重启后对账，不将TCP/SQLite强持久化直接固定到热路径 |
-| M4 | PolicyPort、原Router基础策略 | 纯只读选择，绑定实例/配置/控制版本；先RR/负载基础与缓存感知强基线，暂不加新算法 |
+| M3 | ReferenceLedger、DurableLedger及真实终态闭环 | 一个状态/账本owner；候选AdmissionPort已强制异步许可，ACK后槽位与owner身份终态可回收；仍须确定持久游标、存储/提交和重启对账 |
+| M4 | PolicyPort、原Router基础策略 | 候选实现只读选择：正可信命中最大优先，否则最低在途/稳定URL；绑定实例/配置版本，优化算法后置 |
 | M5 | 固定Router91b65ee、原三文件patch、实际typed HTTP例程 | 使用原build_app/HTTP入口和SSE/连接管理；在同一入口装配provider，禁止再包一个Python推理代理 |
 | M7 | 固定profile、原生解码、已有HUST endpoint/utility终态观测 | 版本差异集中映射/窄幅适配；订阅和终态投递有各自连接/代次/留存；Manager生命周期另验 |
 | M6 | CPU/源码/原生index/手动NPU/制品入口 | 公共脚本、受控配置与机器可读报告；测试替身复用现有fixtures，不各造一套字段 |
@@ -31,7 +31,7 @@
 
 当前实验账本、Outbox、前端family和core seen都有“有界但不回收”的限制（如64 family/256 child）。**不能用它们直接做可持续容量曲线**：满额拒绝可能来自累计历史，而非实际NPU服务能力。ACK当前也不代表所有family/seen已回收。
 
-因此在正式容量前须先完成与实际运行时匹配的最小留存/回收协议：终态/传输提交及必要确认后回收活跃载荷；去重高水位与有限墓碑窗口、请求ID不复用、旧runtime拒绝、超窗处理和重启恢复须共同成立。不能只增大常量或按TTL清除未知负债。长期跨节点/多版本加固仍可后置，但这项最低回收能力不能后置到容量测试之后。
+因此在正式容量前须完成与实际运行时匹配的最小留存/回收协议。当前已经做到：完整ACK后回收outbox槽位；只有owner分配、不可复用的attempt/child且消费者游标持久到同一边界时才允许终态family回收。仍缺实际持久游标、M3 checkpoint/WAL选择、有限墓碑/超窗处理和Router重启负债恢复。不能只增大常量或按TTL清除未知负债。长期跨节点/多版本加固仍可后置。
 
 生产M3存储先以实际调用频率/持久化需求和配对开销决定。实验逐请求FULL事务已有毫秒级成本线索，优先评估本地owner/有界异步提交与必要批处理；未验证前不承诺热路径开销，也不牺牲发出前许可和重启保债语义。
 

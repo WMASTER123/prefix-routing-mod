@@ -22,4 +22,5 @@ jobs:
         run: |
           cargo +1.99.0 fmt --manifest-path experiments/router-extension/checks/Cargo.toml --check
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/live_terminal_chain.rs
+          rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/runtime_provider_probe.rs
           cargo +1.99.0 test --locked --manifest-path experiments/router-extension/checks/Cargo.toml

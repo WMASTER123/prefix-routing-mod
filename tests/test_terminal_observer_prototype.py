@@ -279,3 +279,69 @@ def test_seal_overflow_invalidates_observation():
     source.observe_core_end("b")
     assert source.seal("two") is False
     assert source.failed and len(source.events) == 1
+
+
+def test_managed_family_reclaims_capacity_only_after_durable_cursor():
+    source = journal(max_families=1, max_children=1, max_events=1)
+    attempt = source.begin_owned(1)
+    child = source.allocate_child(attempt)
+    source.bind_child(attempt, child)
+    source.seal(attempt)
+    assert source.observe_core_end(child)
+    source.acknowledge(BINDING, 1)
+
+    with pytest.raises(ValueError, match="durable consumer cursor"):
+        source.retire(BINDING, 1, checkpointed_through=0)
+    assert source.retire(BINDING, 1, checkpointed_through=1) == 1
+    assert source.reserved_children == 0 and not source.families and not source.owners
+
+    next_attempt = source.begin_owned(1)
+    assert next_attempt != attempt
+    assert source.allocate_child(next_attempt) != child
+
+
+def test_retirement_requires_owner_allocated_nonreused_identity():
+    source = journal(max_families=1, max_children=1, max_events=1)
+    source.register("external", ("child",))
+    source.observe_core_end("child")
+    source.acknowledge(BINDING, 1)
+    with pytest.raises(RuntimeError, match="external attempt identity"):
+        source.retire(BINDING, 1, checkpointed_through=1)
+    assert "external" in source.families and source.reserved_children == 1
+
+
+def test_recovery_after_retirement_requires_persisted_cursor():
+    source = journal(max_families=1, max_children=1, max_events=1)
+    attempt = source.begin_owned(1)
+    child = source.allocate_child(attempt)
+    source.bind_child(attempt, child)
+    source.seal(attempt)
+    source.observe_core_end(child)
+    source.acknowledge(BINDING, 1)
+    source.retire(BINDING, 1, checkpointed_through=1)
+
+    fresh = OnlineConsumer(BINDING, lambda _: None)
+    with pytest.raises(RuntimeError, match="durable cursor"):
+        fresh.recover(source)
+    resumed = OnlineConsumer(BINDING, lambda _: None)
+    resumed.cursor = 1  # Loaded from the consumer's committed checkpoint.
+    resumed.recover(source)
+    assert not resumed.requires_recovery and resumed.cursor == 1
+
+
+def test_managed_retirement_runs_beyond_original_family_and_child_limits():
+    source = journal(max_families=1, max_children=1, max_events=1)
+    identities = set()
+    for boundary in range(1, 301):
+        attempt = source.begin_owned(1)
+        child = source.allocate_child(attempt)
+        assert attempt not in identities and child not in identities
+        identities.update((attempt, child))
+        source.bind_child(attempt, child)
+        source.seal(attempt)
+        assert source.observe_core_end(child)
+        source.acknowledge(BINDING, boundary)
+        assert source.retire(BINDING, boundary, checkpointed_through=boundary) == 1
+    assert source.next_sequence == 301
+    assert source.retired_through == 300
+    assert source.reserved_children == 0 and not source.families and not source.events

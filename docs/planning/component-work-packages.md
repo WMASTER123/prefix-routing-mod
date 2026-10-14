@@ -2,6 +2,8 @@
 
 现行完成情况统一以[当前进度](../progress.md)为准，近期接线见[在线目录计划](online-kv-directory.md)。本页下方按日期追加的完成/未完成描述保留为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。新增双副本目录子集不表示公开HTTP全链路、长期恢复或容量验收通过。
 
+2026-10-14 当前收敛：固定Router内M1、M2/M3快照、基础M4、异步M3准入已形成可编译候选组合层；ACK后outbox和owner身份终态回收原语通过。真实M1/M2/M3端口、消费者持久游标、公开HTTP故障链和启动配置仍是正式分工门槛。A/B/C可继续准备fixture与独立实现，但核心生产目录尚未冻结，见[首版装配](first-runtime-assembly.md)。
+
 2026-10-13 恢复收尾：B/C 包增加实际 Router/独立接收进程的准入故障与两次重启组合验证，工具日志单 owner 排他；没有改变 M1–M8 或增加生产服务。真实 HUST 接线、长期资源管理、MOD 安装仍待验收，不提前分派人员；本轮先审查，下一次 1 张 NPU 联调按[清单](hust-first-real-chain.md)执行。
 
 2026-10-13 入口/准入/恢复：完整 HTTP family 和新 runtime 语义已补 CPU 接缝，Router 增加可等待准入和自有 carrier；不是三人生产接口冻结。真实 HUST 安装、启动排他/观测、终态业务结果组合及 KV 订阅仍是整体门槛；暂不分配人员。具体测试层级与剩余工作见[本轮记录](../../evidence/entry-admission-recovery-2026-10-13.md)。
