@@ -8,6 +8,8 @@ pub mod lifecycle_bridge;
 pub mod online_bridge;
 #[path = "../../prefix_extension.rs"]
 pub mod prefix_extension;
+#[path = "../../request_feature_port.rs"]
+pub mod request_feature_port;
 #[path = "../../runtime_provider.rs"]
 pub mod runtime_provider;
 

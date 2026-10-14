@@ -12,6 +12,8 @@ use std::{
     time::Duration,
 };
 
+use crate::request_feature_port::{CompletionFeaturePort, TokenizerPort};
+
 struct Empty {
     polls: Arc<AtomicUsize>,
     drops: Arc<AtomicUsize>,
@@ -305,6 +307,193 @@ fn lifecycle_identity_rejects_control_bytes_and_event_id_overflow() {
         )
         .is_err());
     }
+}
+
+#[derive(Debug)]
+struct FixedTokenizer {
+    tokens: Vec<u32>,
+    error: bool,
+}
+
+impl TokenizerPort for FixedTokenizer {
+    fn encode(&self, _: &str) -> Result<Vec<u32>, &'static str> {
+        if self.error {
+            Err("tokenizer_failed")
+        } else {
+            Ok(self.tokens.clone())
+        }
+    }
+}
+
+fn completion_features(tokens: Vec<u32>) -> CompletionFeaturePort {
+    CompletionFeaturePort::new(
+        Arc::new(FixedTokenizer {
+            tokens,
+            error: false,
+        }),
+        "qwen".into(),
+        "qwen-profile".into(),
+        "epoch-a".into(),
+        2,
+        16,
+        8,
+    )
+    .unwrap()
+}
+
+#[test]
+fn completion_features_hash_complete_blocks_once_and_use_owned_ids() {
+    use crate::runtime_provider::FeaturePort;
+
+    let port = completion_features(vec![1, 2, 3, 4, 5]);
+    let request = serde_json::json!({"model":"qwen", "prompt":"hello"});
+    let first = port.extract(&request, "/v1/completions").unwrap();
+    let second = port.extract(&request, "/v1/completions").unwrap();
+    assert_eq!(first.identity, "qwen-profile");
+    assert!(first.exact);
+    assert_eq!(first.request_id, "prm-epoch-a-1");
+    assert_eq!(second.request_id, "prm-epoch-a-2");
+    assert_eq!(
+        first.block_hashes.as_ref(),
+        [
+            "34fb5c825de7ca4aea6e712f19d439c1da0c92c37b423936c5f618545ca4fa1f",
+            "8073c94ef47ecc86dcd78a8d9027a23484fadcd7cea37150319ba8cbf1c70b6b",
+        ]
+    );
+}
+
+#[test]
+fn completion_features_reject_unsupported_or_unbounded_inputs() {
+    use crate::runtime_provider::FeaturePort;
+
+    let port = completion_features(vec![1, 2]);
+    for (route, request, error) in [
+        (
+            "/v1/chat/completions",
+            serde_json::json!({"model":"qwen", "prompt":"hello"}),
+            "unsupported_feature_route",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"other", "prompt":"hello"}),
+            "unsupported_feature_model",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":["hello"]}),
+            "unsupported_completion_prompt",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":"0123456789abcdefg"}),
+            "prompt_byte_limit",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":"hello", "cache_salt":"tenant-a"}),
+            "unsupported_kv_identity_modifier",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":"hello", "lora_name":"adapter-a"}),
+            "unsupported_kv_identity_modifier",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":"hello", "prompt_embeds":[[0.1]]}),
+            "unsupported_kv_identity_modifier",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":"hello", "truncate_prompt_tokens":4}),
+            "unsupported_kv_identity_modifier",
+        ),
+        (
+            "/v1/completions",
+            serde_json::json!({"model":"qwen", "prompt":"hello", "session_params":{"id":"a"}}),
+            "unsupported_kv_identity_modifier",
+        ),
+    ] {
+        assert_eq!(port.extract(&request, route).unwrap_err(), error);
+    }
+
+    assert!(port
+        .extract(
+            &serde_json::json!({"model":"qwen", "prompt":"hello", "cache_salt":null}),
+            "/v1/completions",
+        )
+        .is_ok());
+
+    let too_many = completion_features(vec![0; 9]);
+    assert_eq!(
+        too_many
+            .extract(
+                &serde_json::json!({"model":"qwen", "prompt":"hello"}),
+                "/v1/completions",
+            )
+            .unwrap_err(),
+        "prompt_token_limit"
+    );
+    let failed = CompletionFeaturePort::new(
+        Arc::new(FixedTokenizer {
+            tokens: vec![],
+            error: true,
+        }),
+        "qwen".into(),
+        "qwen-profile".into(),
+        "epoch-a".into(),
+        2,
+        16,
+        8,
+    )
+    .unwrap();
+    assert_eq!(
+        failed
+            .extract(
+                &serde_json::json!({"model":"qwen", "prompt":"hello"}),
+                "/v1/completions",
+            )
+            .unwrap_err(),
+        "tokenizer_failed"
+    );
+}
+
+#[test]
+fn completion_feature_constructor_rejects_ambiguous_identity_and_limits() {
+    let tokenizer: Arc<dyn TokenizerPort> = Arc::new(FixedTokenizer {
+        tokens: vec![],
+        error: false,
+    });
+    assert!(CompletionFeaturePort::new(
+        tokenizer.clone(),
+        "qwen".into(),
+        "identity".into(),
+        "bad epoch".into(),
+        2,
+        16,
+        8,
+    )
+    .is_err());
+    assert!(CompletionFeaturePort::new(
+        tokenizer.clone(),
+        "qwen".into(),
+        "bad identity".into(),
+        "epoch".into(),
+        2,
+        16,
+        8,
+    )
+    .is_err());
+    assert!(CompletionFeaturePort::new(
+        tokenizer,
+        "qwen".into(),
+        "identity".into(),
+        "epoch".into(),
+        0,
+        16,
+        8,
+    )
+    .is_err());
 }
 
 mod runtime_composition {

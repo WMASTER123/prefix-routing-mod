@@ -8,7 +8,7 @@
 
 | 职责 | 已存在的依据 | 首版归属与接口要求 |
 |---|---|---|
-| M1 | contracts.RequestFeatures、真实Qwen tokenizer/template对照 | 本地特征端口；一次解析/分词，完整身份与精度；先确定completion/chat及采样参数覆盖，不支持的输入明确拒绝/降级 |
+| M1 | contracts.RequestFeatures、真实Qwen tokenizer/template对照；有界completion FeaturePort候选已实现 | 本地特征端口；一次解析/分词，完整身份与精度；当前只接受字符串completion prompt，其他形态明确拒绝。固定宿主Qwen适配与chat/template仍待验 |
 | M2 | 原KvBlockIndexer、Directory/Pool、online原型 | Router内索引owner；异步更新，短只读查询，不把stdio进程作为生产服务；当前仅受控冷起点具资格 |
 | M3 | ReferenceLedger、DurableLedger及真实终态闭环 | 一个状态/账本owner；候选AdmissionPort已强制异步许可，ACK后槽位与owner身份终态可回收；仍须确定持久游标、存储/提交和重启对账 |
 | M4 | PolicyPort、原Router基础策略 | 候选实现只读选择：正可信命中最大优先，否则最低在途/稳定URL；绑定实例/配置版本，优化算法后置 |

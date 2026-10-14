@@ -16,6 +16,7 @@
 - 更新后的三文件Router patch可在91b65ee干净源码上 `git apply --check --whitespace=error`。
 - 将 `prefix_extension.rs` 与 `runtime_provider.rs` 装入固定Router源码后，aarch64 `cargo check --locked --offline`通过。仅保留原源码已有的Atomic方法deprecated warning。
 - 新增 `runtime_provider_probe.rs` 与有界runner，并在固定Router typed公开请求路径上用两个loopback origin通过正命中、基础负载回退、异步准入、真实HTTP转发及终态回调。报告显示cache请求仅到worker B、fallback请求仅到worker A，两个请求均携带Router分配的attempt载体，进程正常退出且无强制组清理；二进制SHA256为`88bc729b875f8ff3a9d2d8cfbe762998f1296e92b800093da0f1807f39f73849`。
+- 新增 `request_feature_port.rs` 作为真实M1候选：宿主注入一次分词，接受固定模型、无额外KV身份修饰或后端截断/会话语义的字符串completion prompt，以token小端字节SHA256生成与原M2一致的完整块摘要，尾部不完整块不进入查询；模型/路由/输入形态、cache salt/LoRA/多模态或嵌入修饰、截断/会话参数、字节与token预算、分词失败均显式拒绝，请求ID含显式进程代次且单调不复用。首轮隔离Rust检查增至30项通过；最终新增截断/会话与可打印身份守卫后服务器失联，须恢复后重跑同套检查。固定Qwen tokenizer宿主绑定及实机token一致性仍待验。
 
 首次远端检查因命令PATH未保留 `/usr/bin` 而找不到`cc`；纠正为显式系统PATH后继续。第一次完整宿主检查误把OpenSSL前缀写成`build-sysroot`，实际完整前缀为`build-sysroot/usr`。后续release链接发现该隔离OpenSSL静态库依赖zlib，而镜像只有`/lib64/libz.so.1`、没有开发包提供的`libz.so`链接名；仅对此目标传入确切共享库路径后构建通过，未安装系统包、未修改全局Rust/OpenSSL或设备环境。
 
@@ -25,4 +26,4 @@
 
 ## 尚未证明
 
-真实FeaturePort、同进程M2 SnapshotPort、生产M3 owner尚未装配；已通过的宿主探针只证明fixture端口的调用和转发，不等于公开HTTP已经消费在线目录做双副本选择。本次没有启动模型、运行容量测试或冻结ABI。终态消费者游标持久化和M3重启恢复仍是接口冻结门槛，当前回收原语不能单独解决进程崩溃后的债务恢复。
+真实FeaturePort核心逻辑已有候选，但固定Qwen tokenizer适配、同进程M2 SnapshotPort和生产M3 owner尚未装配；已通过的宿主探针只证明fixture端口的调用和转发，不等于公开HTTP已经消费在线目录做双副本选择。随后另行完成的新服务器双TP1复验记录在在线目录证据中，不改变本证据的公开链范围。本阶段没有运行容量测试或冻结ABI。终态消费者游标持久化和M3重启恢复仍是接口冻结门槛，当前回收原语不能单独解决进程崩溃后的债务恢复。
