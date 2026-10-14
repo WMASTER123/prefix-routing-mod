@@ -50,11 +50,14 @@ provider 回调必须本地、有界、无阻塞、不抛 panic；完整决策�
 
 本轮还需将 `runtime_provider.rs` 复制到宿主 `src/routers/http/`，将 `lifecycle_bridge.rs` 复制为实验宿主的 `examples/lifecycle_bridge.rs`，并使用更新后的 admission example；后者不修改宿主模块注册或引擎。原生 helper 快速检查可独立执行 `cargo test --locked --manifest-path experiments/router-extension/checks/Cargo.toml`。
 
+completion M1 的固定宿主对照还需把 `request_feature_port.rs` 复制到宿主 `src/routers/http/`，把 `request_feature_host_probe.rs` 复制到 `examples/`，构建该example后由 `tools/request_feature_host_probe.py` 使用固定HUST环境的同一模型目录对照token IDs与完整块摘要。它只证明字符串completion的tokenizer/M2键兼容，不证明公开请求链已经安装或chat/template可用。
+
 ```bash
 cargo build --release --locked --example prefix_extension_probe --example stream_extension_probe --example runtime_provider_probe --manifest-path "$task_prototype/Cargo.toml"
 python -m tools.router_extension_probe --binary "$task_target/release/examples/prefix_extension_probe" --output artifacts/router-admission-20261011/prototype-http-new
 python -m tools.router_stream_probe --binary "$task_target/release/examples/stream_extension_probe" --output artifacts/router-admission-20261011/prototype-stream-new
 python -m tools.runtime_provider_probe --binary "$task_target/release/examples/runtime_provider_probe" --output artifacts/router-admission-20261011/runtime-provider-new
+python -m tools.request_feature_host_probe --binary "$task_target/release/examples/request_feature_host_probe" --model /data/shared_models/Qwen2.5-14B-Instruct --output artifacts/request-feature-host-new
 ```
 
 `task_prototype` 和 `task_target` 是操作员核验过的本项目私有绝对路径，输出目录须新建。首次 example 会启用原锁中的 dev-dependency 图，离线 cache 不全可能失败；保留失败，再允许原锁下载，不改依赖。Rustfmt 同样安装在私有工具链，不改系统 Rust。

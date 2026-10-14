@@ -16,7 +16,7 @@
 
 | 组件 | 已有实现/验证 | 首版剩余工作 |
 |---|---|---|
-| M1特征 | 本地真实tokenizer/template与完整块对应通过；新增有界completion FeaturePort候选，按原M2摘要生成完整块且自有请求ID；首轮30项Rust组合检查通过，最终新增截断/会话守卫因服务器失联待同套复验 | 在固定宿主绑定Qwen tokenizer并做实际token一致性/一次分词开销；chat/template与数组prompt尚未支持，不得静默降级 |
+| M1特征 | 有界completion FeaturePort候选与最终30项Rust检查通过；固定Router/HUST对公共Qwen14B同一输入得到相同449 tokens和3个完整M2块摘要，资产hash与有界身份已验证 | 把已验适配装入公开请求链并测一次分词开销；chat/template、数组/token-id prompt尚未支持，不得静默降级 |
 | M2目录 | 原索引+Directory/Pool、连续性/父链/限额/租约；在线订阅实机子集 | 同进程请求查询、真实故障与长期增长/并发成本，已热/超窗恢复另评估 |
 | M3状态账本 | 预留、在线传输、真实核心终态、幂等和有限持久恢复；ACK后outbox与owner身份终态回收原语通过 | 选择生产存储/提交方式，持久消费者游标、健康/配置发布与Router重启负债恢复 |
 | M4选点 | 固定Router内候选组合层已实现正命中优先及无正命中的最低在途回退 | 接真实M1/M2/M3双副本快照并测策略/查询开销；优化方法后置 |
