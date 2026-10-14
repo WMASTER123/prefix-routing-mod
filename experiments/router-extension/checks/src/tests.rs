@@ -510,6 +510,12 @@ mod runtime_composition {
         );
         assert!(foreign.prepare(&json!({}), "/v1/completions").is_err());
         assert!(foreign
+            .prepare(
+                &json!({"request_id":"request-a\nforged"}),
+                "/v1/completions"
+            )
+            .is_err());
+        assert!(foreign
             .prepare(&json!({"request_id":"request-a"}), "/v1/chat/completions")
             .is_err());
     }

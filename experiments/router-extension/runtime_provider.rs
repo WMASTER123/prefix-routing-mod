@@ -167,8 +167,16 @@ impl HttpExtension for RuntimeProvider {
         let features = self.features.extract(request, route)?;
         if features.request_id.is_empty()
             || features.request_id.len() > 128
+            || !features
+                .request_id
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
             || features.identity.is_empty()
             || features.identity.len() > 256
+            || !features
+                .identity
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic())
             || features.block_hashes.len() > MAX_BLOCK_HASHES
             || features.block_hashes.iter().any(|hash| {
                 hash.len() != 64
