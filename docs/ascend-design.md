@@ -1,5 +1,7 @@
 # Ascend 优先：设计约束与验证路线
 
+现行完成情况统一以[当前进度](progress.md)为准，近期接线见[在线目录计划](planning/online-kv-directory.md)。本页下方按日期追加的完成/未完成描述保留为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。新增双副本目录子集不表示公开HTTP全链路、长期恢复或容量验收通过。
+
 2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
 
 2026-10-14 当前迁移：HUST ced6857/b47795c、FP16/eager、两张910B2顺序单实例子集通过。版本/协议差异集中M7，依赖与恢复独立记录，见[本轮证据](../evidence/hust-version-adapters-2026-10-14.md)。旧归档/BF16与图机制资料不作为新目标验收。

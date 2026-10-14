@@ -1,5 +1,7 @@
 # 测试与 CI
 
+现行完成范围以[progress](progress.md)和[在线目录证据](../evidence/online-kv-directory-2026-10-14.md)为准，下方日期段落保留历史。原索引CI新增常驻owner双分区/缺口/租约/身份/全池预算进程检查；NPU手动工具为`tools.hust_native_probe --index-binary ... --terminal-observer`和`tools.two_replica_kv_probe --execute ...`。前者可组合既有Router终态，后者验证两个TP1真实副本/共享索引/隔离；均不代替公开HTTP组件装配、容量或完整恢复。
+
 2026-10-14 用户确认：暂无固定业务SLO，双副本评测先报告多阈值容量曲线与输入/输出长度分组。阈值/分组在基础校准后、策略对比前统一冻结；同时报告各组P95/P99、完成/拒绝/超时率，不事后挑阈值或删失败样本。当前未新增性能结果，具体口径见[当前计划](planning/router-hust-terminal-chain.md)。
 
 2026-10-14 后续：原typed Router库的异步准入/自有载体/转发/生命周期已和真实HUST终态组合到同一实验账本，2 family/3 child及丢许可保债通过。原三文件宿主patch与HUST包装不变；新接收器映射显式实例，新增完整终态批次校验。当前仍不是生产HTTP入口、在线KV或性能验收，component-v0.1/生产ABI和MOD import_only不变。范围与下一步见[组合计划](planning/router-hust-terminal-chain.md)和[证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，下面同日较早记录仅对应当时阶段。

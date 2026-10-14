@@ -1,16 +1,10 @@
 # Prefix Routing MOD
 
-2026-10-14 后续：实际Router库的准入/转发已与真实HUST终态接同一实验账本，普通n2与流式取消、确认前额度拒绝、丢许可保债通过；不是生产HTTP启动器、在线KV或性能验收。当前优先阅读[组合计划](docs/planning/router-hust-terminal-chain.md)、[实机证据](evidence/router-hust-terminal-chain-2026-10-14.md)，以下同日较早记录保留原范围。
-
-2026-10-14 最新：已在固定 HUST/Ascend 上通过可选真实终态子集，4 个 family/8 个 child 接原账本，重放和自有包装恢复通过。尚未把原生 Router 接入该链路、没有在线 KV 目录或性能结论；当前步骤见[实机接线说明](docs/planning/cedb477-live-terminal.md)和[证据](evidence/cedb477-live-terminal-2026-10-14.md)。下方较早记录只对应当时阶段。
-
-2026-10-14：新版HUST入口/终态→原账本的固定源码CPU组合和独立CI门槛已补充；实际后端观测安装和跨进程链路仍待验收，见[当前接线计划](docs/planning/cedb477-terminal-boundaries.md)。
-
-2026-10-13：新增 HUST 固定版本 profile、`backend-doctor` 和共用 KV 规范化入口；迁移至 ced6857 / b47795c 的步骤与能力缺口见[版本适配](docs/planning/hust-version-adapters.md)。环境和协议子集不代表生产 Router 或性能验收，MOD 仍 import_only。
+当前状态统一见[进度](docs/progress.md)、[架构](docs/architecture.md)与[在线目录证据](evidence/online-kv-directory-2026-10-14.md)。历史试验保留在对应evidence和历史进度，不作为当前任务清单。
 
 主要面向华为 Ascend NPU 上 vLLM / Ascend 同模型多副本服务的前缀路由综合套件。目标是在固定 NPU 与 Host 资源下提高同时满足 TTFT、生成停顿和完成率要求的服务容量，优先复用成熟路由宿主和索引；设备执行假设须在目标平台验证。
 
-**当前不是可运行的 Router。** 已提供静态配置预检、MOD 描述、CPU 测试入口、模拟后端和真实 HUST 回归工具；新增用户批准实验的可选 publisher hook，默认关闭且只面向固定版本。没有生产精确缓存路由或性能提升声明。Manager 可以发现描述，但必须拒绝启用未实现功能。
+当前为研发版本：真实Router库→HUST→同一账本的有限闭环、原生KV→常驻原索引和双TP1目录隔离已有实机子集。公开HTTP入口的完整组件装配、生产恢复/GC、MOD完整启停和容量收益仍待验收。Manager可发现描述，`import_only`保持，不可启用尚未交付的生产功能。
 
 ## 开发起步
 
@@ -29,9 +23,7 @@ uv run --frozen python tools/verify_wheel.py
 
 仓库目前私有，需要本人或协作者权限。尚未发布 PyPI 包。doctor 只校验配置，不探测后端、不证明兼容性。
 
-2026-10-11：新增可选单卡后端诊断，公共 Qwen2.5-14B 已运行非流式/重复/流式请求；使用方法见[运维](docs/operations.md)，严格范围见[证据](evidence/qwen14b-preflight-2026-10-11.md)。这不是已完成的 Router，也不是加速结论。
-
-最新已独立构建用户指定 HUST 配套源码，隔离依赖、Qwen14B eager/IPC 存储事件及 venv 重建复验通过。完整事件恢复、图模式及路由性能未验收；见[最新记录](evidence/hust-runtime-candidate-2026-10-11.md)与[候选锁](runtime/candidates/README.md)。
+可选NPU工具仅由操作者显式执行，使用项目隔离环境与公共本地模型；见[运维](docs/operations.md)、[在线目录计划](docs/planning/online-kv-directory.md)和[候选锁](runtime/candidates/README.md)。当前实机组合为指定HUST ced6857/b47795c；历史旧版publisher资格不外推到新版。
 
 ## 文档与实施
 

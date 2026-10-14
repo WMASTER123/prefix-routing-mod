@@ -1,5 +1,7 @@
 # HUST KV 事件回归合同 v0
 
+现行完成情况统一以[当前进度](progress.md)为准，近期接线见[在线目录计划](planning/online-kv-directory.md)。本页下方按日期追加的完成/未完成描述保留为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。新增双副本目录子集不表示公开HTTP全链路、长期恢复或容量验收通过。
+
 2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
 
 2026-10-12 规范化增量：`tools/kv_wire_normalizer.py` 对 opt-in 四帧做解码前限额/epoch/完整必需字段校验，生成 opaque anchor/local digest，接既有 Rust 目录/索引 CPU 实验。固定原生 Struct+msgspec 编码的合成输入已验证，非真实 NPU 事件；normalizer 不负责订阅信任、去重/共同边界握手。pool 注册额度、当前恢复 ticket 和发送时点控制 lease 另有 CPU 验证，详见[当前范围](planning/capture-recovery-wire-boundaries.md)。
