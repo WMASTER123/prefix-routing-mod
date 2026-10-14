@@ -126,6 +126,7 @@ class FrontendEnds:
                     or type(record["sequence"]) is not int
                     or record["sequence"] != sequence
                     or not isinstance(record["child"], str)
+                    or not record["child"]
                     or len(record["child"].encode()) > 512
                 ):
                     raise ValueError("Core terminal record malformed or gapped")

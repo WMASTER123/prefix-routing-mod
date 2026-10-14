@@ -183,6 +183,26 @@ def test_partial_send_keeps_unsealed_family():
     asyncio.run(run())
 
 
+def test_stream_context_does_not_escape_yield_or_cross_task_close():
+    _, state, front, _, patches = fixture()
+    capture = adapter.Capture("prm-cross-task")
+    capture.entry = adapter.EntryCapture(state.journal, capture.attempt, (1,))
+    token = adapter._context.set(capture)
+    stream = front.generate("prompt", NS(n=1), "external")
+    adapter._context.reset(token)
+
+    async def run():
+        try:
+            assert await anext(stream) == "output"
+            assert adapter._context.get() is None
+            await asyncio.create_task(stream.aclose())
+            assert adapter._context.get() is None
+        finally:
+            patches.restore()
+
+    asyncio.run(run())
+
+
 def test_unmanaged_request_keeps_original_behavior():
     _, state, _, serving, patches = fixture()
 

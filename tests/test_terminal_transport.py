@@ -132,3 +132,19 @@ def test_wrong_frontend_epoch_does_not_touch_core():
     with pytest.raises(ValueError):
         asyncio.run(state.read("wrong", 0, 0))
     assert not state.journal.failed and core.source.acknowledged == 0
+
+
+def test_corrupt_batch_tail_cannot_apply_valid_head():
+    core, state = frontend()
+    state.journal.register("prm-a", ("first", "second"))
+    core.source.observe("first")
+    core.source.observe("second")
+
+    def corrupt(reply):
+        reply["records"][1]["sequence"] = 99
+        return reply
+
+    core.alter = corrupt
+    with pytest.raises(ValueError):
+        asyncio.run(state.read(None, 0, 0))
+    assert not state.journal.families["prm-a"].ended and state.cursor == 0

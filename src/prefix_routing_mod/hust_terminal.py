@@ -150,14 +150,27 @@ def attach_frontend(frontend, state, serving_types, *, guard=verify_callable):
         capture.entry.register_group(request_id, params.n)
 
         async def drive():
-            token = _context.set(capture)
+            iterator = originals["generate"](
+                prompt, params, request_id, *args, **kwargs
+            )
             try:
-                async for output in originals["generate"](
-                    prompt, params, request_id, *args, **kwargs
-                ):
+                while True:
+                    token = _context.set(capture)
+                    try:
+                        output = await anext(iterator)
+                    except StopAsyncIteration:
+                        return
+                    finally:
+                        _context.reset(token)
                     yield output
             finally:
-                _context.reset(token)
+                # Never carry a ContextVar token across yield. Streaming close
+                # can run in a different task/context from the last next().
+                token = _context.set(capture)
+                try:
+                    await iterator.aclose()
+                finally:
+                    _context.reset(token)
 
         return drive()
 
@@ -264,7 +277,8 @@ class TerminalEndpoint:
                 self.patches.check_current()
                 return await self.state.read(observer_epoch, after, acknowledge)
             except ValueError as error:
-                raise HTTPException(409, str(error)) from error
+                status = 503 if self.state.journal.failed else 409
+                raise HTTPException(status, str(error)) from error
             except Exception as error:
                 raise HTTPException(503, "Terminal observation unavailable") from error
 
@@ -279,20 +293,30 @@ class TerminalEndpoint:
                     for family in self.state.journal.families.values()
                 ):
                     raise HTTPException(409, "Unresolved managed families remain")
-                result = await asyncio.wait_for(
-                    self.state.core.call_utility_async(
-                        CORE_METHOD,
-                        self.state.core_epoch,
-                        self.state.cursor,
-                        self.state.cursor,
-                        True,
-                    ),
-                    timeout=5,
-                )
-                if result.get("cleanup_observer_installed") is not False:
-                    raise HTTPException(503, "Core observer restoration unconfirmed")
-                self.patches.restore()
+                self.patches.check_current()
+                # Fence managed entry before yielding to the core RPC. A
+                # failed/ambiguous disable must not reopen enhanced admission.
                 self.state.disabled = True
+                try:
+                    result = await asyncio.wait_for(
+                        self.state.core.call_utility_async(
+                            CORE_METHOD,
+                            self.state.core_epoch,
+                            self.state.cursor,
+                            self.state.cursor,
+                            True,
+                        ),
+                        timeout=5,
+                    )
+                    if (
+                        result.get("epoch") != self.state.core_epoch
+                        or result.get("cleanup_observer_installed") is not False
+                    ):
+                        raise RuntimeError("Core observer restoration unconfirmed")
+                    self.patches.restore()
+                except (Exception, asyncio.CancelledError):
+                    self.state.journal.failed = True
+                    raise
                 return {"restored": True, "binding": result["epoch"]}
 
         for path, handler, methods in (
