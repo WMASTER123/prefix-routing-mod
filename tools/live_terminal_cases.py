@@ -36,8 +36,24 @@ def request_json(opener, origin, route, *, body=None, headers=None):
     if payload is not None:
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(origin + route, data=payload, headers=headers)
-    with opener.open(request, timeout=60) as response:
-        raw = response.read(MAX_REPLY + 1)
+    try:
+        with opener.open(request, timeout=60) as response:
+            raw = response.read(MAX_REPLY + 1)
+    except urllib.error.HTTPError as error:
+        if route.startswith("/v1/"):
+            raw = error.read(MAX_REPLY + 1)
+            detail = "unavailable"
+            if len(raw) <= MAX_REPLY:
+                try:
+                    detail = str(
+                        json.loads(raw).get("error", {}).get("message", "unavailable")
+                    )[:512]
+                except (ValueError, AttributeError):
+                    pass
+            raise RuntimeError(
+                f"Controlled HUST request {route}: HTTP {error.code}: {detail}"
+            ) from error
+        raise
     if len(raw) > MAX_REPLY:
         raise ValueError("Live terminal reply exceeds budget")
     return json.loads(raw)
