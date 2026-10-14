@@ -281,6 +281,10 @@ async fn main() {
             let body = to_bytes(response.into_body(), 1_048_576).await.unwrap();
             let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
             assert_eq!(value["choices"].as_array().unwrap().len(), 2);
+            assert!(value["choices"].as_array().unwrap().iter().all(|choice| {
+                matches!(choice["finish_reason"].as_str(), Some("length" | "stop"))
+                    && choice["text"].as_str().is_some_and(|text| !text.is_empty())
+            }));
         }
         controller.drain(Duration::from_secs(10)).unwrap();
         let denied = route(&router, false).await;

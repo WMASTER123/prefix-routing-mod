@@ -276,6 +276,7 @@ def _run(binary, opener, origin, output, terminal_token, report):
         env.pop("PREFIX_ROUTING_TERMINAL_TOKEN", None)
         pending = None
         buffer = bytearray()
+        transcript = bytearray()
         total = 0
         try:
             process = subprocess.Popen(
@@ -314,6 +315,7 @@ def _run(binary, opener, origin, output, terminal_token, report):
                 if total > 1_048_576:
                     raise ValueError("Router output budget exceeded")
                 buffer.extend(chunk)
+                transcript.extend(chunk)
                 while b"\n" in buffer:
                     line, _, tail = buffer.partition(b"\n")
                     buffer[:] = tail
@@ -398,6 +400,13 @@ def _run(binary, opener, origin, output, terminal_token, report):
                 health_and_terminal_binding_checked=True,
             )
         finally:
+            # Bounded generated diagnostics; never persist either capability.
+            (output / "router.log").write_text(
+                transcript.decode("utf-8", errors="replace")
+                .replace(token, "<redacted>")
+                .replace(terminal_token, "<redacted>"),
+                encoding="utf-8",
+            )
             if process is not None:
                 report["router_cleanup"] = {"returncode": process.poll()}
                 if process.poll() is None:
