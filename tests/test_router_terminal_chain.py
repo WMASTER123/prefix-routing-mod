@@ -1,15 +1,22 @@
 """Combined boundaries, using the existing owner and explicit synthetic source."""
 
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 
-from prefix_routing_mod.contracts import EventKind, ReadContext, WorkerRef
+from prefix_routing_mod.contracts import (
+    BackendConfirmation,
+    EventKind,
+    LifecycleEvent,
+    ReadContext,
+    WorkerRef,
+)
 from tests.test_dynamic_admission import TOKEN, request
 from tools.durable_ledger_prototype import DurableLedger
 from tools.online_transport_probe import AdmissionReceiver, fixture_worker
 from tools.router_terminal_chain import TerminalSource
+from tools.transport_receiver_probe import SCHEMA
 
 
 def fixture(tmp_path):
@@ -174,3 +181,36 @@ def test_bad_terminal_family_tail_cannot_apply_head(tmp_path):
         assert (
             source.failed and source.cursor == 0 and store.outstanding(worker.ref) == 1
         )
+
+
+def test_late_router_close_after_core_end_does_not_double_release(tmp_path):
+    store, receiver, reply, source, worker = fixture(tmp_path)
+    with store:
+        receiver.handle(request())
+        sent = LifecycleEvent(
+            "send",
+            "request-1",
+            "attempt-1",
+            worker.ref,
+            1,
+            EventKind.SEND_STARTED,
+            BackendConfirmation.NONE,
+            worker.clock_id,
+            11,
+        )
+        receiver.handle({"schema": SCHEMA, "token": TOKEN, "event": asdict(sent)})
+        end(reply)
+        source.outcomes["attempt-1"] = EventKind.CANCEL_CONFIRMED
+        source.consume(store, ReadContext(worker.clock_id, 12, 300))
+        closed = replace(
+            sent,
+            event_id="close",
+            sequence=2,
+            kind=EventKind.OUTCOME_UNKNOWN,
+            at_ns=13,
+            error_class="transport_dropped",
+        )
+        message = {"schema": SCHEMA, "token": TOKEN, "event": asdict(closed)}
+        assert receiver.handle(message)["result"] == "applied"
+        assert receiver.handle(message)["result"] == "duplicate"
+        assert store.outstanding(worker.ref) == 0

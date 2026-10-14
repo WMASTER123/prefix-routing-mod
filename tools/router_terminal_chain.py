@@ -376,6 +376,10 @@ def _run(binary, opener, origin, output, terminal_token, report):
                 raise RuntimeError(
                     f"Router example exit={process.returncode}; stages={len(stages)}"
                 )
+            source.check()
+            observed = {f["attempt_id"] for f in source.last_reply["families"]}
+            if observed != set(source.families):
+                raise ValueError("An unpermitted managed request reached the backend")
             if [s["chain_stage"] for s in stages] != [
                 "completion",
                 "cancel",
@@ -398,6 +402,7 @@ def _run(binary, opener, origin, output, terminal_token, report):
                 http_outcome_retains_debt=True,
                 post_commit_lost_permit_retains_debt=True,
                 health_and_terminal_binding_checked=True,
+                no_unpermitted_managed_backend_family=True,
             )
         finally:
             # Bounded generated diagnostics; never persist either capability.
