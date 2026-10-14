@@ -10,14 +10,41 @@ import json
 import time
 from collections import defaultdict
 from collections.abc import AsyncGenerator
+from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace as NS
 
-from tools.audit_backend_terminal import load_sources, source_class
+from prefix_routing_mod.contracts import (
+    EventKind,
+    Health,
+    Observation,
+    Precision,
+    ReadContext,
+    RequestFeatures,
+    RouteDecision,
+    WorkerRef,
+    WorkerState,
+)
+from tools.audit_backend_terminal import (
+    Request,
+    Status,
+    load_sources,
+    output_fixture,
+    scheduler_class,
+    scheduler_fixture,
+    source_class,
+)
 from tools.audit_request_capture import CAPTURE_HASHES, CoreRequest, Params
+from tools.durable_ledger_prototype import DurableLedger
 from tools.entry_capture_prototype import EntryCapture
-from tools.terminal_observer_prototype import Binding, TerminalJournal
+from tools.hust_source_profiles import (
+    CED_CAPTURE_HASHES,
+    CED_ENTRY_HASHES,
+    is_ced_profile,
+)
+from tools.terminal_observer_prototype import Binding, OnlineConsumer, TerminalJournal
 
 ENTRY_HASHES = {
     "base_serving.py": (
@@ -60,9 +87,187 @@ async def merge(*generators):
             yield index, output
 
 
-def run_audit(source_directory, entry_directory):
-    sources = load_sources(source_directory, CAPTURE_HASHES)
-    sources.update(load_sources(entry_directory, ENTRY_HASHES))
+@contextmanager
+def source_ledger(binding):
+    """Existing receipt owner with explicitly synthetic health/clock/outcome."""
+    ref = WorkerRef(binding.worker_id, binding.instance_epoch)
+    context = ReadContext("source-fixture-clock", 100, 50)
+    worker = WorkerState(
+        ref,
+        "fixture-domain",
+        0,
+        Health.HEALTHY,
+        False,
+        context.clock_id,
+        90,
+        Observation(None, "fixture", "instance", context.clock_id, 90),
+        Observation(0, "local_ledger", "router_session", context.clock_id, 90),
+    )
+    features = RequestFeatures(
+        "fixture-request", worker.domain, None, None, None, None, Precision.UNKNOWN
+    )
+    decision = RouteDecision(
+        "fixture-decision",
+        features.request_id,
+        "router-attempt",
+        ref,
+        0,
+        "fixture-policy",
+        "config-1",
+        "fixture_only",
+    )
+    with (
+        TemporaryDirectory(prefix="prefix-source-chain-") as directory,
+        DurableLedger(
+            Path(directory) / "receipts.sqlite",
+            create=True,
+            workers=(worker,),
+            capacity=1,
+            per_worker_limit=1,
+            max_operations=16,
+        ) as store,
+    ):
+        store.reserve(features, decision, context)
+        store.notify_transport("router-attempt", EventKind.SEND_STARTED, context)
+        yield store, context, ref
+
+
+def terminal_ledger_checks(sources, newer):
+    """Source abort/cleanup -> retained binding -> existing durable owner.
+
+    IPC, detokenization and business results are explicit collaborators. No
+    engine class or live backend is patched. Lost ACK is injected after commit.
+    """
+    namespace = {
+        "RequestStatus": Status,
+        "FinishReason": NS(STOP="stop", ABORT="abort", ERROR="error"),
+        "OutputProcessorOutput": NS,
+        "EngineCoreRequestType": NS(ABORT="abort"),
+    }
+    scheduler_type = scheduler_class(sources, newer)
+    core_type = source_class(
+        sources, "core.py", "EngineCore", ("abort_requests",), namespace
+    )
+    client_type = source_class(
+        sources, "core_client.py", "AsyncMPClient", ("abort_requests_async",), namespace
+    )
+    processor_type = source_class(
+        sources,
+        "output_processor.py",
+        "OutputProcessor",
+        ("process_outputs", "_finish_request")
+        + (("_update_admission_stats",) if newer else ()),
+        namespace,
+    )
+    checks = {}
+    for mode in ("normal", "stop_string", "cancel", "cleanup_failure"):
+        binding = Binding("worker", "instance", "observer")
+        journal = TerminalJournal(binding, max_families=1, max_children=1, max_events=1)
+        entry = EntryCapture(journal, "router-attempt", (1,))
+        entry.register_group("parent", 1)
+        entry.bind("parent", "child")
+        entry.submitted("parent")
+        request = Request("child", last_step=1)
+        sched = scheduler_fixture(scheduler_type, (request,), observer=journal)
+        core = core_type()
+        core.scheduler = sched
+        client = client_type()
+        client.resources = NS(engine_dead=False)
+        sent = []
+
+        async def send(kind, ids, *, sent=sent):
+            sent.append((kind, tuple(ids)))
+
+        client._send_input = send
+        with source_ledger(binding) as (store, context, ref):
+            kind = (
+                EventKind.CANCEL_CONFIRMED if mode == "cancel" else EventKind.COMPLETED
+            )
+            consumer = OnlineConsumer(
+                binding,
+                lambda record, store=store, kind=kind, context=context: (
+                    store.confirm_end(record, kind, context)
+                ),
+            )
+            consumer.recover(journal)
+            if mode == "normal":
+                request.status = Status.FINISHED_STOPPED
+                sched._free_request(request)
+            elif mode == "stop_string":
+                processor, queue, output = output_fixture(
+                    processor_type, stop_string=True, core_finished=False
+                )
+                result = processor.process_outputs([output])
+                checks["stop_string_mapping_removed_but_debt_retained"] = (
+                    queue.get_nowait().finished
+                    and not processor.external_req_ids
+                    and result.reqs_to_abort == ["child"]
+                    and store.outstanding(ref) == 1
+                    and journal.snapshot(binding) == (0, ())
+                )
+            if mode != "normal":
+                asyncio.run(client.abort_requests_async(["child"]))
+                consumer.pump(journal)
+                checks[mode + "_abort_send_retains_debt"] = (
+                    sent == [("abort", ("child",))]
+                    and store.outstanding(ref) == 1
+                    and journal.snapshot(binding) == (0, ())
+                )
+                if mode == "cleanup_failure":
+
+                    def fail_free(_):
+                        raise SyntheticFailure("synthetic core cleanup failure")
+
+                    sched.encoder_cache_manager.free = fail_free
+                    try:
+                        core.abort_requests(["child"])
+                    except SyntheticFailure:
+                        consumer.pump(journal)
+                        checks["cleanup_failure_cannot_release_ledger"] = (
+                            store.outstanding(ref) == 1
+                            and journal.snapshot(binding) == (0, ())
+                        )
+                    else:
+                        checks["cleanup_failure_cannot_release_ledger"] = False
+                    continue
+                core.abort_requests(["child"])
+            if mode == "cancel":
+                original_acknowledge = journal.acknowledge
+
+                def lose_ack(*args):
+                    raise ConnectionError("synthetic post-commit ACK loss")
+
+                journal.acknowledge = lose_ack
+                try:
+                    consumer.pump(journal)
+                except ConnectionError:
+                    checks["cancel_commit_before_ack_retains_replay"] = (
+                        store.outstanding(ref) == 0
+                        and journal.acknowledged == 0
+                        and consumer.requires_recovery
+                    )
+                else:
+                    checks["cancel_commit_before_ack_retains_replay"] = False
+                journal.acknowledge = original_acknowledge
+            else:
+                consumer.pump(journal)
+            checks[mode + "_positive_end_releases_once"] = (
+                store.outstanding(ref) == 0 and store.operation_count == 3
+            )
+            # Retained child association survives frontend mapping removal.
+            # Re-delivery after a committed receipt must not allocate a new event.
+            consumer.disconnect()
+            consumer.recover(journal)
+            checks[mode + "_recovery_idempotent"] = store.operation_count == 3
+    return checks
+
+
+def run_audit(source_directory, entry_directory, *, profile="hust-legacy-publisher-v1"):
+    newer = is_ced_profile(profile)
+    capture_hashes = CED_CAPTURE_HASHES if newer else CAPTURE_HASHES
+    entry_hashes = CED_ENTRY_HASHES if newer else ENTRY_HASHES
+    sources = load_sources(source_directory, capture_hashes)
+    sources.update(load_sources(entry_directory, entry_hashes))
     common = {
         "asyncio": asyncio,
         "time": time,
@@ -78,6 +283,8 @@ def run_audit(source_directory, entry_directory):
         "EngineDeadError": type("Dead", (Exception,), {}),
         "EngineGenerateError": type("GenerateError", (Exception,), {}),
         "InputStreamError": type("InputError", (Exception,), {}),
+        "VLLMClientError": type("ClientError", (Exception,), {}),
+        "GracefulHTTPError": type("HTTPError", (Exception,), {}),
         "ErrorResponse": type("ErrorResponse", (), {}),
         "RequestResponseMetadata": lambda **kwargs: NS(**kwargs),
         "RequestOutputKind": NS(FINAL_ONLY="final"),
@@ -116,7 +323,7 @@ def run_audit(source_directory, entry_directory):
     )
     base_type = source_class(
         sources,
-        "base_serving.py",
+        "engine_serving.py" if newer else "base_serving.py",
         "BaseServing",
         ("_base_request_id",),
         common,
@@ -126,7 +333,8 @@ def run_audit(source_directory, entry_directory):
         sources,
         "output_processor.py",
         "OutputProcessor",
-        ("add_request", "_finish_request"),
+        ("add_request", "_finish_request")
+        + (("_update_admission_stats",) if newer else ()),
         {
             "RequestState": NS(
                 from_new_request=lambda **k: NS(
@@ -154,23 +362,50 @@ def run_audit(source_directory, entry_directory):
         ),
     }
     checks = {}
+    core_scheduler = scheduler_class(sources, newer)
 
-    async def scenario(route, groups, n, stream=False, fail_at=None, cancel_at=None):
-        journal = TerminalJournal(
-            Binding("worker", "instance", "observer"),
-            max_families=1,
-            max_children=16,
-            max_events=1,
-        )
+    async def execute(
+        journal,
+        store,
+        context,
+        ref,
+        route,
+        groups,
+        n,
+        stream=False,
+        fail_at=None,
+        cancel_at=None,
+        cleanup_at=None,
+        deny_at=None,
+    ):
         entry = None
         count = 0
         early_ended = []
+        admissions = 0
+        triggered_fault = None
+        consumer = OnlineConsumer(
+            journal.binding,
+            # This test supplies the known synthetic business outcome. Generic
+            # core ENDED alone does not establish a real request's success.
+            lambda record: store.confirm_end(record, EventKind.COMPLETED, context),
+        )
+        consumer.recover(journal)
+        scheduler = scheduler_fixture(core_scheduler, (), observer=journal)
         frontend = async_type()
         frontend.errored = False
         frontend.log_requests = False
         frontend.model_config = NS()
         frontend.vllm_config = NS(cache_config=NS(kv_sharing_fast_prefill=False))
         frontend._run_output_handler = lambda: None
+
+        def check_admission(*args, **kwargs):
+            nonlocal admissions, triggered_fault
+            admissions += 1
+            if admissions == deny_at:
+                triggered_fault = "admission"
+                raise common["GracefulHTTPError"]("synthetic backend admission denial")
+
+        frontend.check_admission = check_admission
         frontend.input_processor = input_type()
 
         async def supported():
@@ -180,10 +415,17 @@ def run_audit(source_directory, entry_directory):
         frontend.input_processor.process_inputs = (
             lambda request_id, prompt, params, **k: CoreRequest(request_id, params)
         )
+
+        async def process_inputs_async(*args, **kwargs):
+            return frontend.input_processor.process_inputs(*args, **kwargs)
+
+        frontend.input_processor.process_inputs_async = process_inputs_async
         out = output_type()
         out.request_states, out.parent_requests = {}, {}
         out.external_req_ids = defaultdict(list)
         out.tokenizer, out.log_stats, out.stream_interval = None, False, 1
+        out.admission_stats = None
+        out.has_request = lambda request_id: request_id in out.request_states
         original_output_add = out.add_request
 
         def capture_child(request, prompt, parent, index, queue):
@@ -194,13 +436,26 @@ def run_audit(source_directory, entry_directory):
         frontend.output_processor = out
 
         async def submit(request):
-            nonlocal count
+            nonlocal count, triggered_fault
             count += 1
             if count == fail_at:
+                triggered_fault = "submission"
                 raise SyntheticFailure("synthetic partial IPC failure")
             if count == cancel_at:
+                triggered_fault = "cancellation"
                 raise asyncio.CancelledError
-            assert journal.observe_core_end(request.request_id)
+            core_request = Request(request.request_id, Status.FINISHED_STOPPED)
+            scheduler.requests[request.request_id] = core_request
+            if count == cleanup_at:
+
+                def fail_free(request):
+                    nonlocal triggered_fault
+                    triggered_fault = "cleanup"
+                    raise SyntheticFailure("synthetic allocator cleanup failure")
+
+                scheduler.kv_cache_manager.free = fail_free
+            scheduler._free_request(core_request)
+            consumer.pump(journal)
             out._finish_request(out.request_states[request.request_id])
             early_ended.append(journal.snapshot(journal.binding)[0] == 0)
             await asyncio.sleep(0)
@@ -215,6 +470,7 @@ def run_audit(source_directory, entry_directory):
                 entry.abandon()
                 raise
             entry.submitted(request_id)
+            consumer.pump(journal)
             return result
 
         frontend.add_request = add
@@ -229,7 +485,9 @@ def run_audit(source_directory, entry_directory):
         async def render(request):
             nonlocal entry
             entry = EntryCapture(journal, "router-attempt", (request.n,) * groups)
-            inputs = [{"prompt_token_ids": [1, 2]} for _ in range(groups)]
+            inputs = [
+                {"type": "token", "prompt_token_ids": [1, 2]} for _ in range(groups)
+            ]
             return ([], inputs) if route == "chat" else inputs
 
         async def valid(request):
@@ -253,6 +511,9 @@ def run_audit(source_directory, entry_directory):
         serving._base_request_id = base_type._base_request_id
         serving._maybe_get_adapters = lambda *a, **k: None
         serving._get_data_parallel_rank = lambda *a: None
+        serving._get_session_id = lambda *a: None
+        serving._get_priority = lambda request, raw: request.priority
+        serving._preflight = lambda *a: None
         serving._get_trace_headers = traces
         serving._log_inputs = lambda *a, **k: None
         serving.model_config = NS(max_model_len=32)
@@ -291,11 +552,36 @@ def run_audit(source_directory, entry_directory):
             if stream:
                 async for _ in response:
                     pass
-        except (Exception, asyncio.CancelledError):
-            if fail_at is None and cancel_at is None:
+        except (Exception, asyncio.CancelledError) as error:
+            cause = error
+            while cause.__cause__ is not None:
+                cause = cause.__cause__
+            if triggered_fault is None or not isinstance(
+                cause,
+                (SyntheticFailure, asyncio.CancelledError, common["GracefulHTTPError"]),
+            ):
                 raise
             entry.abandon()
-        return entry, count, early_ended, out.external_req_ids, raw
+        consumer.pump(journal)
+        return (
+            entry,
+            count,
+            early_ended,
+            out.external_req_ids,
+            raw,
+            store.outstanding(ref),
+            triggered_fault,
+        )
+
+    async def scenario(*args, **kwargs):
+        journal = TerminalJournal(
+            Binding("worker", "instance", "observer"),
+            max_families=1,
+            max_children=16,
+            max_events=1,
+        )
+        with source_ledger(journal.binding) as (store, context, ref):
+            return await execute(journal, store, context, ref, *args, **kwargs)
 
     for route, groups, n, stream in (
         ("completion", 2, 3, False),
@@ -304,7 +590,9 @@ def run_audit(source_directory, entry_directory):
         ("chat", 1, 3, False),
         ("chat", 1, 2, True),
     ):
-        entry, count, early, maps, raw = asyncio.run(scenario(route, groups, n, stream))
+        entry, count, early, maps, raw, outstanding, fault = asyncio.run(
+            scenario(route, groups, n, stream)
+        )
         key = f"{route}_groups{groups}_n{n}_stream{stream}"
         checks[key + "_complete"] = (
             count == groups * n
@@ -313,23 +601,49 @@ def run_audit(source_directory, entry_directory):
             and all(early)
             and not maps
             and entry.journal.snapshot(entry.journal.binding)[0] == 1
+            and outstanding == 0
+            and fault is None
         )
         checks[key + "_header_carrier"] = (
             "router-owned-id" in raw.state.request_metadata.request_id
             and all("router-owned-id" in value for value in entry.groups)
         )
-    for failure in ({"fail_at": 4}, {"cancel_at": 4}):
-        entry, count, _, _, _ = asyncio.run(scenario("completion", 2, 3, **failure))
+    for failure in ({"fail_at": 4}, {"cancel_at": 4}, {"cleanup_at": 4}):
+        entry, count, _, _, _, outstanding, fault = asyncio.run(
+            scenario("completion", 2, 3, **failure)
+        )
         checks[next(iter(failure)) + "_retains_whole_family"] = (
             count == 4
             and entry.abandoned
             and entry.journal.snapshot(entry.journal.binding) == (0, ())
+            and outstanding == 1
+            and fault
+            == {
+                "fail_at": "submission",
+                "cancel_at": "cancellation",
+                "cleanup_at": "cleanup",
+            }[next(iter(failure))]
         )
+    if newer:
+        entry, count, _, _, _, outstanding, fault = asyncio.run(
+            scenario("completion", 2, 3, deny_at=2)
+        )
+        checks["second_group_admission_denial_retains_debt"] = (
+            count == 3
+            and entry.abandoned
+            and outstanding == 1
+            and entry.journal.snapshot(entry.journal.binding) == (0, ())
+            and fault == "admission"
+        )
+    checks.update(terminal_ledger_checks(sources, newer))
     return {
         "schema_version": 1,
         "status": "pass" if all(checks.values()) else "fail",
         "checks": checks,
-        "source_sha256": CAPTURE_HASHES | ENTRY_HASHES,
+        "source_sha256": capture_hashes | entry_hashes,
+        "profile_id": profile,
+        "source_methods_to_existing_ledger_verified": all(checks.values()),
+        "outcome_health_clock_and_ipc_are_synthetic": True,
         "scope": "fixed HTTP serving and normal AsyncLLM branch; fake collaborators",
         "network_http_validated": False,
         "observer_installed": False,
@@ -342,10 +656,13 @@ def main():
     parser.add_argument("--source-directory", required=True, type=Path)
     parser.add_argument("--entry-directory", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--profile", default="hust-legacy-publisher-v1")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("output exists; preserve evidence")
-    report = run_audit(args.source_directory, args.entry_directory)
+    report = run_audit(
+        args.source_directory, args.entry_directory, profile=args.profile
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)

@@ -10,6 +10,35 @@ concurrency:
   group: cpu-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  hust-source-methods:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install uv==0.11.19
+      - run: uv sync --frozen --extra test
+      - name: Fetch pinned HUST sources without installing the engine
+        run: uv run --frozen python -m tools.fetch_hust_audit_sources --execute --output artifacts/hust-source-gate/source
+      - name: Verify terminal and entry-to-ledger source methods on CPU
+        env:
+          HUST_AUDIT_SOURCE_DIR: artifacts/hust-source-gate/source
+        run: |
+          uv run --frozen python -m pytest -q tests/test_hust_source_execution.py
+          uv run --frozen python -m tools.audit_backend_terminal --profile hust-cedb477-native-v1 --source-directory artifacts/hust-source-gate/source --output artifacts/hust-source-gate/terminal.json
+          uv run --frozen python -m tools.audit_http_entry --profile hust-cedb477-native-v1 --source-directory artifacts/hust-source-gate/source --entry-directory artifacts/hust-source-gate/source --output artifacts/hust-source-gate/entry-ledger.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hust-source-methods-${{ matrix.python }}
+          path: artifacts/hust-source-gate/
+          retention-days: 14
   validate:
     runs-on: ubuntu-latest
     strategy:
