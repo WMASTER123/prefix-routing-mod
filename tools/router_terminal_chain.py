@@ -24,6 +24,7 @@ from prefix_routing_mod.contracts import (
     WorkerState,
 )
 from prefix_routing_mod.terminal_journal import Binding, Ended
+from prefix_routing_mod.terminal_transport import END_STATUSES
 from tools.durable_ledger_prototype import DurableLedger
 from tools.live_terminal_cases import request_json
 from tools.online_transport_probe import AdmissionReceiver
@@ -72,6 +73,8 @@ class TerminalSource:
                 type(reply.get("schema_version")) is not int
                 or reply["schema_version"] != 1
                 or Binding(**reply["binding"]) != self.binding
+                or type(reply["core_pid"]) is not int
+                or type(reply["frontend_pid"]) is not int
                 or reply["core_pid"] != self.core_pid
                 or reply["frontend_pid"] != self.frontend_pid
                 or reply.get("disabled") is not False
@@ -92,6 +95,32 @@ class TerminalSource:
                 if item.binding != self.binding or item.sequence != seq:
                     raise ValueError("Terminal batch identity or sequence mismatch")
                 parsed.append(item)
+            families = {}
+            for family in reply["families"]:
+                name = family["attempt_id"]
+                if not isinstance(name, str) or name in families:
+                    raise ValueError("Family identity is invalid or repeated")
+                families[name] = family
+            # Validate every terminal family, including the tail, before the
+            # caller can apply the first valid receipt to its ledger.
+            for item in parsed:
+                family = families.get(item.attempt_id)
+                if family is None or not (
+                    family["sealed"] is True
+                    and family["abandoned"] is False
+                    and all(
+                        type(family[k]) is int for k in ("expected", "bound", "ended")
+                    )
+                    and 0 < family["expected"] == family["bound"] == family["ended"]
+                    and isinstance(family["core_statuses"], dict)
+                    and set(family["core_statuses"]) <= END_STATUSES
+                    and all(
+                        type(v) is int and v > 0
+                        for v in family["core_statuses"].values()
+                    )
+                    and sum(family["core_statuses"].values()) == family["ended"]
+                ):
+                    raise ValueError("Incomplete family cannot close the ledger")
             self.last_reply = reply
             return parsed
         except Exception:
@@ -118,14 +147,6 @@ class TerminalSource:
             if len(families) != 1:
                 raise ValueError("Missing unique terminal family")
             family = families[0]
-            if not (
-                family["sealed"] is True
-                and family["abandoned"] is False
-                and type(family["expected"]) is int
-                and family["expected"] > 0
-                and family["expected"] == family["bound"] == family["ended"]
-            ):
-                raise ValueError("Incomplete family cannot close the ledger")
             if outcome is EventKind.CANCEL_CONFIRMED and family["core_statuses"] != {
                 "FINISHED_ABORTED": 1
             }:

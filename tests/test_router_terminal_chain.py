@@ -153,3 +153,24 @@ def test_health_failure_cannot_create_a_reservation(tmp_path):
         with pytest.raises(TimeoutError):
             receiver.handle(request())
         assert store.outstanding(worker.ref) == 0
+
+
+def test_bad_terminal_family_tail_cannot_apply_head(tmp_path):
+    store, receiver, reply, source, worker = fixture(tmp_path)
+    with store:
+        receiver.handle(request())
+        store.notify_transport(
+            "attempt-1", EventKind.SEND_STARTED, ReadContext(worker.clock_id, 11, 300)
+        )
+        end(reply)
+        source.outcomes["attempt-1"] = EventKind.COMPLETED
+        reply["records"].append(
+            {"binding": reply["binding"], "sequence": 2, "attempt_id": "bad"}
+        )
+        reply["families"].append({"attempt_id": "bad", "sealed": False})
+        reply["boundary"] = 2
+        with pytest.raises(ValueError):
+            source.consume(store, ReadContext(worker.clock_id, 12, 300))
+        assert (
+            source.failed and source.cursor == 0 and store.outstanding(worker.ref) == 1
+        )
