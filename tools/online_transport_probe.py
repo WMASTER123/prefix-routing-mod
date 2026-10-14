@@ -79,11 +79,23 @@ class AdmissionReceiver(Receiver):
     """
 
     def __init__(
-        self, store, token, after_commit=None, *, clock_id=CLOCK, after_admission=None
+        self,
+        store,
+        token,
+        after_commit=None,
+        *,
+        clock_id=CLOCK,
+        after_admission=None,
+        worker_ref=REF,
+        domain="fixture-domain",
+        before_reserve=None,
     ):
         super().__init__(store, token, after_commit)
         self.clock_id = clock_id
         self.after_admission = after_admission or (lambda: None)
+        self.worker_ref = worker_ref
+        self.domain = domain
+        self.before_reserve = before_reserve or (lambda: None)
 
     def handle(self, message):
         if isinstance(message, dict) and message.get("schema") == TRANSPORT_SCHEMA:
@@ -101,9 +113,10 @@ class AdmissionReceiver(Receiver):
         ):
             raise ValueError("invalid admission capability or binding")
         context = ReadContext(self.clock_id, message["at_ns"], 300_000_000_000)
+        self.before_reserve()
         features = RequestFeatures(
             message["request_id"],
-            "fixture-domain",
+            self.domain,
             None,
             None,
             None,
@@ -114,7 +127,7 @@ class AdmissionReceiver(Receiver):
             message["attempt_id"],
             message["request_id"],
             message["attempt_id"],
-            REF,
+            self.worker_ref,
             self.store.oracle.snapshot()[0].version,
             "fixture",
             "config-1",
