@@ -6,7 +6,13 @@ from types import SimpleNamespace
 import pytest
 
 from prefix_routing_mod.terminal_journal import Binding
-from tools.online_kv_directory import NativeCursor, check_binding
+from tools.hust_native_probe import service_environment
+from tools.online_kv_directory import (
+    MAX_FRAME,
+    NativeCursor,
+    check_binding,
+    receive_frames,
+)
 
 
 def batch(sequence, *, parent=None):
@@ -118,3 +124,49 @@ def test_changed_instance_and_observer_fail():
     reply["binding"]["instance_epoch"] = "replacement"
     with pytest.raises(ValueError):
         check_binding(reply, source)
+
+
+def test_two_replica_environment_has_explicit_worker_and_no_old_hook(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PREFIX_ROUTING_HUST_PUBLISHER", "1")
+    monkeypatch.setenv("PREFIX_ROUTING_TERMINAL_TOKEN", "inherited-secret")
+    monkeypatch.setenv("PYTHONPATH", "old-sdk")
+    env = service_environment(
+        1, tmp_path, tmp_path / "acl", token="a" * 64, worker="replica-b"
+    )
+    assert env["ASCEND_RT_VISIBLE_DEVICES"] == "1"
+    assert env["PREFIX_ROUTING_TERMINAL_WORKER"] == "replica-b"
+    assert env["PREFIX_ROUTING_TERMINAL_TOKEN"] == "a" * 64
+    assert env["PYTHONPATH"] == str(tmp_path / "acl")
+    assert "PREFIX_ROUTING_HUST_PUBLISHER" not in env
+    assert "prefix_routing_terminal" in env["VLLM_PLUGINS"].split(",")
+
+
+def test_multipart_count_is_bounded_before_receiving_attacker_tail():
+    class Socket:
+        calls = 0
+
+        def recv(self):
+            self.calls += 1
+            return b"x"
+
+        def getsockopt(self, _):
+            return True
+
+    sock = Socket()
+    with pytest.raises(ValueError, match="frame count"):
+        receive_frames(sock, SimpleNamespace(RCVMORE=1), 3)
+    assert sock.calls == 3
+
+
+def test_multipart_bytes_are_bounded_before_decode():
+    class Socket:
+        def recv(self):
+            return b"x" * MAX_FRAME
+
+        def getsockopt(self, _):
+            return True
+
+    with pytest.raises(ValueError, match="aggregate"):
+        receive_frames(Socket(), SimpleNamespace(RCVMORE=1), 3)

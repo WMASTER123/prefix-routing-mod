@@ -25,6 +25,21 @@ PROFILE = "hust-cedb477-native-v1"
 MAX_FRAME = 1024 * 1024
 
 
+def receive_frames(sock, zmq, count):
+    """Bound multipart count/aggregate before materializing a whole message."""
+    frames = []
+    total = 0
+    for _ in range(count):
+        frame = sock.recv()
+        total += len(frame)
+        if total > MAX_FRAME + 64:
+            raise ValueError("Native multipart exceeds aggregate byte budget")
+        frames.append(frame)
+        if not sock.getsockopt(zmq.RCVMORE):
+            return frames
+    raise ValueError("Native multipart exceeds frame count")
+
+
 def check_binding(reply, source):
     """Read-only identity check; another owner may ACK terminal records."""
     if (
@@ -270,7 +285,7 @@ class OnlineDirectory:
                     if not replay.poll(25):
                         continue
                     item = native_replay_batch(
-                        replay.recv_multipart(),
+                        receive_frames(replay, zmq, 4),
                         msgspec.msgpack.decode,
                         profile_id=PROFILE,
                         block_size=128,
@@ -309,7 +324,7 @@ class OnlineDirectory:
                         raise ConnectionError("Native subscriber disconnected")
                 if sub.poll(25):
                     batch = native_live_batch(
-                        sub.recv_multipart(),
+                        receive_frames(sub, zmq, 3),
                         msgspec.msgpack.decode,
                         profile_id=PROFILE,
                         block_size=128,

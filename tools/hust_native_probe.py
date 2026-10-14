@@ -60,6 +60,38 @@ def cached_tokens(usage):
     return value
 
 
+def service_environment(
+    device, output, acl, *, pycache_root=None, token=None, worker="replica-a"
+):
+    """Same explicit native qualification configuration for one or two replicas."""
+    env = build_environment(device, output, pycache_root=pycache_root)
+    for name in (
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "VIRTUAL_ENV",
+        "PREFIX_ROUTING_HUST_PUBLISHER",
+        "PREFIX_ROUTING_HUST_TERMINAL",
+        "PREFIX_ROUTING_TERMINAL_TOKEN",
+    ):
+        env.pop(name, None)
+    env.update(
+        PYTHONPATH=str(acl),
+        PYTHONHASHSEED="0",
+        VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES="0",
+        VLLM_USE_FASTOKENS="0",
+        VLLM_USE_RUST_FRONTEND="0",
+    )
+    if token is not None:
+        env.update(
+            PREFIX_ROUTING_HUST_TERMINAL="1",
+            PREFIX_ROUTING_TERMINAL_TOKEN=token,
+            PREFIX_ROUTING_TERMINAL_PREFIX="prm-",
+            PREFIX_ROUTING_TERMINAL_WORKER=worker,
+        )
+        env["VLLM_PLUGINS"] += ",prefix_routing_terminal"
+    return env
+
+
 def run(args, output, report):
     report["interface"] = inspect_backend(PROFILE)
     report["model_assets_sha256"] = {
@@ -97,35 +129,16 @@ def run(args, output, report):
         messages, tokenize=True, add_generation_prompt=True, return_dict=False
     )
     report["input_tokens"] = {"completion": len(tokens), "chat": len(chat_tokens)}
-    env = build_environment(
-        args.device, output, pycache_root=getattr(args, "pycache_root", None)
-    )
-    for name in (
-        "PYTHONPATH",
-        "PYTHONHOME",
-        "VIRTUAL_ENV",
-        "PREFIX_ROUTING_HUST_PUBLISHER",
-        "PREFIX_ROUTING_HUST_TERMINAL",
-        "PREFIX_ROUTING_TERMINAL_TOKEN",
-    ):
-        env.pop(name, None)
-    env.update(
-        PYTHONPATH=str(acl),
-        PYTHONHASHSEED="0",
-        VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES="0",
-        VLLM_USE_FASTOKENS="0",
-        VLLM_USE_RUST_FRONTEND="0",
-    )
     terminal_token = None
     if getattr(args, "terminal_observer", False):
         terminal_token = secrets.token_hex(32)
-        env.update(
-            PREFIX_ROUTING_HUST_TERMINAL="1",
-            PREFIX_ROUTING_TERMINAL_TOKEN=terminal_token,
-            PREFIX_ROUTING_TERMINAL_PREFIX="prm-",
-            PREFIX_ROUTING_TERMINAL_WORKER="replica-a",
-        )
-        env["VLLM_PLUGINS"] += ",prefix_routing_terminal"
+    env = service_environment(
+        args.device,
+        output,
+        acl,
+        pycache_root=getattr(args, "pycache_root", None),
+        token=terminal_token,
+    )
     origin = f"http://127.0.0.1:{args.port}"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     context = zmq.Context()
