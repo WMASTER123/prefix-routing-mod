@@ -19,4 +19,3 @@ M3必须分配不可复用的attempt ID，并在异步reserve中原子复核requ
 ## 放行条件
 
 下一提交须把真实Qwen tokenizer/template、同进程原M2目录快照和一个M3 owner装入该provider，通过公开completion/chat入口的正常、取消、断连、目录失效、配置竞争和重启用例。随后测量一次分词、快照读取、reserve提交和host竞争；接口及错误语义在这些结果通过后冻结。
-
