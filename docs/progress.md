@@ -7,6 +7,7 @@
 - 固定 HUST Core ced6857 / Ascend b47795c，Qwen2.5-14B-Instruct、FP16/eager/TP1/DP1。32054新分配的物理0/7均为910B2，各65536MiB；8核CPU配额、64GiB内存。依赖 `pip check` 通过，没有更换引擎或全局设备栈。
 - 上阶段功能cc2478b的真实 Router→HUST→同一账本有限闭环，已在新分配两张卡顺序复验通过。最终文档050b7bd已同步，上一阶段新wheel的aarch64干净安装补过。050b7bd的CPU/源码与helper CI五个检查全部success；独立人工审查/合并未完成。
 - M7原生事件→常驻原M2索引新增在线接线；原Directory/Pool和91b65ee原索引继续复用。两张卡的首轮在线目录+真实Router终态组合均通过：3个完整前缀块匹配，订阅关闭后unknown。后续审查修改和双副本结果以[本阶段证据](../evidence/online-kv-directory-2026-10-14.md)为准，不能自动继承首轮硬件资格。
+- 最终功能24d78d3的双TP1实机`r2`通过：同一原索引owner、单边驻留隔离、两端实际cached_tokens0→384、一侧订阅退出而另一侧继续服务。两卡均已用于真实模型实验且自有进程清理，证据本地/服务器SHA一致。Windows CPU562、aarch64566，integration各3，原生62/进程5组、新wheel两端干净安装通过。b35ffef的5个CI检查全部success；[草稿PR22](https://github.com/WMASTER123/prefix-routing-mod/pull/22)待独立人工审查，后续纯记录head另查。
 
 本阶段只支持受控空起点的已发布事件观测。原生流没有publisher epoch和完整共同水位token快照；本地连接绑定不冒充后端epoch。模型请求历史、计划和预留不能产生驻留事实。
 

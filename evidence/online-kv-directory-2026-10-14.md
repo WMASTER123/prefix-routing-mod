@@ -1,6 +1,6 @@
 # 原生KV在线目录与双TP1隔离：验收记录
 
-日期2026-10-14，分支codex/online-kv-directory，基于050b7bd。功能提交2a45bd2；接收限额、共用环境与双副本最终功能提交1579f41。后续文档/审查提交按各自head核验，不继承硬件资格。
+日期2026-10-14，分支codex/online-kv-directory，基于050b7bd。功能提交2a45bd2；接收限额/共用环境1579f41，幂等fence审查与格式修正后的最终功能代码24d78d3。后续文档提交按各自head核验，不自动产生新硬件资格。
 
 ## 环境与上阶段收尾
 
@@ -37,15 +37,27 @@
 
 第一次双副本`two-replica-01`亦pass，最终复验覆盖新增的解码前multipart帧数/总字节限制。原索引可执行SHA81e5235191fda43d21ceaf6b4ac836141ca181d9c320c2d6bc0338e64cf69a3f。最终记录字段full_routing_verified/performance_verified保持false：尚未通过公开HTTP入口按M1/M2/M3选择这两个副本。
 
+幂等失效修正后，24d78d3重新通过62项原生测试、5组进程检查和双TP1实机`r2`。最终binary SHA df695e2e670d298ef7910a3a8e4c2778446e20753e2f7f2ae338e63df1828993；`r2/report.json` SHA e43a8cde896b3ac9f073305d6d78a1682a3f878af33ad8b60e64e4a281043ca1。两侧仍实际cached_tokens0→384，一侧订阅退出后另一侧继续服务，两个backend正常退出；随后npu-smi确认两卡均无进程。未运行空载保活任务。
+
 ## 审查、测试与制品
 
 新增17项Python反例涵盖去重冲突/超窗、序号/原索引拒绝、真实实例/核心PID变化、另一个终态消费者ACK后只读身份检查、双副本环境与继承hook清理、接收前multipart数量/总字节限制。原生62项测试包含新增4项owner反例，复用原目录与原索引测试；另有真实stdio进程的5组双分区/预算/在线更新/身份/过期/缺口检查。不是独立人工审查完成。
 
 1579f41 Linux aarch64 CPU566 pass/3 skip/3 deselect、integration3通过。Windows最终检查和制品/新CI以本页后续记录为准；初次本地文档链接检查在新证据未落盘时失败，补记录后需完整重跑。未降低断言或把暂时缺文件写成代码环境故障。
 
+最终功能不变的b35ffef：Windows CPU562 pass/7 skip/3 deselect、aarch64 CPU566 pass/3 skip/3 deselect，integration各3，ruff/format与文档链接通过。Windows多4项skip为既有链接限制，另外3项源码执行在专用job显式运行。b35ffef的[CPU/固定源码CI38527391352](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38527391352)四job及[原生索引CI38527391466](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38527391466)全部success。原索引CI明确Python3.12并运行新进程检查；本PR未改HTTP helper，因此不冒称重跑完整Router构建或helper专用CI。
+
+新wheel SHA498179546cb5fb5d2b36e89528cd69800e4bd28a184051cb7345df8f826f795c、sdist SHA4dc6924403087e972d8811903228a9721c6c3cd33263de39267f07d170aa7b55；隔离hatchling1.32.4构建，Windows/aarch64干净安装与惰性/默认关闭/规范描述检查通过，服务环境再次pip check通过。包内runtime、pyproject/锁与050b7bd无差异，本轮新增工具/原索引接线，不更换服务wheel或扩大兼容范围。
+
 审查修正：目录只读检查允许另一终态owner推进ACK，不要求其仍处于replay模式；控制租约以索引owner发起检查的本地时刻计算，一次性nonce隔离迟到确认；完整坏批尾撤销整个视图；multipart限制在构建整条消息前执行；所有自有backend逐项清理，某个索引关闭失败不能跳过其他服务清理。
 
 同步期间把本轮已知SCP暂存文件存入服务器Git stash后再切换规范分支，保留可恢复副本；不覆盖用户改动，不连接未授权目标。最终源码、证据和CI状态另补。
+
+其他失败均保留：一次直接调用rustfmt未设置项目RUSTUP_HOME而找不到默认工具链；随后项目隔离cargo fmt指出新guard格式差异，按建议修正并重过。一次双副本输出目录过长触发既有IPC路径≤100-byte守卫，在模型启动前失败；改用短目录`r2`，未放宽socket限制。初次tar把输出写在被归档目录内，引发目录变化告警；改写到目录外并重新归档，旧试件保留，不把失败archive当最终证据。
+
+最终原始archive：服务器`artifacts/online-kv-evidence-20261014.tar.gz`，本地`artifacts/online-kv-20261014/evidence-verified.tar.gz`，两端SHA **f50b0da120f6c4b64d759db3b3112dfa0fbcfbb6b8ac872b2494566bf92383f9**一致。含各轮结果/日志/原M3数据库及Linux最终检查，排除cache/socket/bundle/wheel/权重；原日志不入Git。代码文档已同步服务器、GitHub和workspace现行入口，后续记录head同步/CI另查。
+
+交付[草稿PR22](https://github.com/WMASTER123/prefix-routing-mod/pull/22)，基于未合并PR21；代码自审/自动检查已做，独立人工审查与合并仍待完成，不自动合并。
 
 ## 剩余与计划修正
 
