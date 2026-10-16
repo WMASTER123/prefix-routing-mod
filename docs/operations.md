@@ -56,6 +56,8 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 ## 单后端局部探测（显式手动触发）
 
+更新注意：以下为早期探测命令，不能当成已验收环境/事件配方。当前先完成[环境门槛](runtime.md)；原 TCP SUB-bind 接线未收到事件，已有单独 IPC 正向诊断，但还没纳入本工具的可重复恢复回归。勿依据下面 `--kv-events-port` 参数宣告事件能力失败或成功。G1 通过后按[事件合同](planning/runtime-event-gates.md)修正正式回归入口。
+
 核验设备未被占用后，在项目目录执行以下示例；输出目录必须是新的。工具只启动临时 loopback 服务，完成后关闭自己创建的进程组，不是部署管理器。没有跨操作者的设备锁，运行前仍须预约；不得并行争用同卡。
 
 ```bash
