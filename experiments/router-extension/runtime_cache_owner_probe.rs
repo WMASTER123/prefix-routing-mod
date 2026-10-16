@@ -25,12 +25,12 @@ mod pool;
 mod prefix_extension {
     pub use vllm_router_rs::routers::http::prefix_extension::*;
 }
-#[allow(dead_code)]
-#[path = "../src/routers/http/native_kv_wire.rs"]
-mod native_kv_wire;
 #[path = "../src/routers/http/native_kv_owner.rs"]
 #[allow(dead_code)]
 mod native_kv_owner;
+#[allow(dead_code)]
+#[path = "../src/routers/http/native_kv_wire.rs"]
+mod native_kv_wire;
 #[path = "../src/routers/http/native_kv_zmq.rs"]
 #[allow(dead_code)]
 mod native_kv_zmq;
