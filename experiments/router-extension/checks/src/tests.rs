@@ -1597,6 +1597,23 @@ mod durable_owner {
     }
 
     #[test]
+    fn stored_runtime_rejects_ambiguous_terminal_source_bindings() {
+        let mut stored = initial("process-a");
+        stored.terminal_cursors = vec![
+            cursor(1),
+            TerminalCursor {
+                source_id: "terminal-source-b".into(),
+                observer_epoch: "observer-b".into(),
+                ..cursor(2)
+            },
+        ];
+        assert!(matches!(
+            stored.validate(),
+            Err(StoreError::Invalid("invalid_terminal_cursor"))
+        ));
+    }
+
+    #[test]
     fn sqlite_missing_store_never_bootstraps_empty() {
         let directory = TempDirectory::new("sqlite-missing");
         assert!(matches!(
