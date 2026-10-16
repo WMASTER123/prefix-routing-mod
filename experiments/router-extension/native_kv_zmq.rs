@@ -19,10 +19,7 @@ const MAX_REPLAY_BATCHES: usize = 128;
 static MONITOR_ID: AtomicU64 = AtomicU64::new(0);
 
 fn endpoint(value: &str) -> Result<(), OwnerFault> {
-    if !value.starts_with("ipc:///")
-        || value.len() > MAX_ENDPOINT
-        || value.as_bytes().contains(&0)
-    {
+    if !value.starts_with("ipc:///") || value.len() > MAX_ENDPOINT || value.as_bytes().contains(&0) {
         return Err(OwnerFault::Transport);
     }
     Ok(())
@@ -121,10 +118,7 @@ impl ZmqNativeTransport {
             MONITOR_ID.fetch_add(1, Ordering::Relaxed)
         );
         subscriber
-            .monitor(
-                &monitor_endpoint,
-                zmq::SocketEvent::DISCONNECTED as i32,
-            )
+            .monitor(&monitor_endpoint, zmq::SocketEvent::DISCONNECTED as i32)
             .map_err(|_| OwnerFault::Transport)?;
         monitor
             .connect(&monitor_endpoint)
