@@ -18,7 +18,13 @@ from pathlib import Path
 
 from prefix_routing_mod.adapters.kv import local_block_digest
 from prefix_routing_mod.adapters.profiles import inspect_backend
-from tools.hust_native_probe import PROFILE, cached_tokens, command, service_environment
+from tools.hust_native_probe import (
+    PROFILE,
+    cached_tokens,
+    command,
+    require_terminal_plugins,
+    service_environment,
+)
 from tools.live_terminal_cases import MODEL, request_json
 from tools.online_kv_directory import IndexOwner, OnlineDirectory
 from tools.regress_kv_recovery import OwnedBackend
@@ -26,6 +32,7 @@ from tools.restore_runtime import private_path
 
 
 def run(args, output, report):
+    report["terminal_entry_points"] = require_terminal_plugins()
     from transformers import AutoTokenizer
 
     report["interface"] = inspect_backend(PROFILE)
