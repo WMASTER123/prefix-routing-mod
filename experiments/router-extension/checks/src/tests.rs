@@ -753,3 +753,303 @@ mod runtime_composition {
         );
     }
 }
+
+mod runtime_owner {
+    use crate::{
+        prefix_extension::{CloseEvidence, HttpExtension, Lease},
+        runtime_owner::{CachePort, RuntimeOwner, TerminalResult, WorkerControl},
+        runtime_provider::{FeaturePort, RequestView, RuntimeProvider, SnapshotPort},
+    };
+    use serde_json::Value;
+    use std::{collections::BTreeMap, sync::Arc};
+
+    const HASH: &str = "abababababababababababababababababababababababababababababababab";
+
+    #[derive(Debug)]
+    struct Features;
+    impl FeaturePort for Features {
+        fn extract(&self, request: &Value, _: &str) -> Result<RequestView, &'static str> {
+            Ok(RequestView {
+                request_id: request["request_id"].as_str().ok_or("request_id")?.into(),
+                identity: request["identity"].as_str().ok_or("identity")?.into(),
+                block_hashes: Arc::from([HASH.into()]),
+                exact: true,
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct Cache(BTreeMap<(String, String), Option<u32>>);
+    impl CachePort for Cache {
+        fn lookup(
+            &self,
+            worker_url: &str,
+            instance_epoch: &str,
+            _: &str,
+            _: &[String],
+        ) -> Option<u32> {
+            self.0
+                .get(&(worker_url.into(), instance_epoch.into()))
+                .copied()
+                .flatten()
+        }
+    }
+
+    fn worker(url: &str, epoch: &str, capacity: u32) -> WorkerControl {
+        WorkerControl {
+            worker_url: url.into(),
+            instance_epoch: epoch.into(),
+            worker_version: 1,
+            cache_identity: "qwen-profile".into(),
+            healthy: true,
+            draining: false,
+            capacity,
+        }
+    }
+
+    fn owner(capacity: u32) -> Arc<RuntimeOwner> {
+        let cache = Arc::new(Cache(BTreeMap::from([
+            (("http://a".into(), "a-1".into()), Some(0)),
+            (("http://b".into(), "b-1".into()), Some(1)),
+        ])));
+        Arc::new(
+            RuntimeOwner::new(
+                cache,
+                "process-a".into(),
+                1,
+                vec![
+                    worker("http://a", "a-1", capacity),
+                    worker("http://b", "b-1", capacity),
+                ],
+                8,
+                8,
+            )
+            .unwrap(),
+        )
+    }
+
+    fn provider(owner: &Arc<RuntimeOwner>) -> RuntimeProvider {
+        RuntimeProvider::new(Arc::new(Features), owner.clone(), owner.clone())
+    }
+
+    fn prepared(
+        provider: &RuntimeProvider,
+        request_id: &str,
+    ) -> Arc<dyn crate::prefix_extension::Features> {
+        provider
+            .prepare(
+                &serde_json::json!({"request_id": request_id, "identity": "qwen-profile"}),
+                "/v1/completions",
+            )
+            .unwrap()
+    }
+
+    async fn reserve(
+        provider: &RuntimeProvider,
+        features: &dyn crate::prefix_extension::Features,
+    ) -> Box<dyn Lease> {
+        let proposal = provider
+            .select(features, &["http://a".into(), "http://b".into()], 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(proposal.worker_url, "http://b");
+        provider.reserve_async(features, &proposal).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn sent_transport_close_retains_debt_until_reliable_terminal() {
+        let owner = owner(2);
+        let provider = provider(&owner);
+        let features = prepared(&provider, "request-a");
+        let lease = reserve(&provider, features.as_ref()).await;
+        let attempt = lease.request_id_header().unwrap().to_owned();
+        lease.before_send().unwrap();
+        lease.sent();
+        lease.closed(true, CloseEvidence::TransportEof);
+        assert_eq!(owner.active_len().unwrap(), 1);
+        let candidates = owner
+            .candidates(
+                features.as_any().downcast_ref::<RequestView>().unwrap(),
+                &["http://a".into(), "http://b".into()],
+            )
+            .unwrap();
+        assert_eq!(
+            candidates
+                .iter()
+                .find(|candidate| candidate.worker_url == "http://b")
+                .unwrap()
+                .local_outstanding,
+            1
+        );
+        assert_eq!(
+            owner.apply_terminal(&attempt, "http://b", "b-1").unwrap(),
+            TerminalResult::Applied
+        );
+        assert_eq!(owner.active_len().unwrap(), 0);
+        assert_eq!(
+            owner.apply_terminal(&attempt, "http://b", "b-1").unwrap(),
+            TerminalResult::Duplicate
+        );
+    }
+
+    #[tokio::test]
+    async fn definitely_not_sent_releases_but_sent_error_does_not() {
+        let owner = owner(2);
+        let provider = provider(&owner);
+        let first = prepared(&provider, "request-a");
+        let lease = reserve(&provider, first.as_ref()).await;
+        lease.closed(false, CloseEvidence::NotSent);
+        assert_eq!(owner.active_len().unwrap(), 0);
+
+        let second = prepared(&provider, "request-b");
+        let lease = reserve(&provider, second.as_ref()).await;
+        lease.before_send().unwrap();
+        lease.sent();
+        lease.closed(true, CloseEvidence::TransportError);
+        assert_eq!(owner.active_len().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn changed_configuration_fences_before_send_and_reclaims_reservation() {
+        let owner = owner(2);
+        let provider = provider(&owner);
+        let features = prepared(&provider, "request-a");
+        let lease = reserve(&provider, features.as_ref()).await;
+        let mut a = worker("http://a", "a-1", 2);
+        let mut b = worker("http://b", "b-1", 2);
+        a.worker_version = 2;
+        b.worker_version = 2;
+        owner.publish(2, vec![a, b]).unwrap();
+        assert_eq!(lease.before_send(), Err("decision_fence_changed"));
+        assert_eq!(owner.active_len().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn restart_keeps_old_debt_and_uses_a_new_attempt_namespace() {
+        let first = owner(1);
+        let first_provider = provider(&first);
+        let features = prepared(&first_provider, "request-old");
+        let lease = reserve(&first_provider, features.as_ref()).await;
+        let old_attempt = lease.request_id_header().unwrap().to_owned();
+        lease.before_send().unwrap();
+        lease.sent();
+        lease.closed(true, CloseEvidence::TransportDropped);
+        let checkpoint = first.checkpoint().unwrap();
+        assert!(RuntimeOwner::restore(
+            Arc::new(Cache(BTreeMap::new())),
+            "process-a".into(),
+            checkpoint.clone(),
+            8,
+            8,
+        )
+        .is_err());
+        let restored = Arc::new(
+            RuntimeOwner::restore(
+                Arc::new(Cache(BTreeMap::from([
+                    (("http://a".into(), "a-1".into()), Some(0)),
+                    (("http://b".into(), "b-1".into()), Some(1)),
+                ]))),
+                "process-b".into(),
+                checkpoint,
+                8,
+                8,
+            )
+            .unwrap(),
+        );
+        let restored_provider = provider(&restored);
+        let next = prepared(&restored_provider, "request-new");
+        let proposal = restored_provider
+            .select(next.as_ref(), &["http://a".into(), "http://b".into()], 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            restored_provider
+                .reserve_async(next.as_ref(), &proposal)
+                .await
+                .unwrap_err(),
+            "worker_capacity"
+        );
+        assert_eq!(
+            restored
+                .apply_terminal(&old_attempt, "http://b", "b-1")
+                .unwrap(),
+            TerminalResult::Applied
+        );
+        let permit = restored_provider
+            .reserve_async(next.as_ref(), &proposal)
+            .await
+            .unwrap();
+        assert!(permit
+            .request_id_header()
+            .unwrap()
+            .starts_with("prm-process-b-"));
+    }
+
+    #[tokio::test]
+    async fn restart_treats_pre_send_reservation_as_uncertain_debt() {
+        let first = owner(2);
+        let first_provider = provider(&first);
+        let features = prepared(&first_provider, "request-old");
+        let lease = reserve(&first_provider, features.as_ref()).await;
+        let attempt = lease.request_id_header().unwrap().to_owned();
+        let restored = RuntimeOwner::restore(
+            Arc::new(Cache(BTreeMap::new())),
+            "process-b".into(),
+            first.checkpoint().unwrap(),
+            8,
+            8,
+        )
+        .unwrap();
+        assert_eq!(restored.active_len().unwrap(), 1);
+        assert_eq!(
+            restored
+                .apply_terminal(&attempt, "http://b", "b-1")
+                .unwrap(),
+            TerminalResult::Applied
+        );
+        assert_eq!(restored.active_len().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn conflicting_terminal_fails_owner_without_releasing_debt() {
+        let owner = owner(2);
+        let provider = provider(&owner);
+        let features = prepared(&provider, "request-a");
+        let lease = reserve(&provider, features.as_ref()).await;
+        let attempt = lease.request_id_header().unwrap().to_owned();
+        lease.before_send().unwrap();
+        lease.sent();
+        assert_eq!(
+            owner.apply_terminal(&attempt, "http://a", "a-1"),
+            Err("terminal_identity_conflict")
+        );
+        assert_eq!(owner.active_len().unwrap(), 1);
+        assert!(owner
+            .candidates(
+                features.as_any().downcast_ref::<RequestView>().unwrap(),
+                &["http://a".into(), "http://b".into()],
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn identity_mismatch_is_unknown_and_publication_is_monotonic() {
+        let owner = owner(2);
+        let features = RequestView {
+            request_id: "request".into(),
+            identity: "other-profile".into(),
+            block_hashes: Arc::from([HASH.into()]),
+            exact: true,
+        };
+        let candidates = owner
+            .candidates(&features, &["http://a".into(), "http://b".into()])
+            .unwrap();
+        assert!(candidates
+            .iter()
+            .all(|candidate| candidate.matched_blocks.is_none()));
+        assert_eq!(
+            owner.publish(1, vec![worker("http://a", "a-1", 2)]),
+            Err("config_version_not_monotonic")
+        );
+    }
+}

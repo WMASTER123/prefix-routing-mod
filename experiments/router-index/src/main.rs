@@ -7,6 +7,24 @@ mod directory;
 mod directory_tests;
 mod online;
 mod pool;
+// Compile and test the exact M2 adapter source with the hash-guarded index.
+// The real fixed host supplies this same trait from runtime_owner.rs.
+mod runtime_owner {
+    use std::fmt::Debug;
+
+    pub trait CachePort: Debug + Send + Sync {
+        fn lookup(
+            &self,
+            worker_url: &str,
+            instance_epoch: &str,
+            identity: &str,
+            block_hashes: &[String],
+        ) -> Option<u32>;
+    }
+}
+#[path = "../../router-extension/runtime_cache_port.rs"]
+#[allow(dead_code)]
+mod runtime_cache_port;
 mod wire;
 use kv_index::{
     indexer::{KvBlockIndexer, MatchQuery},

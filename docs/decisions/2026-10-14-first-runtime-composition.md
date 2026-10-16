@@ -1,6 +1,6 @@
 # ADR：首版请求链采用固定 Router 内本地组合端口
 
-日期：2026-10-14。状态：候选接口已实现并通过CPU编译/合同测试；真实端口装配和生产ABI尚未冻结。
+日期：2026-10-14，2026-10-16更新。状态：候选接口、同进程M3 owner与原M2索引适配已通过固定宿主CPU组合；真实M7/M1/终态同时装配和生产ABI尚未冻结。
 
 ## 决定
 
@@ -12,6 +12,8 @@
 
 M3必须分配不可复用的attempt ID，并在异步reserve中原子复核request、实例、worker/config版本和容量。同步reserve明确返回 `async_admission_required`，避免把磁盘或IPC阻塞塞进Router同步回调。M1/M2查询仍须本地、有界，不在请求热路径等待目录恢复。
 
+M2使用一个进程内 `Pool`，不复制第二棵KV树。`InProcessCache`只把稳定worker URL、HUST instance epoch、publisher/KV identity与原索引Binding关联；lookup只持有有界本地锁，不做网络、磁盘或设备同步。断连立即撤销信任；同URL新实例通过精确旧Binding替换并重新完成snapshot/control确认；过期身份不能替换或注销当前实例。Pool总逻辑配额随精确注销回收，但这不是RSS硬上限，仍须用实测校准。
+
 ## 历史回收边界
 
 已确认的传输outbox槽位可在完整ACK后回收，容量表示未确认工作而不是进程生命周期累计请求数。终态journal新增owner分配的attempt/child身份和显式retire：只有终态已ACK、消费者游标已持久化到同一边界且身份由owner保证不复用时才删除family/child；外部任意ID保持原有限拒绝行为。重复或超窗旧证据只能返回duplicate/unknown或触发保守失效，不能再次释放额度。
@@ -20,4 +22,4 @@ M3必须分配不可复用的attempt ID，并在异步reserve中原子复核requ
 
 ## 放行条件
 
-下一提交须把真实Qwen tokenizer/template、同进程原M2目录快照和一个M3 owner装入该provider，通过公开completion/chat入口的正常、取消、断连、目录失效、配置竞争和重启用例。随后测量一次分词、快照读取、reserve提交和host竞争；接口及错误语义在这些结果通过后冻结。
+下一提交须把已验真实HUST subscriber接到该同进程M2，再把真实Qwen tokenizer/template和HUST终态装入同一provider，通过公开completion入口的正常、取消、断连、目录失效、配置竞争和重启用例；chat/template可在明确拒绝的前提下后续启用，不得静默伪装支持。随后测量一次分词、快照读取、reserve/checkpoint提交和host竞争；接口及错误语义在这些结果通过后冻结。

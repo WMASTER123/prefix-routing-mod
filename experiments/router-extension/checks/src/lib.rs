@@ -10,6 +10,8 @@ pub mod online_bridge;
 pub mod prefix_extension;
 #[path = "../../request_feature_port.rs"]
 pub mod request_feature_port;
+#[path = "../../runtime_owner.rs"]
+pub mod runtime_owner;
 #[path = "../../runtime_provider.rs"]
 pub mod runtime_provider;
 

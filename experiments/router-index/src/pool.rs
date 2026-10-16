@@ -10,6 +10,7 @@ struct Entry {
     ticket: Ticket,
     confirmed: Option<u64>,
     lease: u64,
+    reserved: usize,
     trusted: bool,
 }
 
@@ -33,31 +34,83 @@ impl Pool {
         })
     }
 
-    pub fn register(&mut self, binding: Binding, limits: Limits, lease: u64) -> Result<(), Fault> {
-        if lease == 0 || self.entries.contains_key(&binding.worker) {
+    fn entry_for(binding: Binding, limits: Limits, lease: u64) -> Result<Entry, Fault> {
+        if lease == 0 {
             return Err(Fault::Invalid);
         }
+        let mut directory = Directory::new(limits)?;
+        let ticket = directory.begin(binding.clone())?;
+        Ok(Entry {
+            directory,
+            ticket,
+            binding,
+            confirmed: None,
+            lease,
+            reserved: limits.total_bytes,
+            trusted: false,
+        })
+    }
+
+    pub fn register(&mut self, binding: Binding, limits: Limits, lease: u64) -> Result<(), Fault> {
+        if self.entries.contains_key(&binding.worker) {
+            return Err(Fault::Invalid);
+        }
+        let entry = Self::entry_for(binding.clone(), limits, lease)?;
         let next = self
             .reserved
-            .checked_add(limits.total_bytes)
+            .checked_add(entry.reserved)
             .ok_or(Fault::Overflow)?;
         if self.entries.len() >= self.max_partitions || next > self.max_bytes {
             return Err(Fault::Budget);
         }
-        let mut directory = Directory::new(limits)?;
-        let ticket = directory.begin(binding.clone())?;
-        self.entries.insert(
-            binding.worker.clone(),
-            Entry {
-                directory,
-                ticket,
-                binding,
-                confirmed: None,
-                lease,
-                trusted: false,
-            },
-        );
+        self.entries.insert(binding.worker.clone(), entry);
         self.reserved = next;
+        Ok(())
+    }
+
+    /// Replace one exact worker incarnation without allowing a stale control
+    /// message to evict a newer one. The new partition starts untrusted and
+    /// must complete recovery before it can answer queries.
+    pub fn replace(
+        &mut self,
+        previous: &Binding,
+        current: Binding,
+        limits: Limits,
+        lease: u64,
+    ) -> Result<(), Fault> {
+        if previous.worker != current.worker {
+            return Err(Fault::Invalid);
+        }
+        let old = self.entries.get(&previous.worker).ok_or(Fault::Invalid)?;
+        if &old.binding != previous {
+            return Err(Fault::Stale);
+        }
+        let entry = Self::entry_for(current.clone(), limits, lease)?;
+        let next = self
+            .reserved
+            .checked_sub(old.reserved)
+            .and_then(|value| value.checked_add(entry.reserved))
+            .ok_or(Fault::Overflow)?;
+        if next > self.max_bytes {
+            return Err(Fault::Budget);
+        }
+        self.entries.insert(current.worker.clone(), entry);
+        self.reserved = next;
+        Ok(())
+    }
+
+    /// Remove one exact incarnation and return its logical quota. Unknown or
+    /// stale identities cannot remove the current partition.
+    pub fn unregister(&mut self, binding: &Binding) -> Result<(), Fault> {
+        let entry = self.entries.get(&binding.worker).ok_or(Fault::Invalid)?;
+        if &entry.binding != binding {
+            return Err(Fault::Stale);
+        }
+        let entry = self.entries.remove(&binding.worker).unwrap();
+        self.reserved = self
+            .reserved
+            .checked_sub(entry.reserved)
+            .ok_or(Fault::Overflow)?;
         Ok(())
     }
 
@@ -214,6 +267,41 @@ mod tests {
             Err(Fault::Budget)
         );
         assert_eq!(pool.reserved_bytes(), 32768);
+    }
+
+    #[test]
+    fn exact_replacement_reclaims_quota_and_requires_recovery() {
+        let old = binding("a");
+        let mut current = old.clone();
+        current.instance = 2;
+        let mut pool = Pool::new(1, 32768).unwrap();
+        pool.register(old.clone(), limits(), 10).unwrap();
+        restore(&mut pool, &old, 0);
+        pool.replace(&old, current.clone(), limits(), 10).unwrap();
+        assert_eq!(pool.reserved_bytes(), 16384);
+        assert_eq!(pool.lookup(&old, &[], 1), None);
+        assert_eq!(pool.lookup(&current, &[], 1), None);
+        restore(&mut pool, &current, 1);
+        assert_eq!(pool.lookup(&current, &[], 2), Some(0));
+    }
+
+    #[test]
+    fn stale_replacement_and_unregister_cannot_remove_current_instance() {
+        let old = binding("a");
+        let mut current = old.clone();
+        current.instance = 2;
+        let mut pool = Pool::new(1, 32768).unwrap();
+        pool.register(current.clone(), limits(), 10).unwrap();
+        restore(&mut pool, &current, 0);
+        assert_eq!(
+            pool.replace(&old, binding("a"), limits(), 10),
+            Err(Fault::Stale)
+        );
+        assert_eq!(pool.unregister(&old), Err(Fault::Stale));
+        assert_eq!(pool.lookup(&current, &[], 1), Some(0));
+        pool.unregister(&current).unwrap();
+        assert_eq!(pool.reserved_bytes(), 0);
+        assert_eq!(pool.lookup(&current, &[], 1), None);
     }
     #[test]
     fn expiry_is_unknown_not_miss_and_live_does_not_renew() {

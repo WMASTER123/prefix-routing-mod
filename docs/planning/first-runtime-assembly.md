@@ -1,6 +1,6 @@
 # 首版运行时装配与接口冻结清单
 
-2026-10-14。在线目录子集通过后的下一实现包。固定Router内候选组合层和第一批回收原语已经实现并通过CPU检查；typed公开链的双loopback fixture探针也已在固定Router宿主通过。探针发现并修正了“误把worker数组位置当身份”的夹具错误，因此生产M2必须按稳定worker URL与instance epoch关联目录。M1候选已完成固定Qwen completion tokenizer/块摘要对照；双TP1在线目录又在新分配物理5/6两张910B2上通过，但两项仍未装入同一公开请求链。见[ADR](../decisions/2026-10-14-first-runtime-composition.md)、[组合证据](../../evidence/first-runtime-composition-2026-10-14.md)与[在线目录证据](../../evidence/online-kv-directory-2026-10-14.md)。真实端口装配和生产ABI仍未完成。
+2026-10-16。在线目录子集通过后的下一实现包。固定Router内候选组合层、同进程M3 owner以及原M2索引适配已实现并通过CPU组合：typed公开入口、M2命中/可信miss、基础选点、准入、真实loopback HTTP转发和可靠终态位于同一进程；实例替换、断连失效和全池配额回收也已覆盖。M1与归一化KV事件在该组合探针中仍为fixture，真实HUST subscriber、Qwen M1和终态尚未同时装入同一公开链。见[ADR](../decisions/2026-10-14-first-runtime-composition.md)、[本次证据](../../evidence/runtime-cache-owner-composition-2026-10-16.md)、[早期组合证据](../../evidence/first-runtime-composition-2026-10-14.md)与[在线目录证据](../../evidence/online-kv-directory-2026-10-14.md)。生产ABI仍未冻结。
 
 ## 运行形态与代码归属
 
@@ -9,14 +9,14 @@
 | 职责 | 已存在的依据 | 首版归属与接口要求 |
 |---|---|---|
 | M1 | contracts.RequestFeatures、有界completion FeaturePort；固定Router/HUST的Qwen14B token及完整块摘要对照已通过 | 本地特征端口；一次解析/分词，完整身份与精度；当前只接受字符串completion prompt，其他形态明确拒绝。公开链安装/开销及chat/template仍待验 |
-| M2 | 原KvBlockIndexer、Directory/Pool、online原型 | Router内索引owner；异步更新，短只读查询，不把stdio进程作为生产服务；当前仅受控冷起点具资格 |
-| M3 | ReferenceLedger、DurableLedger及真实终态闭环 | 一个状态/账本owner；候选AdmissionPort已强制异步许可，ACK后槽位与owner身份终态可回收；仍须确定持久游标、存储/提交和重启对账 |
+| M2 | 原KvBlockIndexer、Directory/Pool、online原型及InProcessCache适配 | Router内一个索引owner；异步更新，短只读查询；以worker URL、instance epoch、publisher/KV identity围栏，同URL换实例必须重新恢复；不把stdio进程作为生产服务 |
+| M3 | ReferenceLedger、DurableLedger、真实终态闭环及RuntimeOwner | 一个状态/账本owner；AdmissionPort异步许可；HTTP关闭不清债，可靠终态一次释放；checkpoint/新进程保债语义已有，仍须确定持久介质、提交边界和启动对账 |
 | M4 | PolicyPort、原Router基础策略 | 候选实现只读选择：正可信命中最大优先，否则最低在途/稳定URL；绑定实例/配置版本，优化算法后置 |
 | M5 | 固定Router91b65ee、原三文件patch、实际typed HTTP例程 | 使用原build_app/HTTP入口和SSE/连接管理；在同一入口装配provider，禁止再包一个Python推理代理 |
 | M7 | 固定profile、原生解码、已有HUST endpoint/utility终态观测 | 版本差异集中映射/窄幅适配；订阅和终态投递有各自连接/代次/留存；Manager生命周期另验 |
 | M6 | CPU/源码/原生index/手动NPU/制品入口 | 公共脚本、受控配置与机器可读报告；测试替身复用现有fixtures，不各造一套字段 |
 
-上表选定职责所在实现层，实际生产目录/语言边界需随首次公开HTTP装配提交代码和ADR，不能先创建一堆空模块即宣布冻结。原宿主若需追加async特征端口等窄幅变化，要列出与原三文件patch相比的实际差异、默认关闭和兼容回归；出现大面积fork或引擎调度修改则先讨论。
+上表选定职责所在实现层。`runtime_provider.rs`、`runtime_owner.rs`和`runtime_cache_port.rs`已给出候选类型，但固定宿主探针通过不等于生产目录/ABI冻结；真实M7/M1/终态合并及故障测试后再记录最终位置。原宿主若需追加async特征端口等窄幅变化，要列出与原三文件patch相比的实际差异、默认关闭和兼容回归；出现大面积fork或引擎调度修改则先讨论。
 
 ## 必须真实接通的请求与控制路径
 
@@ -29,9 +29,9 @@
 
 ## 需要修正的性能前置依赖
 
-当前实验账本、Outbox、前端family和core seen都有“有界但不回收”的限制（如64 family/256 child）。**不能用它们直接做可持续容量曲线**：满额拒绝可能来自累计历史，而非实际NPU服务能力。ACK当前也不代表所有family/seen已回收。
+早期实验账本、Outbox、前端family和core seen有“有界但不回收”的限制（如64 family/256 child），不能直接做可持续容量曲线。候选RuntimeOwner改为有界active与有限retired墓碑：可靠终态回收active，未决请求保留；恢复时所有旧active转为uncertain。该候选仍须配套生产checkpoint介质和超出墓碑窗口后的保守语义，不能仅凭CPU探针宣布长期可持续。
 
-因此在正式容量前须完成与实际运行时匹配的最小留存/回收协议。当前已经做到：完整ACK后回收outbox槽位；只有owner分配、不可复用的attempt/child且消费者游标持久到同一边界时才允许终态family回收。仍缺实际持久游标、M3 checkpoint/WAL选择、有限墓碑/超窗处理和Router重启负债恢复。不能只增大常量或按TTL清除未知负债。长期跨节点/多版本加固仍可后置。
+因此在正式容量前须完成与实际运行时匹配的最小留存/回收协议。当前已经做到：完整ACK后回收outbox槽位；owner分配不可复用attempt；RuntimeOwner只由可靠终态回收active，重复终态不重复释放，checkpoint跨进程保留负债。仍缺实际持久游标、checkpoint/WAL选择、墓碑超窗处理和真实Router重启恢复。不能只增大常量或按TTL清除未知负债。长期跨节点/多版本加固仍可后置。
 
 生产M3存储先以实际调用频率/持久化需求和配对开销决定。实验逐请求FULL事务已有毫秒级成本线索，优先评估本地owner/有界异步提交与必要批处理；未验证前不承诺热路径开销，也不牺牲发出前许可和重启保债语义。
 
