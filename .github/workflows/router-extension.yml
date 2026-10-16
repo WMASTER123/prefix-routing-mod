@@ -26,5 +26,7 @@ jobs:
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/runtime_owner_probe.rs
           rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/runtime_cache_port.rs
           rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/native_kv_wire.rs
+          rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/native_kv_owner.rs
+          rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/native_kv_zmq.rs
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/runtime_cache_owner_probe.rs
           cargo +1.99.0 test --locked --manifest-path experiments/router-extension/checks/Cargo.toml

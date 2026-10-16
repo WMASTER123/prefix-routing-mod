@@ -28,6 +28,12 @@ mod prefix_extension {
 #[allow(dead_code)]
 #[path = "../src/routers/http/native_kv_wire.rs"]
 mod native_kv_wire;
+#[path = "../src/routers/http/native_kv_owner.rs"]
+#[allow(dead_code)]
+mod native_kv_owner;
+#[path = "../src/routers/http/native_kv_zmq.rs"]
+#[allow(dead_code)]
+mod native_kv_zmq;
 #[allow(dead_code)]
 #[path = "../src/routers/http/runtime_cache_port.rs"]
 mod runtime_cache_port;

@@ -8,6 +8,9 @@ mod directory_tests;
 #[path = "../../router-extension/native_kv_wire.rs"]
 #[allow(dead_code)]
 mod native_kv_wire;
+#[path = "../../router-extension/native_kv_owner.rs"]
+#[allow(dead_code)]
+mod native_kv_owner;
 mod online;
 mod pool;
 // Compile and test the exact M2 adapter source with the hash-guarded index.

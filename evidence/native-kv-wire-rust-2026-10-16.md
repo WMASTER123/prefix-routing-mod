@@ -34,4 +34,4 @@
 | `runtime-cache-native-wire-bounded-20261016/report.json` | `8902a6419a4bace344ad4aa367f106d21bf1895aa2c4ceec79597cf7da20107f` |
 | `runtime-cache-native-wire-bounded-20261016/probe.log` | `45ef52a3e9b96a14570fb7fdb221d96ff8ee116223c7efab998ee967dec05601` |
 
-没有把该结果标为在线订阅通过。下一步实现单 owner 的 ZMQ SUB/DEALER 控制循环，把所有 decode/连续性/索引错误统一映射为 `InProcessCache.disconnect`，再用真实 HUST 事件替换组合探针的 fixture store。
+没有把该结果标为在线订阅通过。后续单 owner 与 ZMQ 候选进展见[新增证据](native-kv-owner-zmq-2026-10-16.md)：统一失信状态机已有 CPU 成绩，实际 socket 行为和真实 HUST 接线仍待完成。

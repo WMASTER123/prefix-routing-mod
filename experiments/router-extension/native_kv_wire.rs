@@ -5,7 +5,7 @@
 //! END marker never creates a snapshot or a publisher epoch.
 use crate::directory::{Batch, Block, Op};
 use serde::{
-    de::{IgnoredAny, SeqAccess, Visitor},
+    de::{IgnoredAny, Visitor},
     Deserialize, Deserializer,
 };
 use sha2::{Digest, Sha256};
@@ -59,17 +59,6 @@ impl<'de> Visitor<'de> for BytesVisitor {
     where
         E: serde::de::Error,
     {
-        Ok(Bytes(value))
-    }
-
-    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
-    where
-        A: SeqAccess<'de>,
-    {
-        let mut value = Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(64));
-        while let Some(byte) = sequence.next_element::<u8>()? {
-            value.push(byte);
-        }
         Ok(Bytes(value))
     }
 }
@@ -390,14 +379,26 @@ impl Continuity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Serialize;
+    use serde::{Serialize, Serializer};
+
+    #[derive(Debug)]
+    struct Binary(Vec<u8>);
+
+    impl Serialize for Binary {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_bytes(&self.0)
+        }
+    }
 
     #[derive(Serialize)]
     struct Stored<'a> {
         #[serde(rename = "type")]
         kind: &'a str,
-        block_hashes: Vec<Vec<u8>>,
-        parent_block_hash: Option<Vec<u8>>,
+        block_hashes: Vec<Binary>,
+        parent_block_hash: Option<Binary>,
         token_ids: Vec<u32>,
         block_size: u32,
         lora_id: Option<u32>,
@@ -412,12 +413,21 @@ mod tests {
     #[derive(Serialize)]
     struct Envelope<T>(f64, Vec<T>, u32);
 
+    #[derive(Serialize)]
+    struct Removed<'a> {
+        #[serde(rename = "type")]
+        kind: &'a str,
+        block_hashes: Vec<Binary>,
+        medium: Option<&'a str>,
+        group_idx: Option<u32>,
+    }
+
     fn payload() -> Vec<u8> {
         rmp_serde::to_vec_named(&Envelope(
             1.0,
             vec![Stored {
                 kind: "BlockStored",
-                block_hashes: vec![vec![1; 32], vec![2; 32]],
+                block_hashes: vec![Binary(vec![1; 32]), Binary(vec![2; 32])],
                 parent_block_hash: None,
                 token_ids: (0..256).collect(),
                 block_size: 128,
@@ -499,16 +509,16 @@ mod tests {
 
     #[test]
     fn profile_mismatch_and_unknown_fields_fail_closed() {
-        let mut value = rmp_serde::to_vec_named(&serde_json::json!([
+        let mut value = rmp_serde::to_vec_named(&Envelope(
             1.0,
-            [{
-                "type": "BlockRemoved",
-                "block_hashes": [vec![1_u8; 32]],
-                "medium": "CPU",
-                "group_idx": 0
+            vec![Removed {
+                kind: "BlockRemoved",
+                block_hashes: vec![Binary(vec![1_u8; 32])],
+                medium: Some("CPU"),
+                group_idx: Some(0),
             }],
-            0
-        ]))
+            0,
+        ))
         .unwrap();
         assert_eq!(decode_live(&live(0, value)), Err(WireFault::Unsupported));
         value = rmp_serde::to_vec_named(&serde_json::json!([

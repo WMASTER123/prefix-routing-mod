@@ -12,6 +12,7 @@
 - 2026-10-16 的候选增量已将同进程M3 owner接到原Router M2索引Pool：固定Router typed公开入口、原索引命中/可信miss、基础选点、准入、真实loopback HTTP转发及可靠终态在同一进程闭环通过。断连撤销信任，同URL新instance必须重新恢复，旧身份不能替换/注销新分区，全池逻辑配额可回收；索引及适配66项和owner 37项CPU回归通过。M1及归一化KV事件在该组合探针中仍是fixture，真实HUST订阅与公开Qwen链尚未合并，因此生产接口仍未冻结，详见[证据](../evidence/runtime-cache-owner-composition-2026-10-16.md)。
 - 新分配服务器上的双 TP1 原生目录复验已通过：固定 HUST/Qwen14B 两副本实际缓存复用均为 `0→384` tokens，真实 M7 store 进入共享原索引的独立分区，单边驻留和断连降级均正确，结束后无残留设备进程。首轮 404 被确认是项目隔离环境中同版本旧 wheel 缺 terminal entry points，不是引擎冲突；已改用安装当前审查 wheel 的 rebuild 隔离环境，并新增模型启动前的入口完整性拒绝检查。详见[复验证据](../evidence/two-replica-native-directory-2026-10-16.md)。
 - 固定 HUST wire 的 Rust 有界解码与连续性候选已接入原索引 release 回归：精确 `msgspec` fixture、错误帧/字段/身份/预算、重复/缺口/溢出反例共随 74 项测试通过；连续性只保留有界 SHA256 指纹，不保留完整 batch。同一源码在固定 Router 宿主构建并执行最小解码，原 M2/M3/typed HTTP 组合探针无退化。尚未创建生产 ZMQ owner，详见[证据](../evidence/native-kv-wire-rust-2026-10-16.md)。
+- Rust 单分区 owner 已把受控冷起点、replay/live 连续性、控制确认和统一失信接到同一个 `InProcessCache`；最终静态审查前候选随原索引 78 项 CPU 回归通过，旧 owner 不能撤销同 URL 新实例。固定 HUST binary 与 MessagePack 数组现严格区分。显式同机 IPC 的单 SUB/DEALER/断连 monitor 初版通过固定 Router release 构建；随后补的 `begin_control` 失信、析构顺序和poll上限小修尚待重跑，因为临时服务器在完整 example test 最终链接阶段回收。socket 行为和真实 HUST 接线仍未通过，详见[证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。
 
 本阶段只支持受控空起点的已发布事件观测。原生流没有publisher epoch和完整共同水位token快照；本地连接绑定不冒充后端epoch。模型请求历史、计划和预留不能产生驻留事实。
 
@@ -20,20 +21,20 @@
 | 组件 | 已有实现/验证 | 首版剩余工作 |
 |---|---|---|
 | M1特征 | 有界completion FeaturePort候选与最终30项Rust检查通过；固定Router/HUST对公共Qwen14B同一输入得到相同449 tokens和3个完整M2块摘要，资产hash与有界身份已验证 | 把已验适配装入公开请求链并测一次分词开销；chat/template、数组/token-id prompt尚未支持，不得静默降级 |
-| M2目录 | 原索引+Directory/Pool、连续性/父链/限额/租约；在线订阅实机子集；同进程CachePort已和M3/HTTP组合通过，支持精确实例替换、断连失效及全池配额回收 | 接入真实M7 subscriber而非fixture事件；验证长期增长/并发成本，已热/超窗恢复另评估 |
+| M2目录 | 原索引+Directory/Pool、连续性/父链/限额/租约；在线订阅实机子集；同进程CachePort和单分区owner已与M3/HTTP分别组合通过，支持精确实例替换、错误/停止失信及全池配额回收 | 完成ZMQ socket故障回归并接真实M7事件；验证长期增长/并发成本，已热/超窗恢复另评估 |
 | M3状态账本 | 预留、在线传输、真实核心终态、幂等和有限持久恢复；同进程owner已实现配置/实例围栏、发出后保债、可靠终态一次释放、有限墓碑与显式checkpoint/新进程恢复 | 选择checkpoint持久介质和提交时机，接真实入口终态，验证Router崩溃后的负债恢复 |
 | M4选点 | 固定Router内候选组合层已实现正命中优先及无正命中的最低在途回退 | 接真实M1/M2/M3双副本快照并测策略/查询开销；优化方法后置 |
 | M5执行 | 原Router完整构建、真实普通/流式/取消链路通过；候选组合层装入固定源码后aarch64完整check通过；公开typed链fixture探针已通过真实HTTP转发 | 公开HTTP入口安装真实端口，排空/关闭/背压及默认关闭启动验收 |
 | M6评测 | CPU/integration/源码/制品/手动NPU入口与原始证据 | 两副本强基线、Host配对开销、到达负载/多阈值容量 |
-| M7适配/MOD | 固定版本能力映射、真实入口与终态可选包装、原生KV解码 | 完整启动/停止/恢复和实际Manager激活；新版本逐项认证 |
+| M7适配/MOD | 固定版本能力映射、真实入口与终态可选包装、原生KV解码、单分区信任owner及同机IPC传输候选 | socket行为/真实HUST联调、完整启动/停止/恢复和实际Manager激活；新版本逐项认证 |
 | M8后台亲和 | 责任与软计划契约 | 尚未实现，基础性能证据前不加入 |
 
 MOD保持import_only，生产ABI尚未冻结，仍无端到端容量提升结论。原生事件的逻辑驻留不等于即时设备强一致状态或省去同量计算；后端cached_tokens和性能需独立对照。
 
 ## 近期顺序
 
-1. 在线目录的数据面资格已收尾；独立人工审查仍待完成。下一步先把固定 HUST MessagePack 帧的有界解码、序号连续性和断连围栏移入 Rust，同一源码进入 CPU 反例和固定 Router 构建。
-2. 最小公开HTTP请求链：候选本地组合层、原M2索引和M3 owner已在固定宿主同进程闭环通过。用新的 Rust subscriber 替换组合探针的fixture事件后，再安装真实Qwen M1与HUST终态；缓存无正命中仍回基础负载策略，M2失效降级unknown，M3失效拒绝发送。Python/stdin资格接线不冻结为生产热路径。
+1. 在线目录的数据面资格已收尾；独立人工审查仍待完成。Rust wire 和单分区信任 owner 已通过 CPU/固定宿主构建。下一步在新服务器补 ZMQ 私有 IPC 的正常/重复/缺口/超限/断连/停止/实例替换行为回归，再接固定 HUST 真实事件；构建通过不替代这项门槛。
+2. 最小公开HTTP请求链：候选本地组合层、原M2索引和M3 owner已在固定宿主同进程闭环通过。用通过 socket/真实 HUST 验证的 Rust subscriber 替换组合探针的fixture事件后，再安装真实Qwen M1与HUST终态；缓存无正命中仍回基础负载策略，M2失效降级unknown，M3失效拒绝发送。Python/stdin资格接线不冻结为生产热路径。
 3. 为M3 checkpoint选择可测量的持久介质/提交边界，补公开HTTP正常、取消、断连、配置竞争、目录缺口及进程重启测试；通过后冻结代码目录、配置、错误语义、线程模型与替身，才能正式分工。当前显式checkpoint语义已形成，但生产持久化与启动恢复尚未闭环。
 4. 完成上述真实接线的首个正确性子集后立即做同底座强基线与配对开销：直连、原Router基础策略、同宿主仅加接线，再比较策略；低复用、热点变化和混合长度必测。
 
