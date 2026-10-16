@@ -1,10 +1,10 @@
 # M3 持久提交、观测回收与启动恢复
 
-日期：2026-10-16。状态：Rust 候选已完成首轮 CPU 正确性与本地开销验证，尚未装入固定宿主或完成源端回收，不作为生产接口冻结。前置真实公开 HTTP 有限链已通过，见 [接线计划](native-public-chain.md)；本轮结果见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
+日期：2026-10-16。状态：Rust 候选已完成 x86_64/aarch64 CPU 正确性、取消安全与本地盘开销验证，尚未装入固定宿主或完成源端回收，不作为生产接口冻结。前置真实公开 HTTP 有限链已在新服务器复验通过，见 [接线计划](native-public-chain.md)；本轮结果见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
 
 ## 实际剩余问题
 
-Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存储结果不确定时 fail closed；恢复默认暂停，相同实例和旧派发者停止声明通过后才 CAS takeover。它尚未接固定宿主，`previous_dispatcher_stopped` 仍是调用方证明，WorkerControl 也没有持续控制新鲜度到期机制，不能视为生产启动恢复完成。
+Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存储结果不确定或等待提交的任务被取消时 fail closed；终态 cursor 绑定完整 source/worker/instance/observer 身份，整批先校验后结算。恢复默认暂停，相同实例和旧派发者停止声明通过后才 CAS takeover。它尚未接固定宿主，`previous_dispatcher_stopped` 仍是调用方证明，WorkerControl 也没有持续控制新鲜度到期机制，不能视为生产启动恢复完成。
 
 后端 CoreEnds 已改为只在未确认窗口保留记录和重复保护，Frontend ACK 同一序号后精确回收；固定源码审查和 CPU 反例回归已通过。FrontendEnds 的实际 family/opaque child 仍未接可持续回收：TerminalJournal.retire 只接受已证明归属的 managed ID，不能把仅有 `prm-` 前缀的真实 HUST 入口直接标成 managed。受信 Router 归属的方案与取舍见[终态源回收 ADR](../decisions/2026-10-16-terminal-source-retention.md)。20 分钟后端稳定性没有启用该 hook，因此不能替代 Frontend 长期留存验收。
 
@@ -26,7 +26,7 @@ Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存�
 
 ## 本地存储评估
 
-Rust 独立 helper 已锁定 `rusqlite 0.40.2` 的 bundled SQLite 候选：WAL/FULL、owner/generation CAS、有界快照、64 等待槽和 5 秒提交期限；磁盘任务不在同步 Lease 回调或 M3 状态锁内执行。旧 Python SQLite RPC 未进入生产路径。当前“每次完整快照”在 WSL ext4 的 P50 为约 0.6 ms、P99 约 2.6–3.3 ms，挂载 NTFS 更差；下一步须在目标 aarch64 本地盘与规范化增量表/有界 group commit 对比后再选型。分组内每个请求仍只能在包含自身预留的事务提交后取得许可。
+Rust 独立 helper 已锁定 `rusqlite 0.40.2` 的 bundled SQLite 候选：WAL/FULL、owner/generation CAS、有界快照、64 等待槽和 5 秒提交期限；磁盘任务不在同步 Lease 回调或 M3 状态锁内执行。旧 Python SQLite RPC 未进入生产路径。当前“每次完整快照”在 WSL ext4 的 P50 为约 0.6 ms、P99 约 2.6–3.3 ms；目标 aarch64 本地盘在 0/64/512 active 下 P50 为 0.673/0.809/2.320 ms。增长趋势已经足以排除其作为默认生产热路径，但保留为正确性基线。下一步实现规范化增量表和有界 group commit 对照；分组内每个请求仍只能在包含自身预留的事务提交后取得许可，统计必须包括等待批次的时间。
 
 固定 Router 的原 Cargo 尚未增加 SQLite 依赖。只有 aarch64 开销、强制退出恢复和真实终态 ACK 接线通过后才决定宿主依赖；不手写 WAL，也不依赖仅在正常退出时保存的 checkpoint。
 

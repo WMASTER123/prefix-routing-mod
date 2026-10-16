@@ -10,7 +10,7 @@
 
 - `InputProcessor.assign_request_id` 将外部 ID 保存为 `external_req_id`，默认在内部 ID 后增加 8 位随机片段；
 - `ParentRequest.get_child_info` 用 `index_internal-id` 生成并行采样 child；
-- `Scheduler._free_request` 在清理路径调用 observer 后从 scheduler 请求表删除该 internal ID；正常完成、停止字符串和取消均已由此前固定源码及真实 NPU 测试覆盖；
+- 可选 adapter 包装 `Scheduler._free_request`：固定原方法成功返回后才调用 observer。已验的无 connector、TP1 范围中，原方法完成核心请求表清理；正常完成、停止字符串和取消均由此前固定源码及真实 NPU 测试覆盖。不能把这个顺序外推到未验 connector 配置；
 - HTTP 的 `X-Request-Id` 仍可由客户端提供。字符串前缀 `prm-` 只能做格式筛选，不能证明请求由 Router 分配，也不能证明攻击者/旁路客户端不会伪造。
 
 因此，Core 端可以在唯一 Frontend ACK 某一序号后同时删除该条记录和重复保护，使 `limit` 约束未确认窗口而非进程累计请求数。Frontend family 只有在 durable M3 已提交同一终态 cursor，且请求归属得到可信证明后，才可退役。
@@ -24,14 +24,9 @@
 
 ## 待选择的 Router 归属方案
 
-推荐方案是复用现有每后端 control token 派生一个单用途 proof：
+静态派生 proof 不能作为最终方案：它是可重复使用的 bearer credential，既不绑定单个 attempt，也不能独立阻止抓包重放；此前“64 位 proof”的表述还把 64 个十六进制字符错误写成了 64 bit，现予撤回。
 
-- Router 根据 control token 和固定域标签派生 64 位 proof，只把 proof（不把 control token）写入一个专用请求头；同时覆盖客户端的 `X-Request-Id` 和 proof 头；
-- HUST 默认关闭的固定版本 adapter 以常量时间比较派生 proof，验证成功才创建可退役的 managed family；前缀相同但 proof 缺失/错误必须拒绝进入 managed 链；
-- proof 只表示“此 attempt 由当前 Router 控制域发出”，不表示后端接受、完成或 KV 命中；终态、durable cursor、ACK、retire 的顺序仍不可省略；
-- 后端仍应只在受控网络暴露，proof 不写日志。token 轮换会产生新的控制会话，不能跨旧实例清债。
-
-备选一是新增独立 attempt secret，隔离更强但增加部署配置与轮换状态；备选二是要求后端只能由 Router 独占访问，改动较少但限制企业部署，且网络边界配置错误会重新引入伪造风险。
+当前候选是每个控制会话派生独立密钥，并对不可复用的 attempt ID、worker/instance/observer 会话身份和固定协议域计算逐请求 MAC；Router 覆盖客户端的 request/proof 头，adapter 常量时间验证后才创建 managed family。它仍必须配合服务端重放状态或严格的会话/序号退役边界，不能只靠 MAC 宣称防重放；HTTP Message Signatures 的安全说明同样要求 nonce/timestamp 等重放缓解，而不是把签名本身当成防重放机制：[RFC 9421 §7.2.2](https://www.rfc-editor.org/rfc/rfc9421.html#section-7.2.2)。受控网络与后端只允许 Router 访问可作为首版部署前提，但不能替代协议检查。新增独立 attempt secret 隔离更强，却增加配置、轮换和恢复状态；最终选择须先做协议反例与运维成本评审，再写代码。
 
 ## 退役接口的后续边界
 

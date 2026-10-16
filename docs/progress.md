@@ -7,7 +7,7 @@
 1. **原生传输回归**：Linux x86_64 和 aarch64 的共享原索引/owner/真实 IPC/身份控制各 90 项 release 测试通过；固定完整 Router example test 36 项通过，原 mock HTTP 组合回归通过。重放发送纳入总期限，真实 socket 测试已加入 CI。
 2. **真实公开请求链有限闭环**：原 HTTP 入口、真实 Qwen M1、Rust M7→同进程原 M2、基础 M4、M3 准入、原 M5 转发与真实 HUST 终态已同时联通。A 冷/A 热/B 热实际目标 A/A/B，后端 cached_tokens 为 0/384/384；真实流式取消取得核心 ABORTED 后才结清，重复终态不重复释放，最终 active=0。详见 [公开链证据](../evidence/native-public-chain-2026-10-16.md)。
 3. **新分配两卡复验与稳定性**：两张 910B2、Qwen2.5-14B TP1/FP16/eager，原目录隔离/断连复验通过；20 分钟后端稳定性完成 177/171 请求、12272/11856 生成 token，正常退出，无强制清理或残留设备进程。该稳定性未启用终态观测，不能替代其长期留存验收，见 [证据](../evidence/npu-stability-2026-10-16.md)。
-4. **M3 持久提交候选**：新增 Rust 单写提交包装与 SQLite WAL/FULL 候选，发送许可晚于持久提交，终态/M3/cursor 同一事务，恢复默认暂停并用 owner/generation CAS 围栏。Linux release 44 项和 clippy 通过；本地 ext4 完整快照 commit P50 约 0.58–0.67 ms、P99 约 2.6–3.3 ms，尚未选为生产方案，见[证据](../evidence/durable-runtime-candidate-2026-10-16.md)。
+4. **M3 持久提交候选**：新增 Rust 单写提交包装与 SQLite WAL/FULL 候选，发送许可晚于持久提交，终态/M3/cursor 同一事务，恢复默认暂停并用 owner/generation CAS 围栏。审查补齐异步取消失败关闭、完整终态 source binding 和整批预校验；x86_64/aarch64 release 各 47 项通过，本地 clippy 通过。aarch64 完整快照 commit 在 0/64/512 active 下 P50 为 0.673/0.809/2.320 ms，因此不选作默认生产热路径，见[证据](../evidence/durable-runtime-candidate-2026-10-16.md)。
 5. **Core 终态窗口回收**：按固定 HUST 源码与 hash 守卫确认 internal ID 和一次性清理边界，Core 记录及重复保护只保留到唯一 Frontend ACK，不再形成进程累计请求上限；CPU 回归覆盖 ACK 前重复、ACK 后复用和外来流量。Frontend family 退役仍待受信 Router 归属方案，不把前缀当凭据，见[ADR](decisions/2026-10-16-terminal-source-retention.md)。
 
 固定基线为 HUST Core ced6857 / Ascend b47795c，Router91b65ee；未更换引擎、CANN 或全局 Python。服务使用项目隔离环境及窄 PYTHONPATH，pip check 通过。本轮新 MOD wheel、输入/二进制 hash、命令及失败重试均有记录。
@@ -18,7 +18,7 @@
 |---|---|---|
 | M1 | 真实本地 Qwen tokenizer、完整块摘要，已装入公开字符串 completion 链 | 输入/输出预算和一次分词开销；chat/template、数组/token-id 不在当前支持范围 |
 | M2 | 复用原索引/Directory/Pool；真实 Rust 订阅写入同进程目录，连续性/父链/总配额/失信/实例围栏 | 大工作集/长期资源与并发成本；原生已热/超窗恢复不支持 |
-| M3 | 条件准入、发出后保债、真实完整终态结清、幂等、有限墓碑；Rust 持久提交/cursor/暂停恢复候选已过 CPU 故障测试 | 选择并装入生产存储、真实源 ACK/GC、控制新鲜度、强制退出及 aarch64/实机恢复 |
+| M3 | 条件准入、发出后保债、真实完整终态结清、幂等、有限墓碑；Rust 持久提交/cursor/暂停恢复候选已过 x86_64/aarch64 CPU 故障测试 | 选择增量/分组生产布局并装入宿主、真实源 ACK/GC、控制新鲜度、强制退出及实机恢复 |
 | M4 | 基础可信正命中优先/最低在途回退，真实目标和缓存结果符合预期 | 配对开销与强基线；优化策略后置 |
 | M5 | 复用原 Router HTTP/SSE，公开入口、真实转发及生成后取消通过 | 生产启停/排空、并发配置竞争/故障和可发布二进制 |
 | M6 | CPU/源码/原生 CI、可重复装配、手动 NPU 公开链/稳定性及原始报告 | 同底座开销、持续服务、强基线和多阈值容量曲线 |
@@ -29,7 +29,7 @@
 
 ## 接下来集中完成什么
 
-1. 在 aarch64 本地盘重测当前 SQLite 完整快照，并与增量表/有界 group commit 比较；宿主只采用满足提交语义且开销可接受的一种。随后把同一 M3 的消费者 cursor 接到真实 terminal ACK。
+1. aarch64 已证实完整快照随 active 数增长，不作为默认热路径。实现并比较规范化增量表与有界 group commit；宿主只采用满足提交语义、取消安全且开销可接受的一种。随后把同一 M3 的消费者 cursor 接到真实 terminal ACK。
 2. 确认受信 Router 归属方案后接源端 retire，补真实控制新鲜度、旧派发者停止、存储错误、丢许可/ACK、配置竞争和强制退出恢复；未知负债保留。超过早期 64/256 上限持续服务并验证资源趋势。
 3. 对直连、原 Router、同底座仅加接线做配对 Host 开销，排除重复分词/远程目录查询/持久化放大；通过后冻结生产目录、类型、线程/时钟、配置、错误及启停语义。
 4. 冻结后按 A(M7/M2)、B(M1/M4/M5)、C(M3/M6/交付)正式分工。独立准备任务可先进行；不等待 M8 或最终算法，也不把尚未验收的恢复语义宣布为冻结。见 [工作包](planning/component-work-packages.md)。
@@ -38,6 +38,6 @@
 
 ## 测试与审查
 
-代码提交 `01e5817` 本地 Python CPU 574 通过/7 跳过、integration 3 通过，wheel 干净安装验证通过，GitHub 六项 CI 全部通过；Rust helper 最近 release 44 项和 clippy 全通过，本轮未改 Rust。aarch64 编译/存储开销与完整 Router 宿主接入尚待可用服务器验证。后续 head 状态以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
+此前代码提交 `01e5817` 的 Python CPU 574 通过/7 跳过、integration 3 通过，wheel 干净安装验证通过，GitHub 六项 CI 全部通过。本轮 Rust 修复提交 `328e5ff`：x86_64 release 47 项及 clippy 通过，aarch64 同锁 release 47 项通过；目标隔离 Rust 工具链未安装 clippy component，未修改工具链。当前 wheel 在干净环境验证并只安装到项目 HUST venv，`pip check` 通过；双 TP1 既有公开链复验通过且无残留进程。持久层仍未装入完整 Router 宿主。后续 head 状态以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
 
 已完成自审、自动回归和上述实机子集；独立人工审查/合并未完成，不自动合并。Linux CPU 可推进持久化/协议；再次真实持续服务与恢复回归需要两个 TP1 NPU。测试完成清理自有进程，不运行空载保活负载。
