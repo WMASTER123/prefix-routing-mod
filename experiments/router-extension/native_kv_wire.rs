@@ -546,7 +546,23 @@ mod tests {
     }
 
     #[test]
-    fn evicted_or_conflicting_duplicate_fails_closed() {
+    fn conflicting_duplicate_fails_closed() {
+        let mut continuity = Continuity::new(2).unwrap();
+        let first = Batch {
+            sequence: 0,
+            ops: vec![Op::Clear],
+        };
+        continuity.accept(&first).unwrap();
+        let conflicting = Batch {
+            sequence: 0,
+            ops: vec![Op::Remove(Arc::from("different"))],
+        };
+        assert_eq!(continuity.accept(&conflicting), Err(WireFault::Conflict));
+        assert!(continuity.failed());
+    }
+
+    #[test]
+    fn evicted_duplicate_and_sequence_overflow_fail_closed() {
         let mut continuity = Continuity::new(1).unwrap();
         let first = Batch {
             sequence: 0,
@@ -560,5 +576,18 @@ mod tests {
         continuity.accept(&second).unwrap();
         assert_eq!(continuity.next(), 2);
         assert_eq!(continuity.accept(&first), Err(WireFault::Conflict));
+
+        let mut overflow = Continuity {
+            next: u64::MAX,
+            window: 1,
+            recent: BTreeMap::new(),
+            failed: false,
+        };
+        let last = Batch {
+            sequence: u64::MAX,
+            ops: vec![Op::Clear],
+        };
+        assert_eq!(overflow.accept(&last), Err(WireFault::Gap));
+        assert!(overflow.failed());
     }
 }

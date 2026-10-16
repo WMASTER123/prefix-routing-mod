@@ -22,7 +22,7 @@
 
 ## 验证
 
-- aarch64 release：原索引、Pool、CachePort 与新 wire 共 73 tests passed，0 failed。
+- aarch64 release：原索引、Pool、CachePort 与新 wire 共 74 tests passed，0 failed。
 - fixture 由固定 HUST 环境的 `KVEventBatch/BlockStored` 与 `msgspec.msgpack.encode` 生成，使用合成 hashes/tokens/session，不含真实请求内容；Rust 成功得到两个父子 store。
 - 覆盖错误帧、超限 payload、未知字段、错误介质、END/live 混淆、精确重复、冲突/过窗重复和序号缺口。
 - 相同源码复制进固定 `vllm-project/router@91b65ee` 隔离宿主后 release 构建通过；只保留宿主原有 `Atomic::fetch_update` 弃用警告。

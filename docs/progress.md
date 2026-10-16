@@ -11,7 +11,7 @@
 - 首版请求链0f05ae8已在新分配32064重新通过双TP1在线目录资格；469d06c又在32049的物理5/6两张910B2复验同一结论：固定HUST与Qwen14B的实际cached_tokens分别0→384，隔离/断连和正常清理通过。固定Router宿主typed链fixture探针已通过真实HTTP转发、准入和终态回调；M1候选还在固定Router/HUST之间通过449-token及3个完整块摘要的一致性对照。三项仍分别是数据面、组合接口与特征身份的证据，不相加冒充真实公开Router全链或性能收益。
 - 2026-10-16 的候选增量已将同进程M3 owner接到原Router M2索引Pool：固定Router typed公开入口、原索引命中/可信miss、基础选点、准入、真实loopback HTTP转发及可靠终态在同一进程闭环通过。断连撤销信任，同URL新instance必须重新恢复，旧身份不能替换/注销新分区，全池逻辑配额可回收；索引及适配66项和owner 37项CPU回归通过。M1及归一化KV事件在该组合探针中仍是fixture，真实HUST订阅与公开Qwen链尚未合并，因此生产接口仍未冻结，详见[证据](../evidence/runtime-cache-owner-composition-2026-10-16.md)。
 - 新分配服务器上的双 TP1 原生目录复验已通过：固定 HUST/Qwen14B 两副本实际缓存复用均为 `0→384` tokens，真实 M7 store 进入共享原索引的独立分区，单边驻留和断连降级均正确，结束后无残留设备进程。首轮 404 被确认是项目隔离环境中同版本旧 wheel 缺 terminal entry points，不是引擎冲突；已改用安装当前审查 wheel 的 rebuild 隔离环境，并新增模型启动前的入口完整性拒绝检查。详见[复验证据](../evidence/two-replica-native-directory-2026-10-16.md)。
-- 固定 HUST wire 的 Rust 有界解码与连续性候选已接入原索引 release 回归：精确 `msgspec` fixture、错误帧/字段/身份/预算、重复/缺口反例共随 73 项测试通过；连续性只保留有界 SHA256 指纹，不保留完整 batch。同一源码在固定 Router 宿主构建并执行最小解码，原 M2/M3/typed HTTP 组合探针无退化。尚未创建生产 ZMQ owner，详见[证据](../evidence/native-kv-wire-rust-2026-10-16.md)。
+- 固定 HUST wire 的 Rust 有界解码与连续性候选已接入原索引 release 回归：精确 `msgspec` fixture、错误帧/字段/身份/预算、重复/缺口/溢出反例共随 74 项测试通过；连续性只保留有界 SHA256 指纹，不保留完整 batch。同一源码在固定 Router 宿主构建并执行最小解码，原 M2/M3/typed HTTP 组合探针无退化。尚未创建生产 ZMQ owner，详见[证据](../evidence/native-kv-wire-rust-2026-10-16.md)。
 
 本阶段只支持受控空起点的已发布事件观测。原生流没有publisher epoch和完整共同水位token快照；本地连接绑定不冒充后端epoch。模型请求历史、计划和预留不能产生驻留事实。
 
