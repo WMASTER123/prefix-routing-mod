@@ -48,7 +48,7 @@ Python包已有规范描述、配置预检、合同参考、固定版本适配�
 
 在线目录实验使用同一个常驻原索引进程，异步订阅持续写入；stdio是资格验证接线，不是第二个生产索引服务。受控空起点支持新版原生三帧；无后端epoch/完整token快照时，不承诺已热接管、超窗或任意重启恢复。
 
-原公开 HTTP 入口与 M1/M2/M3 本地绑定已通过真实 HUST 有限链；生产账本持久提交/游标、健康新鲜度、源端 GC、崩溃恢复与 MOD 完整启停尚未验收。example 不直接作为生产 ABI；按[持久恢复实现包](planning/durable-runtime-and-retention.md)完成后再冻结目录和接口，MOD 仍 import_only。
+原公开 HTTP 入口与 M1/M2/M3 本地绑定已通过真实 HUST 有限链。Rust 持久提交候选现已验证“许可前提交”和“终态/checkpoint/cursor 同事务”，但只在独立 helper 中，完整快照开销尚待 aarch64 对照；健康新鲜度、真实源 ACK/GC、强制退出恢复与 MOD 完整启停仍未验收。example 不直接作为生产 ABI；按[持久恢复实现包](planning/durable-runtime-and-retention.md)完成后再冻结目录和接口，MOD 仍 import_only。
 
 ## Ascend与兼容
 

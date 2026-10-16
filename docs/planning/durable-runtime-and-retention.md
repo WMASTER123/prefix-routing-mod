@@ -1,10 +1,10 @@
 # M3 持久提交、观测回收与启动恢复
 
-日期：2026-10-16。状态：下一实现包的候选边界，尚未实现或验收，不作为生产接口冻结。前置真实公开 HTTP 有限链已通过，见 [接线计划](native-public-chain.md)。
+日期：2026-10-16。状态：Rust 候选已完成首轮 CPU 正确性与本地开销验证，尚未装入固定宿主或完成源端回收，不作为生产接口冻结。前置真实公开 HTTP 有限链已通过，见 [接线计划](native-public-chain.md)；本轮结果见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
 
 ## 实际剩余问题
 
-Rust RuntimeOwner 已能保存/重建 checkpoint，但尚无发送前持久提交，也没有生产启动恢复。WorkerControl 当前健康值来自有限测试配置，必须增加真实控制新鲜度及重启后的暂停准入，不能恢复旧 healthy 值就开始派发。
+Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存储结果不确定时 fail closed；恢复默认暂停，相同实例和旧派发者停止声明通过后才 CAS takeover。它尚未接固定宿主，`previous_dispatcher_stopped` 仍是调用方证明，WorkerControl 也没有持续控制新鲜度到期机制，不能视为生产启动恢复完成。
 
 后端观测的 CoreEnds.seen 在 ACK 后仍累计；FrontendEnds 的实际 family/opaque child 也未接可持续回收。TerminalJournal.retire 目前只接受自身分配的 managed ID，不能直接套到真实 HUST 入口。20 分钟后端稳定性没有启用该 hook，因此不能覆盖这两个上限。
 
@@ -26,9 +26,9 @@ Rust RuntimeOwner 已能保存/重建 checkpoint，但尚无发送前持久提�
 
 ## 本地存储评估
 
-优先评估 Rust 内嵌 SQLite 单写者/WAL/FULL 提交与有界分组提交，复用成熟事务和崩溃恢复能力；这是候选，不把旧 Python 实验 SQLite RPC 当作生产方案。记录依赖/锁变化和真实项目存储的提交延迟、吞吐及尾部，不在同步 Lease 回调、全局状态读锁内做磁盘 I/O。异步 reserve 可以等待有界提交任务，队列满/超时明确拒绝，后台任务不能自行发送模型请求。
+Rust 独立 helper 已锁定 `rusqlite 0.40.2` 的 bundled SQLite 候选：WAL/FULL、owner/generation CAS、有界快照、64 等待槽和 5 秒提交期限；磁盘任务不在同步 Lease 回调或 M3 状态锁内执行。旧 Python SQLite RPC 未进入生产路径。当前“每次完整快照”在 WSL ext4 的 P50 为约 0.6 ms、P99 约 2.6–3.3 ms，挂载 NTFS 更差；下一步须在目标 aarch64 本地盘与规范化增量表/有界 group commit 对比后再选型。分组内每个请求仍只能在包含自身预留的事务提交后取得许可。
 
-在决定存储依赖和线程模型前，先给出可复现的正确性/开销对照；不默认手写完整 WAL，也不依赖仅在正常退出时保存的 checkpoint。
+固定 Router 的原 Cargo 尚未增加 SQLite 依赖。只有 aarch64 开销、强制退出恢复和真实终态 ACK 接线通过后才决定宿主依赖；不手写 WAL，也不依赖仅在正常退出时保存的 checkpoint。
 
 ## 冻结前验收
 

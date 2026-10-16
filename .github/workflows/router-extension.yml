@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install the tested Rust toolchain
-        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
       - name: Check shared helper and deterministic transport regressions
         run: |
           bash -n tools/stage_router_runtime.sh
@@ -32,4 +32,6 @@ jobs:
           rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/native_kv_zmq.rs
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/runtime_cache_owner_probe.rs
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/hust_runtime_probe.rs
+          rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/checks/examples/sqlite_runtime_store_probe.rs
+          cargo +1.99.0 clippy --locked --manifest-path experiments/router-extension/checks/Cargo.toml --all-targets -- -D warnings
           cargo +1.99.0 test --locked --manifest-path experiments/router-extension/checks/Cargo.toml

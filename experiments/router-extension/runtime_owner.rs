@@ -8,6 +8,7 @@ use super::{
     prefix_extension::{AdmissionFuture, CloseEvidence, Lease},
     runtime_provider::{AdmissionPort, Candidate, Decision, RequestView, SnapshotPort},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
@@ -32,7 +33,7 @@ pub trait CachePort: Debug + Send + Sync {
     ) -> Option<u32>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkerControl {
     pub worker_url: String,
     pub instance_epoch: String,
@@ -53,7 +54,8 @@ impl WorkerControl {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AttemptPhase {
     Reserved,
     Ready,
@@ -61,7 +63,7 @@ pub enum AttemptPhase {
     Uncertain,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveAttempt {
     pub request_id: String,
     pub attempt_id: String,
@@ -72,7 +74,7 @@ pub struct ActiveAttempt {
     pub phase: AttemptPhase,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnerCheckpoint {
     pub process_epoch: String,
     pub config_version: u64,
@@ -351,6 +353,17 @@ impl RuntimeOwner {
             .lock()
             .map(|state| state.active.len())
             .map_err(|_| "owner_poisoned")
+    }
+
+    /// Stop new reads/admissions after an uncertain durable transition.
+    /// Reliable terminal processing may continue after a process restart from
+    /// the last committed snapshot; this instance must not be reused.
+    pub fn fail_closed(&self) {
+        self.shared.fail();
+    }
+
+    pub fn is_failed(&self) -> bool {
+        self.shared.failed.load(Ordering::Acquire)
     }
 }
 
