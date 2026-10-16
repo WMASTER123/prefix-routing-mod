@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-16 公开链收尾：固定完整 Router example test 36 项、aarch64 原索引/IPC/控制 90 项、原 mock HTTP 组合回归和双 NPU 的真实公开 HTTP 链均通过。真实请求同时使用 M1/M2/M3/M4/M5/M7，包含 ABORTED 取消和最终零负债，见[证据](../evidence/native-public-chain-2026-10-16.md)。这些是手动实机/完整宿主验证，不能归给仅编译 helper/index 的 CI；生产持久恢复和长期 GC 仍待验证。
+
 2026-10-16 后续：`validate-index` 已加入 `--features hust-control`，直接编译共享传输/源控制并运行真实 Linux 私有 IPC 与 loopback HTTP 反例，当前本地 90 项 release 通过。此项替换“ZMQ 仅格式检查”的覆盖缺口；完整宿主和真实 HUST 仍独立验收。`tools/npu_stability_probe.py` 提供 1..1800 秒、两 TP1 的有限后端稳定性负载，真实生成 16/64/128 tokens，默认不安装终态 hook，只输出有界计数；不作为 Router 容量或终态长期回收证明。
 
 2026-10-16 较早回归直接编译 `native_kv_wire.rs` / `native_kv_owner.rs`，固定 HUST msgspec fixture 和 78 项 release 测试由 CI 通过。该组没有 socket；后来 SSH 中断时完整宿主测试未取得结果，原因未确认。本轮实际 IPC 增量见上段，真实 HUST 订阅仍独立验收，见[单owner证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。

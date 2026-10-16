@@ -1,6 +1,6 @@
 # 首版运行时装配与接口冻结清单
 
-2026-10-16。在线目录子集通过后的下一实现包。固定Router内候选组合层、同进程M3 owner以及原M2索引适配已实现并通过CPU组合：typed公开入口、M2命中/可信miss、基础选点、准入、真实loopback HTTP转发和可靠终态位于同一进程；实例替换、断连失效和全池配额回收也已覆盖。M1与归一化KV事件在该组合探针中仍为fixture，真实HUST subscriber、Qwen M1和终态尚未同时装入同一公开链。见[ADR](../decisions/2026-10-14-first-runtime-composition.md)、[本次证据](../../evidence/runtime-cache-owner-composition-2026-10-16.md)、[早期组合证据](../../evidence/first-runtime-composition-2026-10-14.md)与[在线目录证据](../../evidence/online-kv-directory-2026-10-14.md)。生产ABI仍未冻结。
+2026-10-16。最新真实公开链已通过：固定 Router 原 HTTP 入口、实际 Qwen M1、Rust HUST subscriber/身份控制、原 M2、M3/M4/M5 与真实核心终态同时装配，冷/热选点及生成后取消通过，见[公开链证据](../../evidence/native-public-chain-2026-10-16.md)。较早 fixture 组合见[原证据](../../evidence/runtime-cache-owner-composition-2026-10-16.md)。生产 ABI 仍未冻结，下一实现包为[持久提交与回收](durable-runtime-and-retention.md)。
 
 ## 运行形态与代码归属
 
@@ -8,15 +8,15 @@
 
 | 职责 | 已存在的依据 | 首版归属与接口要求 |
 |---|---|---|
-| M1 | contracts.RequestFeatures、有界completion FeaturePort；固定Router/HUST的Qwen14B token及完整块摘要对照已通过 | 本地特征端口；一次解析/分词，完整身份与精度；当前只接受字符串completion prompt，其他形态明确拒绝。公开链安装/开销及chat/template仍待验 |
+| M1 | 有界 completion FeaturePort、真实 Qwen tokenizer 和块摘要已装入公开链 | 一次本地解析/分词，完整身份与精度；只支持字符串 completion，其他输入明确拒绝；开销及 chat/template 待验 |
 | M2 | 原KvBlockIndexer、Directory/Pool、online原型及InProcessCache适配 | Router内一个索引owner；异步更新，短只读查询；以worker URL、instance epoch、publisher/KV identity围栏，同URL换实例必须重新恢复；不把stdio进程作为生产服务 |
 | M3 | ReferenceLedger、DurableLedger、真实终态闭环及RuntimeOwner | 一个状态/账本owner；AdmissionPort异步许可；HTTP关闭不清债，可靠终态一次释放；checkpoint/新进程保债语义已有，仍须确定持久介质、提交边界和启动对账 |
 | M4 | PolicyPort、原Router基础策略 | 候选实现只读选择：正可信命中最大优先，否则最低在途/稳定URL；绑定实例/配置版本，优化算法后置 |
-| M5 | 固定Router91b65ee、原三文件patch、实际typed HTTP例程 | 使用原build_app/HTTP入口和SSE/连接管理；在同一入口装配provider，禁止再包一个Python推理代理 |
-| M7 | 固定profile、原生解码、已有HUST endpoint/utility终态观测 | 版本差异集中映射/窄幅适配；订阅和终态投递有各自连接/代次/留存；Manager生命周期另验 |
+| M5 | 固定 Router91b65ee、原三文件 patch、真实公开 HTTP 与生成后取消已通过 | 使用原 build_app/HTTP/SSE 和连接管理；生产启停/故障/制品另验，不增加 Python 推理代理 |
+| M7 | 固定 profile、Rust 原生订阅、独立身份接口和真实终态已接通 | 版本差异集中适配；订阅与终态有各自连接/代次/留存；源端回收及 Manager 生命周期另验 |
 | M6 | CPU/源码/原生index/手动NPU/制品入口 | 公共脚本、受控配置与机器可读报告；测试替身复用现有fixtures，不各造一套字段 |
 
-上表选定职责所在实现层。`runtime_provider.rs`、`runtime_owner.rs`和`runtime_cache_port.rs`已给出候选类型，但固定宿主探针通过不等于生产目录/ABI冻结；真实M7/M1/终态合并及故障测试后再记录最终位置。原宿主若需追加async特征端口等窄幅变化，要列出与原三文件patch相比的实际差异、默认关闭和兼容回归；出现大面积fork或引擎调度修改则先讨论。
+上表选定职责所在实现层。候选类型与真实 M7/M1/终态已经合并到有限公开链，但不等于生产目录/ABI 冻结；持久恢复、长期回收及生产故障测试后再记录最终位置。追加宿主接缝须列出相对三文件 patch 的实际差异、默认关闭和兼容回归；大面积 fork 或引擎调度修改先讨论。
 
 ## 必须真实接通的请求与控制路径
 
