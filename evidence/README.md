@@ -1,10 +1,12 @@
 # 证据约定
 
+[双 TP1 有限稳定性复验（2026-10-16）](npu-stability-2026-10-16.md)记录新分配两卡 20 分钟真实生成、实际请求量、设备采样和正常清理，明确与 Router/观测留存验证的边界。
+
 [双 TP1 原生 KV 目录复验（2026-10-16）](two-replica-native-directory-2026-10-16.md)记录固定 HUST/Qwen14B 两卡真实 KV 事件、隔离、断连降级与制品漂移前置检查。
 
 [固定 HUST 原生 KV wire 的 Rust 适配（2026-10-16）](native-kv-wire-rust-2026-10-16.md)记录有界 MessagePack 解码、指纹连续性窗口、原索引回归和固定 Router 宿主构建。
 
-[固定 HUST 原生 KV 单 owner 与 ZMQ 传输候选（2026-10-16）](native-kv-owner-zmq-2026-10-16.md)记录受控冷起点、统一失信、实例替换、同机 IPC 传输边界，以及服务器回收导致尚未完成的 socket 行为门槛。
+[固定 HUST 原生 KV 单 owner 与 ZMQ 传输候选（2026-10-16）](native-kv-owner-zmq-2026-10-16.md)记录受控冷起点、统一失信、实例替换和真实 Linux IPC 回归；与固定宿主及真实 HUST 接线分开验收。
 
 artifacts/ 为 Git 忽略的原始结果区，GitHub CI 自动归档短期产物。正式验收应另行保存有校验和的持久记录；CI 14 天保留不等于永久实验档案。
 

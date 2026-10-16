@@ -1,5 +1,7 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-16：固定原版和三文件 patch 准入后，用 `bash tools/stage_router_runtime.sh --execute <artifacts下已审查的宿主目录>` 统一复制候选模块、原 Directory/Pool、共享 fixture 和 examples，避免漏文件或沿用旧副本。工具核验固定 Cargo 两文件、不改依赖，也不代替宿主 patch 审计。新 `hust_runtime_probe` 的真实公开入口/原生订阅验收见[计划](../../docs/planning/native-public-chain.md)；手动命令和通过范围以 evidence 为准。
+
 2026-10-13 进程恢复 probe：`python -m tools.router_recovery_probe --binary <本次构建的prefix_extension_probe> --output <新目录>` 使用同一持久工具账本，启动实际 Router/独立接收器，组合准入 ACK 丢失、等待取消、接收器异常终止、新 clock/命名空间交接、再重启额度拒绝和旧观察幂等。接收器故障注入时暂停新准入；恢复前 supervisor 必须实际停止其拥有的旧 Router 进程组。工具日志通过 OS 锁排他打开，锁不充当旧派发停止证明。真实服务身份仍为 fixture，参见[证据](../../evidence/router-process-recovery-2026-10-13.md)。原三文件 patch、Cargo 依赖和生产进程划分均未增加。
 
 2026-10-13 新增可选 `reserve_async`，默认 provider 仍调用原 reserve；宿主改为 await 后再建立 guard，实际发送前的 registry/control 检查保留。同步 Lease 回调仍不得进行磁盘/网络阻塞。可选 `request_id_header` 只作关联：宿主替换全部客户端 X-Request-Id，未提供 carrier 时保留原转发行为；它不是后端鉴权。固定 HUST 来源审计证明 header 优先于 body.request_id，真正引擎 hook 尚未安装。

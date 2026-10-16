@@ -48,6 +48,43 @@ def test_opt_in_requires_allowlist(monkeypatch):
         adapter.load_plugin()
 
 
+def test_identity_endpoint_uses_control_auth_and_fails_closed(monkeypatch):
+    class HttpError(Exception):
+        def __init__(self, status, detail):
+            self.status_code = status
+            super().__init__(detail)
+
+    monkeypatch.setitem(
+        sys.modules, "fastapi", NS(HTTPException=HttpError, Request=object)
+    )
+    endpoint = object.__new__(adapter.TerminalEndpoint)
+    endpoint.active = True
+    endpoint.token = "private-identity-credential"
+    core, endpoint.state = frontend()
+    endpoint.patches = NS(check_current=lambda: None)
+
+    class App:
+        routes = []
+
+        def add_api_route(self, path, handler, **kwargs):
+            self.routes.append(NS(path=path, handler=handler))
+
+    app = App()
+    endpoint.attach_router(app)
+    handler = next(r.handler for r in app.routes if r.path.endswith("/identity"))
+    with pytest.raises(HttpError) as rejected:
+        asyncio.run(handler(NS(headers={})))
+    assert rejected.value.status_code == 403
+    reply = asyncio.run(
+        handler(NS(headers={"X-Prefix-Routing-Control": endpoint.token}))
+    )
+    assert reply["core_boundary"] == 0 and "records" not in reply
+    core.installed = False
+    with pytest.raises(HttpError) as failed:
+        asyncio.run(handler(NS(headers={"X-Prefix-Routing-Control": endpoint.token})))
+    assert failed.value.status_code == 503 and endpoint.token not in str(failed.value)
+
+
 def test_restore_preserves_inheritance_and_refuses_foreign_patch():
     class Base:
         def method(self):
