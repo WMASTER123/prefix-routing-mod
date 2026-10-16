@@ -9,21 +9,21 @@
 - Router 恢复后默认暂停，旧 active 全部恢复为 `uncertain`。只有调用方确认旧派发者已停止、相同 worker URL/instance/cache identity 已重新核对且配置版本进位，才允许 CAS takeover。
 - SQLite 候选使用单行有界快照、SHA-256 内容校验、owner/generation CAS、WAL、`synchronous=FULL`、64 页自动 checkpoint 和 4 MiB journal size limit。磁盘操作只在异步准入/终态提交任务中执行，不进入同步 `Lease` 回调；等待槽位为 64，单次提交期限为 5 秒。
 - 旧 Python SQLite oracle 没有进入生产请求链；新增 Rust 层仍复用同一个 `RuntimeOwner` 状态机，没有第二套 M3 语义实现。
-- 终态 cursor 现在绑定 source ID、worker URL、instance epoch 和 observer epoch；同一实例不能静默换 source/observer 后从旧水位继续。整个批次先完成结构校验，再修改任何请求负债。
+- 终态 cursor 现在绑定 source ID、worker URL、instance epoch 和 observer epoch；同一实例不能静默换 source/observer 后从旧水位继续，持久快照恢复也拒绝同一 worker/instance 对应多个 source。整个批次先完成结构校验，再修改任何请求负债。
 - `reserve`、终态结算和 takeover 在修改内存后均由取消围栏保护。异步任务若在阻塞存储提交期间被丢弃，当前 runtime 立即失败关闭；后台提交即使随后成功，也只能由恢复流程重新装载，不能让旧进程继续准入。这样处理是因为 Tokio 明确说明已经开始的 `spawn_blocking` 任务不能被 abort：[Tokio 1.53.1 spawn_blocking](https://docs.rs/tokio/1.53.1/tokio/task/fn.spawn_blocking.html)。
 
 `rusqlite 0.40.2` 被锁在独立 helper crate，尚未修改固定 Router 的原 `Cargo.toml`/lock。SQLite 官方说明 WAL 同机单写者约束及 checkpoint 尾部成本；`synchronous=FULL` 在 WAL 下为每次提交增加同步以保证断电耐久性。[WAL](https://www.sqlite.org/wal.html)、[synchronous](https://www.sqlite.org/pragma.html#pragma_synchronous)、[rusqlite transaction](https://docs.rs/rusqlite/0.40.2/rusqlite/struct.Connection.html#method.transaction_with_behavior)。
 
 ## 正确性与审查结果
 
-Linux x86_64、Rust 1.99.0：helper release 测试 `47 passed`，`cargo clippy --all-targets -- -D warnings` 通过。目标 aarch64、Rust 1.99.0 的同一 lock/release 测试也是 `47 passed`；目标隔离工具链未安装 clippy component，因此静态检查只在 x86_64 执行，没有临时修改目标工具链。新增反例包括：
+Linux x86_64、Rust 1.99.0：helper release 测试 `48 passed`，`cargo clippy --all-targets -- -D warnings` 通过。目标 aarch64、Rust 1.99.0 的同一 lock/release 测试也是 `48 passed`；目标隔离工具链未安装 clippy component，因此静态检查只在 x86_64 执行，没有临时修改目标工具链。新增反例包括：
 
 - commit 前失败与 commit 后返回不确定均不产生发送许可；
 - 终态 commit 失败后当前进程暂停，重开仍保留旧负债；
 - 恢复默认暂停、实例不一致拒绝、旧 owner 写入被 CAS 围栏；
 - 数据库缺失不按空账本启动，重复初始化、内容损坏、快照超预算均拒绝；
 - 终态序号/身份/未知 attempt 冲突不推进 cursor。
-- observer/source 身份变化在结算前被拒绝且保留负债；取消正在等待的准入或终态存储提交会停用旧 runtime，后台提交完成后也不能继续签发 attempt。
+- observer/source 身份变化在结算前被拒绝且保留负债，歧义持久 binding 无法恢复；取消正在等待的准入或终态存储提交会停用旧 runtime，后台提交完成后也不能继续签发 attempt。
 
 这组测试没有模拟整机断电，也没有证明旧派发进程已经被操作系统停止；`previous_dispatcher_stopped` 仍是宿主必须提供的外部前置证据。
 
