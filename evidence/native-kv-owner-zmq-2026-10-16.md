@@ -19,9 +19,9 @@
 
 ## 已执行验证
 
-- 固定原索引、Pool、CachePort、wire 与新 owner 在最终静态审查前的候选上为 `78 passed, 0 failed`，覆盖冷起点、replay+live、精确重复、序号缺口、控制失败、warm origin拒绝、停止失信和同地址新实例替换。随后静态审查又将 `begin_control` 失败纳入统一失信并增加显式断连断言；服务器已回收，这个最后小增量仍须重跑，不能把前一轮数量冒充最终提交成绩。
+- 固定原索引、Pool、CachePort、wire 与新 owner 的最终提交由 GitHub `validate-index` release job 验证为 `78 passed, 0 failed`，覆盖冷起点、replay+live、精确重复、序号缺口、控制失败、显式断连、warm origin拒绝、停止失信和同地址新实例替换。
 - 固定 `vllm-project/router@91b65ee` 宿主 release `cargo check --locked --example runtime_cache_owner_probe` 在 ZMQ 候选初版上通过；只有宿主原有 `Atomic::fetch_update` 弃用警告。最终静态审查又调整 socket/context 析构顺序和单次 poll 上限，需在新服务器重跑构建。
-- Windows Python：ruff通过；pytest `571 passed, 7 skipped`。
+- Windows Python：ruff通过；pytest `571 passed, 7 skipped`。GitHub Python 3.11/3.12 与固定 HUST 源码方法检查也通过。
 - 固定 Router 的完整 example test 已完成编译并进入最终链接，但临时服务器随后被平台回收，SSH 返回 `Connection refused`。该项记录为未完成，不能把 release check 当作 ZMQ 行为回归。
 
 ## 下一门槛

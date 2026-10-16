@@ -12,7 +12,7 @@
 - 2026-10-16 的候选增量已将同进程M3 owner接到原Router M2索引Pool：固定Router typed公开入口、原索引命中/可信miss、基础选点、准入、真实loopback HTTP转发及可靠终态在同一进程闭环通过。断连撤销信任，同URL新instance必须重新恢复，旧身份不能替换/注销新分区，全池逻辑配额可回收；索引及适配66项和owner 37项CPU回归通过。M1及归一化KV事件在该组合探针中仍是fixture，真实HUST订阅与公开Qwen链尚未合并，因此生产接口仍未冻结，详见[证据](../evidence/runtime-cache-owner-composition-2026-10-16.md)。
 - 新分配服务器上的双 TP1 原生目录复验已通过：固定 HUST/Qwen14B 两副本实际缓存复用均为 `0→384` tokens，真实 M7 store 进入共享原索引的独立分区，单边驻留和断连降级均正确，结束后无残留设备进程。首轮 404 被确认是项目隔离环境中同版本旧 wheel 缺 terminal entry points，不是引擎冲突；已改用安装当前审查 wheel 的 rebuild 隔离环境，并新增模型启动前的入口完整性拒绝检查。详见[复验证据](../evidence/two-replica-native-directory-2026-10-16.md)。
 - 固定 HUST wire 的 Rust 有界解码与连续性候选已接入原索引 release 回归：精确 `msgspec` fixture、错误帧/字段/身份/预算、重复/缺口/溢出反例共随 74 项测试通过；连续性只保留有界 SHA256 指纹，不保留完整 batch。同一源码在固定 Router 宿主构建并执行最小解码，原 M2/M3/typed HTTP 组合探针无退化。尚未创建生产 ZMQ owner，详见[证据](../evidence/native-kv-wire-rust-2026-10-16.md)。
-- Rust 单分区 owner 已把受控冷起点、replay/live 连续性、控制确认和统一失信接到同一个 `InProcessCache`；最终静态审查前候选随原索引 78 项 CPU 回归通过，旧 owner 不能撤销同 URL 新实例。固定 HUST binary 与 MessagePack 数组现严格区分。显式同机 IPC 的单 SUB/DEALER/断连 monitor 初版通过固定 Router release 构建；随后补的 `begin_control` 失信、析构顺序和poll上限小修尚待重跑，因为临时服务器在完整 example test 最终链接阶段回收。socket 行为和真实 HUST 接线仍未通过，详见[证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。
+- Rust 单分区 owner 已把受控冷起点、replay/live 连续性、控制确认和统一失信接到同一个 `InProcessCache`；最终提交随原索引 78 项 release CPU 回归通过，旧 owner 不能撤销同 URL 新实例。固定 HUST binary 与 MessagePack 数组现严格区分。显式同机 IPC 的单 SUB/DEALER/断连 monitor 初版通过固定 Router release 构建；随后补的析构顺序和poll上限小修仍待新服务器重跑，因为临时服务器在完整 example test 最终链接阶段回收。socket 行为和真实 HUST 接线仍未通过，详见[证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。
 
 本阶段只支持受控空起点的已发布事件观测。原生流没有publisher epoch和完整共同水位token快照；本地连接绑定不冒充后端epoch。模型请求历史、计划和预留不能产生驻留事实。
 
