@@ -36,6 +36,6 @@
 
 ## 测试与审查
 
-本轮本地 CPU 573 通过/7 跳过，integration 3 通过；干净 sdist/wheel 和默认惰性导入通过。固定 HUST 源码执行由独立 CI job 负责。99d7a50 的六项 CI 全部通过；后续 head 以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 的实际检查为准。
+本轮本地 CPU 573 通过/7 跳过，integration 3 通过；干净 sdist/wheel 和默认惰性导入通过。固定 HUST 源码执行由独立 CI job 负责。本轮代码与证据的六项 CI 已全部通过；具体 head 以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 的实际检查为准。
 
 已完成自审、自动回归和上述实机子集；独立人工审查/合并未完成，不自动合并。Linux CPU 可推进持久化/协议；再次真实持续服务与恢复回归需要两个 TP1 NPU。测试完成清理自有进程，不运行空载保活负载。

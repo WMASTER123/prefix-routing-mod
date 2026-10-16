@@ -1,6 +1,6 @@
 # 固定 HUST 原生 KV 单 owner 与 ZMQ 传输候选
 
-日期：2026-10-16。最新增量：Linux x86_64 的共享原索引/owner/IPC/身份控制候选 90 项 release 测试通过。下文保留早先固定宿主构建的边界；最终 aarch64 宿主及真实 HUST Rust 订阅尚待验证。
+日期：2026-10-16。收尾：Linux x86_64/aarch64 的共享原索引/owner/IPC/身份控制各 90 项、固定完整宿主 36 项和真实 HUST Rust 公开链均通过，见[后续证据](native-public-chain-2026-10-16.md)。下文保留阶段验证过程，不能将历史“下一门槛”作为当前未完成项；生产持久恢复/长期回收仍未验收。
 
 ## 实现与边界
 
@@ -34,6 +34,6 @@
 
 新分配两张 910B2 的 `artifacts/r5/report.json` 通过旧 Python subscriber/同一原索引子集：两端实际 cached_tokens 为 0→384、单侧驻留隔离及断连降级正确，两个服务退出均为 0。该结果不代替 Rust 真实订阅或公开 Router 整链。
 
-## 下一门槛
+## 当时的下一门槛（现已完成有限公开链接线）
 
 新服务器上先运行固定 Router example tests，再用私有 IPC fixture 覆盖正常 replay/live、重复、缺口、额外帧、超限、控制超时、SUB 断连、显式停止和实例替换。全部通过后，才把 `SourceControl` 映射到已验 HUST 只读终态身份接口，并用真实 HUST 事件替换组合探针的 fixture；随后再装入公开 HTTP 请求链。
