@@ -166,6 +166,23 @@ class FrontendEnds:
             self.journal.failed = True
             raise
 
+    async def identity(self):
+        """Read instance liveness without reading/ACKing consumer history."""
+        async with self.lock:
+            if self.journal.failed:
+                raise RuntimeError("Frontend terminal observation unavailable")
+            await self.poll_core()
+            return {
+                "schema_version": 1,
+                "binding": asdict(self.journal.binding),
+                "frontend_pid": os.getpid(),
+                "core_pid": self.core_pid,
+                "core_boundary": self.cursor,
+                "frontend_boundary": self.journal.next_sequence - 1,
+                "family_count": len(self.journal.families),
+                "disabled": self.disabled,
+            }
+
     async def read(self, observer_epoch, after, acknowledge):
         async with self.lock:
             if (

@@ -272,6 +272,14 @@ class TerminalEndpoint:
             return
         from fastapi import HTTPException, Request
 
+        async def identity(request: Request):
+            self.authorize(request)
+            try:
+                self.patches.check_current()
+                return await self.state.identity()
+            except Exception as error:
+                raise HTTPException(503, "Source identity unavailable") from error
+
         async def read(
             request: Request,
             observer_epoch: str | None = None,
@@ -326,6 +334,7 @@ class TerminalEndpoint:
                 return {"restored": True, "binding": result["epoch"]}
 
         for path, handler, methods in (
+            ("/prefix-routing/identity", identity, ["GET"]),
             ("/prefix-routing/terminal", read, ["GET"]),
             ("/prefix-routing/terminal/disable", disable, ["POST"]),
         ):

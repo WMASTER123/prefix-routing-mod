@@ -73,6 +73,31 @@ def test_frontend_replay_snapshot_and_foreign_traffic():
     assert state.cursor == 2 and len(core.source.seen) == 2
 
 
+def test_identity_is_independent_of_retired_frontend_history_and_ack():
+    core, state = frontend()
+    first = asyncio.run(state.identity())
+    assert first["core_boundary"] == first["frontend_boundary"] == 0
+    assert first["family_count"] == 0
+    capture = state.journal.begin_owned(1)
+    child = state.journal.allocate_child(capture)
+    state.journal.bind_child(capture, child)
+    state.journal.seal(capture)
+    core.source.observe(child)
+    observed = asyncio.run(state.identity())
+    assert observed["core_boundary"] == observed["frontend_boundary"] == 1
+    assert state.journal.acknowledged == 0
+    state.journal.acknowledge(state.journal.binding, 1)
+    state.journal.retire(state.journal.binding, 1, checkpointed_through=1)
+    retired = asyncio.run(state.identity())
+    assert retired["family_count"] == 0
+    assert retired["binding"] == first["binding"]
+    assert state.journal.acknowledged == 1
+    assert "records" not in retired and "families" not in retired
+    core.installed = False
+    with pytest.raises(ValueError, match="identity/coverage"):
+        asyncio.run(state.identity())
+
+
 @pytest.mark.parametrize(
     "failure",
     [

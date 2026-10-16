@@ -5,12 +5,20 @@ include!(concat!(env!("OUT_DIR"), "/upstream.rs"));
 mod directory;
 #[cfg(test)]
 mod directory_tests;
+#[cfg(feature = "hust-control")]
+#[path = "../../router-extension/hust_source_control.rs"]
+#[allow(dead_code)]
+mod hust_source_control;
 #[path = "../../router-extension/native_kv_owner.rs"]
 #[allow(dead_code)]
 mod native_kv_owner;
 #[path = "../../router-extension/native_kv_wire.rs"]
 #[allow(dead_code)]
 mod native_kv_wire;
+#[cfg(feature = "native-zmq")]
+#[path = "../../router-extension/native_kv_zmq.rs"]
+#[allow(dead_code)]
+mod native_kv_zmq;
 mod online;
 mod pool;
 // Compile and test the exact M2 adapter source with the hash-guarded index.

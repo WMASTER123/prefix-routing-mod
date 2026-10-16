@@ -1,6 +1,8 @@
 # 测试与 CI
 
-2026-10-16 新增固定 HUST 原生 KV wire 与单分区 owner 的 Rust release 回归。`experiments/router-index` 直接编译 `router-extension/native_kv_wire.rs` 和 `native_kv_owner.rs`，使用由固定 HUST `msgspec` 类型生成的合成二进制 fixture，并覆盖帧、字段、身份、预算、重复、序号缺口、受控冷起点、控制失败、显式断连、停止失信和实例替换；最终提交由 GitHub `validate-index` 验证为 78 项通过。该组不启动 ZMQ 或 NPU；`native_kv_zmq.rs` 初版进入固定 Router release 构建，但最终析构/poll小修及完整 example test 因临时服务器回收未结束，不能替代 socket 行为或真实订阅验证。范围见[单owner证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。
+2026-10-16 后续：`validate-index` 已加入 `--features hust-control`，直接编译共享传输/源控制并运行真实 Linux 私有 IPC 与 loopback HTTP 反例，当前本地 90 项 release 通过。此项替换“ZMQ 仅格式检查”的覆盖缺口；完整宿主和真实 HUST 仍独立验收。`tools/npu_stability_probe.py` 提供 1..1800 秒、两 TP1 的有限后端稳定性负载，真实生成 16/64/128 tokens，默认不安装终态 hook，只输出有界计数；不作为 Router 容量或终态长期回收证明。
+
+2026-10-16 较早回归直接编译 `native_kv_wire.rs` / `native_kv_owner.rs`，固定 HUST msgspec fixture 和 78 项 release 测试由 CI 通过。该组没有 socket；后来 SSH 中断时完整宿主测试未取得结果，原因未确认。本轮实际 IPC 增量见上段，真实 HUST 订阅仍独立验收，见[单owner证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。
 
 现行完成范围以[progress](progress.md)和[在线目录证据](../evidence/online-kv-directory-2026-10-14.md)为准，下方日期段落保留历史。原索引CI新增常驻owner双分区/缺口/租约/身份/全池预算进程检查；NPU手动工具为`tools.hust_native_probe --index-binary ... --terminal-observer`和`tools.two_replica_kv_probe --execute ...`。前者可组合既有Router终态，后者验证两个TP1真实副本/共享索引/隔离；均不代替公开HTTP组件装配、容量或完整恢复。
 

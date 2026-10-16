@@ -34,7 +34,11 @@ fn receive_frames(socket: &zmq::Socket, expected: usize) -> Result<Vec<Vec<u8>>,
     let mut frames = Vec::with_capacity(expected);
     let mut total = 0usize;
     for index in 0..expected {
-        let frame = socket.recv_bytes(0).map_err(|_| OwnerFault::Transport)?;
+        // ZeroMQ exposes complete multipart messages atomically after POLLIN.
+        // Never block beyond the caller's deadline on a malformed peer.
+        let frame = socket
+            .recv_bytes(zmq::DONTWAIT)
+            .map_err(|_| OwnerFault::Transport)?;
         total = total
             .checked_add(frame.len())
             .ok_or(OwnerFault::Transport)?;
@@ -112,6 +116,10 @@ impl ZmqNativeTransport {
         subscriber
             .set_subscribe(b"")
             .map_err(|_| OwnerFault::Transport)?;
+        dealer.set_sndhwm(1).map_err(|_| OwnerFault::Transport)?;
+        dealer
+            .set_immediate(true)
+            .map_err(|_| OwnerFault::Transport)?;
 
         let monitor_endpoint = format!(
             "inproc://prefix-routing-kv-monitor-{}-{}",
@@ -160,10 +168,36 @@ impl ZmqNativeTransport {
 
 impl NativeTransport for ZmqNativeTransport {
     fn replay(&mut self, start: u64, sink: &mut dyn ReplaySink) -> Result<(), OwnerFault> {
-        self.dealer
-            .send_multipart([Vec::new(), start.to_be_bytes().to_vec()], 0)
-            .map_err(|_| OwnerFault::Transport)?;
         let deadline = Instant::now() + self.replay_deadline;
+        // Include connection and send admission in the same replay deadline.
+        // IMMEDIATE prevents silently queuing requests for an absent peer.
+        loop {
+            if self.monitor_disconnected()? || Instant::now() >= deadline {
+                return Err(OwnerFault::Transport);
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if self
+                .dealer
+                .poll(
+                    zmq::POLLOUT,
+                    timeout_ms(remaining.min(Duration::from_millis(25))),
+                )
+                .map_err(|_| OwnerFault::Transport)?
+                == 0
+            {
+                continue;
+            }
+            match self
+                .dealer
+                .send_multipart([Vec::new(), start.to_be_bytes().to_vec()], zmq::DONTWAIT)
+            {
+                Ok(()) => break,
+                // A multipart send may already have accepted an earlier frame.
+                // Fence rather than retrying an ambiguous partial request.
+                Err(zmq::Error::EAGAIN) => return Err(OwnerFault::Transport),
+                Err(_) => return Err(OwnerFault::Transport),
+            }
+        }
         let mut batches = 0usize;
         loop {
             if self.monitor_disconnected()? || Instant::now() >= deadline {
@@ -215,6 +249,10 @@ impl NativeTransport for ZmqNativeTransport {
         Ok(LivePoll::Frames(receive_frames(&self.subscriber, 3)?))
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "native_kv_zmq_tests.rs"]
+mod ipc_tests;
 
 impl Drop for ZmqNativeTransport {
     fn drop(&mut self) {

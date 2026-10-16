@@ -20,6 +20,9 @@ pub mod kv_index {
 #[path = "../src/routers/http/runtime_directory.rs"]
 mod directory;
 #[allow(dead_code)]
+#[path = "../src/routers/http/hust_source_control.rs"]
+mod hust_source_control;
+#[allow(dead_code)]
 #[path = "../src/routers/http/runtime_pool.rs"]
 mod pool;
 mod prefix_extension {

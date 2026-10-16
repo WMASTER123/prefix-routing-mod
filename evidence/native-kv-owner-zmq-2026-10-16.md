@@ -1,6 +1,6 @@
 # 固定 HUST 原生 KV 单 owner 与 ZMQ 传输候选
 
-日期：2026-10-16。结论：单分区信任/恢复 owner 已通过原索引 CPU 回归；同机 IPC 的 ZMQ SUB/DEALER 传输候选已通过固定 Router release 构建，但行为测试在服务器回收前未完成，因此不能标为真实在线订阅通过。
+日期：2026-10-16。最新增量：Linux x86_64 的共享原索引/owner/IPC/身份控制候选 90 项 release 测试通过。下文保留早先固定宿主构建的边界；最终 aarch64 宿主及真实 HUST Rust 订阅尚待验证。
 
 ## 实现与边界
 
@@ -22,7 +22,17 @@
 - 固定原索引、Pool、CachePort、wire 与新 owner 的最终提交由 GitHub `validate-index` release job 验证为 `78 passed, 0 failed`，覆盖冷起点、replay+live、精确重复、序号缺口、控制失败、显式断连、warm origin拒绝、停止失信和同地址新实例替换。
 - 固定 `vllm-project/router@91b65ee` 宿主 release `cargo check --locked --example runtime_cache_owner_probe` 在 ZMQ 候选初版上通过；只有宿主原有 `Atomic::fetch_update` 弃用警告。最终静态审查又调整 socket/context 析构顺序和单次 poll 上限，需在新服务器重跑构建。
 - Windows Python：ruff通过；pytest `571 passed, 7 skipped`。GitHub Python 3.11/3.12 与固定 HUST 源码方法检查也通过。
-- 固定 Router 的完整 example test 已完成编译并进入最终链接，但临时服务器随后被平台回收，SSH 返回 `Connection refused`。该项记录为未完成，不能把 release check 当作 ZMQ 行为回归。
+- 固定 Router 的完整 example test 尚未取得最终结果，随后 SSH 返回 `Connection refused`。仅凭连接错误不能确认平台回收原因；该项记录为未完成。
+
+## Linux 真实 IPC 增量
+
+`experiments/router-index` 增加可选 `native-zmq` / `hust-control` feature，编译同一份传输、owner 和原索引；没有增加生产索引或修改固定 Router 的依赖锁。Rust 1.99.0，项目私有工具链，无全局安装；测试锁新增 libzmq/reqwest 的测试依赖，原已锁版本保留。
+
+真实 XPUB/ROUTER peer 使用 0700 私有 IPC 目录和订阅就绪屏障。验证重放接收、实时增量、重复/冲突、缺口、错误帧数、总消息超限、超时/129 批上限、实际 PUB 断连、停止及旧 owner 对新实例无效。固定 HUST msgspec store fixture 经过真实 socket 写入原索引得到 2 块匹配，clear 后为可信 miss，停止后为 unknown。源控制是独立 HTTP fixture，不能算真实 HUST 认证。
+
+审查修正：接收改用非阻塞逐帧读取；发送连接等待纳入同一 replay deadline，设置发送 HWM=1/IMMEDIATE，部分发送歧义直接失败，防止无界等待或错误重试。CI `validate-index` 新增 `--features hust-control` 的 release 实际 socket 回归。
+
+新分配两张 910B2 的 `artifacts/r5/report.json` 通过旧 Python subscriber/同一原索引子集：两端实际 cached_tokens 为 0→384、单侧驻留隔离及断连降级正确，两个服务退出均为 0。该结果不代替 Rust 真实订阅或公开 Router 整链。
 
 ## 下一门槛
 
