@@ -5,6 +5,9 @@ include!(concat!(env!("OUT_DIR"), "/upstream.rs"));
 mod directory;
 #[cfg(test)]
 mod directory_tests;
+#[path = "../../router-extension/native_kv_wire.rs"]
+#[allow(dead_code)]
+mod native_kv_wire;
 mod online;
 mod pool;
 // Compile and test the exact M2 adapter source with the hash-guarded index.

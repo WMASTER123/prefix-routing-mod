@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-16 新增固定 HUST 原生 KV wire 的 Rust release 回归。`experiments/router-index` 直接编译 `router-extension/native_kv_wire.rs`，使用由固定 HUST `msgspec` 类型生成的合成二进制 fixture，并覆盖帧、字段、身份、预算、重复和序号缺口反例。该测试不启动 ZMQ 或 NPU，不能替代真实订阅；固定 Router 宿主另编译并执行最小 clear 解码以检查依赖兼容。
+
 现行完成范围以[progress](progress.md)和[在线目录证据](../evidence/online-kv-directory-2026-10-14.md)为准，下方日期段落保留历史。原索引CI新增常驻owner双分区/缺口/租约/身份/全池预算进程检查；NPU手动工具为`tools.hust_native_probe --index-binary ... --terminal-observer`和`tools.two_replica_kv_probe --execute ...`。前者可组合既有Router终态，后者验证两个TP1真实副本/共享索引/隔离；均不代替公开HTTP组件装配、容量或完整恢复。
 
 2026-10-14 用户确认：暂无固定业务SLO，双副本评测先报告多阈值容量曲线与输入/输出长度分组。阈值/分组在基础校准后、策略对比前统一冻结；同时报告各组P95/P99、完成/拒绝/超时率，不事后挑阈值或删失败样本。当前未新增性能结果，具体口径见[当前计划](planning/router-hust-terminal-chain.md)。

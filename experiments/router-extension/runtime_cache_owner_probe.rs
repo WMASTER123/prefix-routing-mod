@@ -26,6 +26,9 @@ mod prefix_extension {
     pub use vllm_router_rs::routers::http::prefix_extension::*;
 }
 #[allow(dead_code)]
+#[path = "../src/routers/http/native_kv_wire.rs"]
+mod native_kv_wire;
+#[allow(dead_code)]
 #[path = "../src/routers/http/runtime_cache_port.rs"]
 mod runtime_cache_port;
 #[allow(dead_code)]
@@ -135,6 +138,16 @@ async fn consume(response: Response) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
+    let payload = rmp_serde::to_vec_named(&serde_json::json!([
+        1.0,
+        [{"type": "AllBlocksCleared"}],
+        0
+    ]))
+    .unwrap();
+    let decoded =
+        native_kv_wire::decode_live(&[vec![], 0_u64.to_be_bytes().to_vec(), payload]).unwrap();
+    assert_eq!(decoded.ops, vec![Op::Clear]);
+
     let workers: Vec<String> = std::env::args().skip(1).collect();
     assert_eq!(workers.len(), 2, "two loopback fixture origins required");
     let specs = [spec(&workers[0], "a", 1), spec(&workers[1], "b", 2)];

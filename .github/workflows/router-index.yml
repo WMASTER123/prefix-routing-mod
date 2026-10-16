@@ -4,6 +4,7 @@ on:
     paths:
       - experiments/router-index/**
       - experiments/router-extension/runtime_cache_port.rs
+      - experiments/router-extension/native_kv_wire.rs
       - .github/workflows/router-index.yml
       - tools/online_kv_directory.py
       - tools/probe_online_index.py
