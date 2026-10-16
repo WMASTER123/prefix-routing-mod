@@ -1067,10 +1067,10 @@ mod durable_owner {
         fs,
         path::{Path, PathBuf},
         sync::{
-            atomic::{AtomicU8, Ordering},
+            atomic::{AtomicBool, AtomicU8, Ordering},
             Arc, Mutex,
         },
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     #[derive(Debug)]
@@ -1142,11 +1142,26 @@ mod durable_owner {
         value: Mutex<Option<StoredRuntime>>,
         // 0 normal; 1 fail before commit; 2 commit then return uncertain error.
         fault: AtomicU8,
+        block_next: AtomicBool,
+        block_entered: AtomicBool,
+        block_release: AtomicBool,
+        block_finished: AtomicBool,
     }
 
     impl MemoryStore {
         fn fault(&self, mode: u8) {
             self.fault.store(mode, Ordering::Release);
+        }
+
+        fn block_next_commit(&self) {
+            self.block_entered.store(false, Ordering::Release);
+            self.block_release.store(false, Ordering::Release);
+            self.block_finished.store(false, Ordering::Release);
+            self.block_next.store(true, Ordering::Release);
+        }
+
+        fn release_commit(&self) {
+            self.block_release.store(true, Ordering::Release);
         }
 
         fn replace(
@@ -1157,6 +1172,13 @@ mod durable_owner {
             takeover: bool,
         ) -> Result<(), StoreError> {
             next.validate()?;
+            if self.block_next.swap(false, Ordering::AcqRel) {
+                self.block_entered.store(true, Ordering::Release);
+                while !self.block_release.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                self.block_finished.store(true, Ordering::Release);
+            }
             let mut value = self.value.lock().map_err(|_| StoreError::Busy)?;
             let current = value.as_ref().ok_or(StoreError::Missing)?;
             if current.owner_epoch != expected_owner
@@ -1224,6 +1246,16 @@ mod durable_owner {
         let request = request(id);
         let decision = decision(runtime, &request);
         runtime.reserve_async(&request, &decision).await.unwrap()
+    }
+
+    async fn wait_for(flag: &AtomicBool) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !flag.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("blocking store transition did not reach the expected phase");
     }
 
     #[tokio::test]
@@ -1313,6 +1345,117 @@ mod durable_owner {
                 .unwrap();
         assert!(!recovered.admission_ready());
         assert_eq!(recovered.owner().active_len().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn terminal_source_binding_cannot_change_at_an_existing_cursor() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = DurableRuntime::create(owner("process-a"), store.clone()).unwrap();
+
+        let first = reserve(&runtime, "request-a").await;
+        let first_attempt = first.request_id_header().unwrap().to_owned();
+        first.before_send().unwrap();
+        first.sent();
+        runtime
+            .apply_terminal_batch(
+                cursor(0),
+                &[TerminalRecord {
+                    sequence: 1,
+                    attempt_id: first_attempt,
+                    worker_url: "http://worker-a".into(),
+                    instance_epoch: "instance-a".into(),
+                }],
+            )
+            .await
+            .unwrap();
+
+        let second = reserve(&runtime, "request-b").await;
+        let second_attempt = second.request_id_header().unwrap().to_owned();
+        second.before_send().unwrap();
+        second.sent();
+        let mut changed_source = cursor(1);
+        changed_source.observer_epoch = "observer-b".into();
+        assert_eq!(
+            runtime
+                .apply_terminal_batch(
+                    changed_source,
+                    &[TerminalRecord {
+                        sequence: 2,
+                        attempt_id: second_attempt,
+                        worker_url: "http://worker-a".into(),
+                        instance_epoch: "instance-a".into(),
+                    }],
+                )
+                .await,
+            Err("terminal_source_conflict")
+        );
+        assert!(!runtime.admission_ready());
+        assert_eq!(runtime.owner().active_len().unwrap(), 1);
+        let persisted = store.load().unwrap();
+        assert_eq!(persisted.checkpoint.active.len(), 1);
+        assert_eq!(persisted.terminal_cursors, vec![cursor(1)]);
+    }
+
+    #[tokio::test]
+    async fn cancelling_reservation_commit_retires_the_runtime_instance() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = Arc::new(DurableRuntime::create(owner("process-a"), store.clone()).unwrap());
+        let request = request("request-a");
+        let selected = decision(&runtime, &request);
+        store.block_next_commit();
+
+        let task = tokio::spawn({
+            let runtime = runtime.clone();
+            async move { runtime.reserve_async(&request, &selected).await }
+        });
+        wait_for(&store.block_entered).await;
+        task.abort();
+        let _ = task.await;
+        assert!(!runtime.admission_ready());
+        assert_eq!(runtime.allocate_attempt("request-b"), Err("runtime_paused"));
+
+        store.release_commit();
+        wait_for(&store.block_finished).await;
+        assert_eq!(store.load().unwrap().checkpoint.active.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelling_terminal_commit_retires_the_runtime_instance() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = Arc::new(DurableRuntime::create(owner("process-a"), store.clone()).unwrap());
+        let lease = reserve(&runtime, "request-a").await;
+        let attempt = lease.request_id_header().unwrap().to_owned();
+        lease.before_send().unwrap();
+        lease.sent();
+        store.block_next_commit();
+
+        let task = tokio::spawn({
+            let runtime = runtime.clone();
+            async move {
+                runtime
+                    .apply_terminal_batch(
+                        cursor(0),
+                        &[TerminalRecord {
+                            sequence: 1,
+                            attempt_id: attempt,
+                            worker_url: "http://worker-a".into(),
+                            instance_epoch: "instance-a".into(),
+                        }],
+                    )
+                    .await
+            }
+        });
+        wait_for(&store.block_entered).await;
+        task.abort();
+        let _ = task.await;
+        assert!(!runtime.admission_ready());
+        assert_eq!(runtime.allocate_attempt("request-b"), Err("runtime_paused"));
+
+        store.release_commit();
+        wait_for(&store.block_finished).await;
+        let persisted = store.load().unwrap();
+        assert!(persisted.checkpoint.active.is_empty());
+        assert_eq!(persisted.terminal_cursors, vec![cursor(1)]);
     }
 
     #[tokio::test]
