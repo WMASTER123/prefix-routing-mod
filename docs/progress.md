@@ -37,6 +37,6 @@
 
 ## 测试与审查
 
-上一提交本地 Python CPU 573 通过/7 跳过、integration 3 通过，六项 CI 全部通过。当前未提交增量另有 Rust helper release 44 项和 clippy 全通过；GitHub CI、aarch64 与完整 Python 回归尚待本增量提交后执行。具体 head 以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
+当前提交本地 Python CPU 573 通过/7 跳过、integration 3 通过，Rust helper release 44 项和 clippy 全通过；GitHub 六项 CI 也全部通过。aarch64 编译/存储开销与完整 Router 宿主接入尚待可用服务器验证。具体 head 以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
 
 已完成自审、自动回归和上述实机子集；独立人工审查/合并未完成，不自动合并。Linux CPU 可推进持久化/协议；再次真实持续服务与恢复回归需要两个 TP1 NPU。测试完成清理自有进程，不运行空载保活负载。
