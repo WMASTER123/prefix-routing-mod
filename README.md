@@ -21,6 +21,8 @@ uv run --frozen python tools/verify_wheel.py
 
 仓库目前私有，需要本人或协作者权限。尚未发布 PyPI 包。doctor 只校验配置，不探测后端、不证明兼容性。
 
+2026-10-11：新增可选单卡后端诊断，公共 Qwen2.5-14B 已运行非流式/重复/流式请求；使用方法见[运维](docs/operations.md)，严格范围见[证据](evidence/qwen14b-preflight-2026-10-11.md)。这不是已完成的 Router，也不是加速结论。
+
 ## 文档与实施
 
 - [文档总览](docs/README.md)：架构、契约、规范、测试、运维、决策。

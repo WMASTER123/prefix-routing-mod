@@ -1,6 +1,6 @@
 # 新实验服务器操作基线
 
-2026-10-10 只读检查：aarch64、2 张 Ascend 910B2，物理设备编号 2/3，每张 HBM 65536 MiB；8 核 CPU 配额、64 GiB RAM；系统 Python 3.12.13、npu-smi 26.0.rc1。平台未确认的独占性不能从空闲利用率推断。
+2026-10-11 新服务器：aarch64、4 张 Ascend 910B2，物理编号 1/2/3/4 对应逻辑编号 0/1/2/3，每张 HBM 65536 MiB；16 核 CPU 时间配额、128 GiB RAM、32 GiB /dev/shm；Python 3.12.13、npu-smi 26.0.rc1。约 38 GiB 是根卷已用量，实际剩余约 256 GiB。平台未确认的独占性不能从空闲利用率推断。此前两卡清单仅属旧服务器。
 
 ## 存储和权限
 
@@ -43,19 +43,33 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 这是单次进程的来源镜像映射，版本仍由 uv.lock 的 commit 校验；不改变全局 Git 配置。创建 bundle 时必须包含完整对象历史且实际导入指定 ref；浅克隆生成的 bundle 不足以保证异机可还原。辅助目录也是私有 /root 持久存储，不应放共享区。
 
-本次观察到系统推理包：torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0，CANN 9.1.0。项目 .venv 与它们隔离，不因包名存在就认定可以执行 NPU 推理；后续先确定复用现成环境还是创建独立推理环境。
+系统推理包：torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0，CANN 9.1.0。项目 .venv 与它们隔离。用户已选择优先验证预装组合；本次使用原环境执行功能探测，没有安装/替换这些包。版本及测试边界见兼容矩阵。
 
 ## 实验前检查
 
-1. 预约独占时段、核验设备可见性；物理编号 2/3 不直接等同容器内可见逻辑号，启动前确认映射。
+1. 预约独占时段、核验设备可见性；当前逻辑 0 映射物理 1，重新分配服务器后必须重查，不按旧编号启动。
 2. 首先单卡单副本冒烟，再两个 TP=1 副本；TP=2 只有一个路由目的地。
-3. 已发现公共 Qwen2.5-7B-Instruct、3B、14B 和 Qwen3-0.6B。首验优先从 7B/3B 中按运行验证选择；不下载重复权重，不依据目录名断言 revision。
-4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；候选引擎组合尚未验证，先隔离安装方案再启动。
-5. CPU 为 8 核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。压测端/Router/后端的竞争必须测量。两卡可做功能与初步趋势，不外推四副本或跨节点收益。
+3. 按用户要求选择 `/data/shared_models/Qwen2.5-14B-Instruct`，BF16、TP=1、先 8k 上下文；不下载重复权重，不静默降为 7B，不依据目录名断言 revision。
+4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；预装组合已通过局部 eager 探测，图和性能仍待验，不需先安装归档组合。
+5. CPU 为 16 核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。先单卡，再两个 TP=1 副本，最后四副本容量实验。压测端/Router/后端的竞争必须测量，不外推跨节点收益。
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
 
-当前不包含模型服务启动脚本：必须通过 P1b 版本兼容和设备映射检查后按真实 API 编写，避免示例“看起来能跑”却覆盖平台环境。
+## 单后端局部探测（显式手动触发）
+
+核验设备未被占用后，在项目目录执行以下示例；输出目录必须是新的。工具只启动临时 loopback 服务，完成后关闭自己创建的进程组，不是部署管理器。没有跨操作者的设备锁，运行前仍须预约；不得并行争用同卡。
+
+```bash
+python3 tools/smoke_backend.py --execute \
+  --executable /usr/local/python3.12.13/bin/vllm \
+  --model /data/shared_models/Qwen2.5-14B-Instruct \
+  --device 0 --port 18140 --kv-events-port 18141 \
+  --startup-timeout 600 --output artifacts/qwen14b-probe-new-run
+```
+
+固定参数：TP=1、BF16、APC、chunked prefill、eager、8192 context、8 sequences、2048 batched tokens、0.70 memory utilization。它们用于功能探测，不是已调优参数。只加载 Ascend 必要插件，关闭使用统计，缓存保存在本次 artifacts；不写公共模型目录。显式 `enable_cpu_binding=false`：本机 Ascend 默认绑定路径可能操作 IRQ/irqbalance，未获得主机级授权不能照用。`OMP_NUM_THREADS=2` 仅限本次进程，不代表性能最优。
+
+报告包含脱敏请求统计、原生事件摘要与进程清理结果；原始后端日志仅留忽略目录。`pass` 只指该局部探测；`shutdown_validated`、`kv_events_validated`、`routing_validated`、`performance_validated` 保持 false，完整语义另验。事件的 medium 字符串即使为 GPU，也不能据此认定设备是 NVIDIA。
 
 Ascend 性能验证遵循 [N0–N6](ascend-design.md)：图捕获预热与 KV 预热分开，记录有效 KV blocks 和 workspace；不要从 HBM 总量反推并发承诺。CPU 绑定仅限已授权进程及容器允许范围，不运行文档中的全局 IRQ/irqbalance 修改。npu-smi 和 profiler 用于受控诊断，不进入请求热路径；不写空转计算来维持服务器在线。
 
-2026-10-11 仅更新规划与本地仓库，本次没有连接、更新服务器 checkout 或改变运行环境。远端继续保持此前已验证提交，待审查后再按授权同步。
+本轮已按授权同步开发分支并进行局部真机探测；尚未合并主分支。见[证据](../evidence/qwen14b-preflight-2026-10-11.md)。不改引擎源码、全局环境、公共权重或旧项目。

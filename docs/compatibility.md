@@ -9,12 +9,14 @@
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 用户指定候选，未验证与上行匹配 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
 | vLLM Router | 待 P1a 固定 commit | 第一评估候选，没有接入 |
-| 新服务器 | aarch64 / 2×910B2 / Python 3.12.13 | 硬件清单和 CPU 脚手架验证通过，不等于引擎测试通过 |
-| 预装系统推理栈 | CANN 9.1.0、torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0 | 只读元数据；与候选不同，未运行、未覆盖 |
+| 新服务器 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 已盘点；空闲不证明独占 |
+| 预装系统推理栈 | CANN 9.1.0、torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0 | 用户选择优先首验；Qwen2.5-14B TP=1 BF16 eager 功能探测通过；未覆盖图/完整事件恢复/路由性能 |
 
 不同包的元数据版本号不能证明或否定兼容，必须核查依赖约束和实际调用。本轮不安装候选大规模引擎。运行声明需要：提交、制品 hash、环境指纹、配置、测试结果、局限和回退。版本变化重新验收。
 
-不支持的能力：当前没有线上服务、精确路由、KV 事件订阅、引擎 observer、Manager 运行激活或性能声明。
+不支持的产品能力：当前没有线上 Router、精确路由、生产 KV 事件订阅/恢复、引擎 observer、Manager 运行激活或性能声明。探测工具能采样原生事件，不等同生产订阅器。
+
+首验源码提交：vLLM `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；vLLM-Ascend `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。仅为本机固定源码/环境结果，不据包名外推官方发行制品认证。归档 HUST 组合后续独立验证；详见[决策](decisions/2026-10-11-qwen14b-first.md)和[证据](../evidence/qwen14b-preflight-2026-10-11.md)。
 
 ## Ascend 支持声明的粒度
 
