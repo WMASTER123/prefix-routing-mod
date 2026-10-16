@@ -6,7 +6,7 @@
 
 Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存储结果不确定时 fail closed；恢复默认暂停，相同实例和旧派发者停止声明通过后才 CAS takeover。它尚未接固定宿主，`previous_dispatcher_stopped` 仍是调用方证明，WorkerControl 也没有持续控制新鲜度到期机制，不能视为生产启动恢复完成。
 
-后端观测的 CoreEnds.seen 在 ACK 后仍累计；FrontendEnds 的实际 family/opaque child 也未接可持续回收。TerminalJournal.retire 目前只接受自身分配的 managed ID，不能直接套到真实 HUST 入口。20 分钟后端稳定性没有启用该 hook，因此不能覆盖这两个上限。
+后端 CoreEnds 已改为只在未确认窗口保留记录和重复保护，Frontend ACK 同一序号后精确回收；固定源码审查和 CPU 反例回归已通过。FrontendEnds 的实际 family/opaque child 仍未接可持续回收：TerminalJournal.retire 只接受已证明归属的 managed ID，不能把仅有 `prm-` 前缀的真实 HUST 入口直接标成 managed。受信 Router 归属的方案与取舍见[终态源回收 ADR](../decisions/2026-10-16-terminal-source-retention.md)。20 分钟后端稳定性没有启用该 hook，因此不能替代 Frontend 长期留存验收。
 
 ## 必须保持的提交顺序
 
@@ -18,7 +18,7 @@ Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存�
 
 ## 回收协议的设计约束
 
-首先用固定 HUST 源码确认 external/internal child 标识的生成与不复用条件。再明确受信 Router 会话/命名空间、已持久消费水位、源端退役边界和迟到重复的拒绝规则，不能仅把实际 family 标为 managed 绕过检查。
+固定 HUST 源码已确认：外部 ID 被保存，internal ID 默认增加 8 位随机片段，并行 child 使用 `index_internal-id`；清理 observer 位于删除请求的固定路径并受完整源码 hash 守卫。该证据足以让 Core ACK 后回收未确认窗口，但外部 `X-Request-Id` 可被客户端设置，`prm-` 前缀本身不是 Router 归属证明。下一步仍须明确受信 Router 会话、已持久消费水位、源端退役边界和迟到重复的拒绝规则。
 
 已完成且已持久消费的记录可以回收；未决 family、未确认提交和旧实例负债不能按 TTL 删除。低于源退役边界的消费者不能从 0 重放或清空账本，必须恢复持久游标或进入可诊断的暂停状态。core seen、frontend children/statuses、发送队列、墓碑、存储和重建暂态都要有总预算。
 

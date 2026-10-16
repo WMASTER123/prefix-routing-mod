@@ -8,6 +8,7 @@
 2. **真实公开请求链有限闭环**：原 HTTP 入口、真实 Qwen M1、Rust M7→同进程原 M2、基础 M4、M3 准入、原 M5 转发与真实 HUST 终态已同时联通。A 冷/A 热/B 热实际目标 A/A/B，后端 cached_tokens 为 0/384/384；真实流式取消取得核心 ABORTED 后才结清，重复终态不重复释放，最终 active=0。详见 [公开链证据](../evidence/native-public-chain-2026-10-16.md)。
 3. **新分配两卡复验与稳定性**：两张 910B2、Qwen2.5-14B TP1/FP16/eager，原目录隔离/断连复验通过；20 分钟后端稳定性完成 177/171 请求、12272/11856 生成 token，正常退出，无强制清理或残留设备进程。该稳定性未启用终态观测，不能替代其长期留存验收，见 [证据](../evidence/npu-stability-2026-10-16.md)。
 4. **M3 持久提交候选**：新增 Rust 单写提交包装与 SQLite WAL/FULL 候选，发送许可晚于持久提交，终态/M3/cursor 同一事务，恢复默认暂停并用 owner/generation CAS 围栏。Linux release 44 项和 clippy 通过；本地 ext4 完整快照 commit P50 约 0.58–0.67 ms、P99 约 2.6–3.3 ms，尚未选为生产方案，见[证据](../evidence/durable-runtime-candidate-2026-10-16.md)。
+5. **Core 终态窗口回收**：按固定 HUST 源码与 hash 守卫确认 internal ID 和一次性清理边界，Core 记录及重复保护只保留到唯一 Frontend ACK，不再形成进程累计请求上限；CPU 回归覆盖 ACK 前重复、ACK 后复用和外来流量。Frontend family 退役仍待受信 Router 归属方案，不把前缀当凭据，见[ADR](decisions/2026-10-16-terminal-source-retention.md)。
 
 固定基线为 HUST Core ced6857 / Ascend b47795c，Router91b65ee；未更换引擎、CANN 或全局 Python。服务使用项目隔离环境及窄 PYTHONPATH，pip check 通过。本轮新 MOD wheel、输入/二进制 hash、命令及失败重试均有记录。
 
@@ -29,7 +30,7 @@
 ## 接下来集中完成什么
 
 1. 在 aarch64 本地盘重测当前 SQLite 完整快照，并与增量表/有界 group commit 比较；宿主只采用满足提交语义且开销可接受的一种。随后把同一 M3 的消费者 cursor 接到真实 terminal ACK。
-2. 设计受信 Router 命名空间与源端 retire，补真实控制新鲜度、旧派发者停止、存储错误、丢许可/ACK、配置竞争和强制退出恢复；未知负债保留。超过早期 64/256 上限持续服务并验证资源趋势。
+2. 确认受信 Router 归属方案后接源端 retire，补真实控制新鲜度、旧派发者停止、存储错误、丢许可/ACK、配置竞争和强制退出恢复；未知负债保留。超过早期 64/256 上限持续服务并验证资源趋势。
 3. 对直连、原 Router、同底座仅加接线做配对 Host 开销，排除重复分词/远程目录查询/持久化放大；通过后冻结生产目录、类型、线程/时钟、配置、错误及启停语义。
 4. 冻结后按 A(M7/M2)、B(M1/M4/M5)、C(M3/M6/交付)正式分工。独立准备任务可先进行；不等待 M8 或最终算法，也不把尚未验收的恢复语义宣布为冻结。见 [工作包](planning/component-work-packages.md)。
 
@@ -37,6 +38,6 @@
 
 ## 测试与审查
 
-当前提交本地 Python CPU 573 通过/7 跳过、integration 3 通过，Rust helper release 44 项和 clippy 全通过；GitHub 六项 CI 也全部通过。aarch64 编译/存储开销与完整 Router 宿主接入尚待可用服务器验证。具体 head 以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
+当前工作树本地 Python CPU 574 通过/7 跳过、integration 3 通过，wheel 干净安装验证通过；Rust helper 最近 release 44 项和 clippy 全通过，本轮未改 Rust。上一已推送 head 的 GitHub 六项 CI 全部通过；本轮提交推送后仍须以新 head CI 为准。aarch64 编译/存储开销与完整 Router 宿主接入尚待可用服务器验证。具体 head 以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
 
 已完成自审、自动回归和上述实机子集；独立人工审查/合并未完成，不自动合并。Linux CPU 可推进持久化/协议；再次真实持续服务与恢复回归需要两个 TP1 NPU。测试完成清理自有进程，不运行空载保活负载。

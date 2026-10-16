@@ -1,7 +1,9 @@
 """Bounded, single-process observation state; no engine imports or I/O on import.
 
 Uses the existing HUST core utility transport when explicitly connected. These
-finite journals stop enhanced admission at their budgets; no long-term GC claim.
+finite journals stop enhanced admission at their budgets. Core records and their
+duplicate guards are reclaimed only after the frontend ACKs the same sequence;
+frontend family retirement remains a separate, stronger ownership boundary.
 """
 
 import asyncio
@@ -50,7 +52,7 @@ class CoreEnds:
             self.failed = True
             return False
         if child in self.seen:
-            if self.seen[child] != status:
+            if self.seen[child][1] != status:
                 self.failed = True
                 return False
             return True
@@ -58,7 +60,7 @@ class CoreEnds:
             self.failed = True
             return False
         self.boundary += 1
-        self.seen[child] = status
+        self.seen[child] = (self.boundary, status)
         self.records.append(
             {"sequence": self.boundary, "child": child, "status": status}
         )
@@ -79,7 +81,17 @@ class CoreEnds:
             raise ValueError("Core terminal cursor/epoch mismatch")
         self.acknowledged = acknowledge
         while self.records and self.records[0]["sequence"] <= acknowledge:
-            self.records.popleft()
+            record = self.records.popleft()
+            # The fixed, hash-guarded HUST cleanup path removes the request
+            # after invoking the observer. Once the sole frontend has ACKed
+            # this record, retaining its duplicate guard would turn the limit
+            # into a lifetime request cap rather than an unacknowledged-window
+            # bound. Do not reclaim a newer colliding observation by mistake.
+            if self.seen.get(record["child"]) == (
+                record["sequence"],
+                record["status"],
+            ):
+                del self.seen[record["child"]]
         return {
             "schema_version": 1,
             "epoch": self.epoch,
