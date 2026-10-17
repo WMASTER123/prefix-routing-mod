@@ -11,11 +11,17 @@ fn main() {
     for (name, expected) in [
         (
             "types",
-            "ed1c370f05a6e377f018a3bdc0a79b183b46dfcff5b1b9045bd5f878f22f3b4b",
+            [
+                "ed1c370f05a6e377f018a3bdc0a79b183b46dfcff5b1b9045bd5f878f22f3b4b",
+                "3c653b2e5860433bb2e864a482c43bb5f7e44380c78a60f3f95afc8d6aa7ce8d",
+            ],
         ),
         (
             "indexer",
-            "0847bc64ea1fba934932c8cd4e5e43d71869b7cc1b7f23061d3826a04b3ade4d",
+            [
+                "0847bc64ea1fba934932c8cd4e5e43d71869b7cc1b7f23061d3826a04b3ade4d",
+                "8baa59d371ddeabdea406373ae381faaeff372e8254f35287a4f02aadaa845b7",
+            ],
         ),
     ] {
         let path = source.join(format!("src/kv_index/{name}.rs"));
@@ -24,12 +30,14 @@ fn main() {
             .output()
             .expect("sha256sum required");
         assert!(result.status.success());
-        assert_eq!(
-            String::from_utf8(result.stdout)
-                .unwrap()
-                .split_whitespace()
-                .next(),
-            Some(expected)
+        // The reviewed Windows archive has CRLF; the same Git blobs have LF.
+        // Accept only these two exact byte fingerprints, never arbitrary
+        // normalization or a version range that could hide a code change.
+        let output = String::from_utf8(result.stdout).unwrap();
+        let digest = output.split_whitespace().next().unwrap();
+        assert!(
+            expected.contains(&digest),
+            "unreviewed upstream source: {name}"
         );
         println!("cargo:rerun-if-changed={}", path.display());
         modules.push_str(&format!(

@@ -60,8 +60,9 @@ index fa2acae..354d3b0 100644
  pub mod router;
  pub mod vllm_pd_router;
  pub mod vllm_service_discovery;
+warning: in the working copy of 'artifacts/router-source/router.rs', CRLF will be replaced by LF the next time Git touches it
 diff --git a/src/routers/http/router.rs b/src/routers/http/router.rs
-index f7140ac..b63a0c6 100644
+index f7140ac..14147ee 100644
 --- a/src/routers/http/router.rs
 +++ b/src/routers/http/router.rs
 @@ -133,6 +133,7 @@ fn hold_load_until_body_done(mut response: Response, worker: Arc<dyn Worker>) ->
@@ -72,11 +73,18 @@ index f7140ac..b63a0c6 100644
      headers: Option<&'a HeaderMap>,
      route: &'a str,
      worker_url: &'a str,
-@@ -1083,10 +1084,91 @@ impl Router {
+@@ -1083,10 +1084,98 @@ impl Router {
  
          let text = typed_req.extract_text_for_routing();
  
 +        let extension = self.policy_registry.http_extension();
++        if is_stream
++            && extension
++                .and_then(|e| e.stream_limits())
++                .is_some_and(|limits| !limits.valid() || crate::backend::stages_enabled())
++        {
++            return (StatusCode::SERVICE_UNAVAILABLE, "unsupported_stream_limits").into_response();
++        }
 +        let features = if let Some(extension) = extension {
 +            if !matches!(pool, Some(crate::backend::WorkerPoolKind::Http))
 +                || self.intra_node_data_parallel_size != 1
@@ -165,7 +173,7 @@ index f7140ac..b63a0c6 100644
                  // Each backend attempt is a fresh scheduling arrival. The
                  // previous ProgramCompletion finishes exactly once before a
                  // retry invokes this closure again.
-@@ -1100,7 +1182,9 @@ impl Router {
+@@ -1100,7 +1189,9 @@ impl Router {
                  let forced_worker_url = program_completion
                      .as_ref()
                      .map(|completion| completion.dispatch().target_id.as_str());
@@ -176,7 +184,7 @@ index f7140ac..b63a0c6 100644
                      let worker = self
                          .worker_registry
                          .get_by_url(target)
-@@ -1151,6 +1235,7 @@ impl Router {
+@@ -1151,6 +1242,7 @@ impl Router {
                      .send_typed_request(
                          typed_req,
                          TypedDispatch {
@@ -184,7 +192,7 @@ index f7140ac..b63a0c6 100644
                              headers,
                              route,
                              worker_url: worker.url(),
-@@ -1335,12 +1420,30 @@ impl Router {
+@@ -1335,12 +1427,30 @@ impl Router {
      // Send typed request directly without conversion
      #[allow(clippy::too_many_arguments)]
      async fn send_typed_request<T: serde::Serialize>(
@@ -215,7 +223,7 @@ index f7140ac..b63a0c6 100644
              headers,
              route,
              worker_url,
-@@ -1454,6 +1557,19 @@ impl Router {
+@@ -1454,6 +1564,19 @@ impl Router {
          let stages_on = crate::backend::stages_enabled();
  
          let t_send = Instant::now();
@@ -235,7 +243,7 @@ index f7140ac..b63a0c6 100644
          let res = match otel_http::send_client_request(
              request_builder,
              headers,
-@@ -1468,6 +1584,9 @@ impl Router {
+@@ -1468,6 +1591,9 @@ impl Router {
          {
              Ok(res) => res,
              Err(e) => {
@@ -245,7 +253,7 @@ index f7140ac..b63a0c6 100644
                  error!(
                      "Failed to send typed request worker_url={} route={} error={}",
                      worker_url, route, e
-@@ -1491,6 +1610,9 @@ impl Router {
+@@ -1491,8 +1617,59 @@ impl Router {
  
          let status = StatusCode::from_u16(res.status().as_u16())
              .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -254,8 +262,58 @@ index f7140ac..b63a0c6 100644
 +        }
          let http_ttfb_ms = t_send.elapsed().as_secs_f64() * 1000.0;
  
++        if is_stream {
++            if let Some(limits) = self
++                .policy_registry
++                .http_extension()
++                .and_then(|e| e.stream_limits())
++            {
++                let registry = Arc::clone(&self.worker_registry);
++                let worker_url = worker_url.to_string();
++                let finish = Box::new(move |success| {
++                    if load_incremented {
++                        if let Some(worker) = registry.get_by_url(&worker_url) {
++                            worker.decrement_load();
++                            RouterMetrics::set_running_requests(&worker_url, worker.load());
++                        }
++                    }
++                    if let Some(completion) = &program_completion {
++                        completion.finish(success);
++                    }
++                });
++                // The experimental pull path does not inject stage comments.
++                // Reject unsupported configuration explicitly, never fall back
++                // to an unbounded channel while claiming bounded transport.
++                if !limits.valid() || stages_on {
++                    finish(false);
++                    if let Some(guard) = prefix_attempt.as_mut() {
++                        guard.transport_failed();
++                    }
++                    return (StatusCode::SERVICE_UNAVAILABLE, "unsupported_stream_limits")
++                        .into_response();
++                }
++                let mut response_headers = header_utils::preserve_response_headers(res.headers());
++                response_headers
++                    .insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
++                let stream = res
++                    .bytes_stream()
++                    .map(|r| r.map_err(|_| std::io::Error::other("upstream_stream_error")));
++                let body = Body::from_stream(super::prefix_extension::DirectStream::new(
++                    Box::pin(stream),
++                    limits,
++                    finish,
++                ));
++                let mut response = Response::new(body);
++                *response.status_mut() = status;
++                *response.headers_mut() = response_headers;
++                return response;
++            }
++        }
++
          if !is_stream {
-@@ -1514,6 +1636,9 @@ impl Router {
+             // For non-streaming requests, preserve headers
+             let mut response_headers = header_utils::preserve_response_headers(res.headers());
+@@ -1514,6 +1691,9 @@ impl Router {
                      response
                  }
                  Err(e) => {
