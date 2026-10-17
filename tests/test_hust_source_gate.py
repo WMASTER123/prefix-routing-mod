@@ -9,6 +9,7 @@ from contextlib import closing
 import pytest
 
 from prefix_routing_mod.adapters.profiles import get_profile
+from prefix_routing_mod.adapters.terminal_guard import terminal_profile
 from tools import audit_backend_terminal, audit_http_entry
 from tools import fetch_hust_audit_sources as fetch
 from tools import hust_source_profiles as profiles
@@ -20,6 +21,11 @@ def test_source_inputs_agree_with_runtime_profile():
     assert set(hashes) == set(profiles.CED_SOURCE_PATHS)
     assert all(len(value) == 64 for value in hashes.values())
     assert all(path.startswith("vllm/") for path in profiles.CED_SOURCE_PATHS.values())
+    packaged = terminal_profile()["sources"]
+    assert all(
+        packaged[profiles.CED_SOURCE_PATHS[name]] == value
+        for name, value in hashes.items()
+    )
 
 
 @pytest.mark.parametrize("audit", [audit_backend_terminal, audit_http_entry])

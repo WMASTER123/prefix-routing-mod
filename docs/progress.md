@@ -1,5 +1,17 @@
 # 进度与下一步
 
+## 当前：单后端真实入口/核心终态闭环（2026-10-14）
+
+新分配 32068 两张 910B2，继续固定 HUST ced6857/b47795c 与原隔离环境；排除 SDK PYTHONPATH 后 189 包兼容，没有换引擎或改全局环境。最终功能代码 92cc06c、两卡顺序单实例复验：真实 completion/chat、2 prompts×n2、stop string 和 stream 断连，4 family/8 child 接回同一账本。HTTP 结束/断连不清债，完整封口与实际核心正终态确认后结清；stop string 和断连的核心 FINISHED_ABORTED 均实际断言。重放、重复投递、账本重开及自有包装恢复通过。
+
+复用已有 HUST endpoint plugin/utility，不改引擎文件，不另造代理或索引；8 处可逆方法包装、默认关闭及版本/callable 守卫。journal/capture 移包内单一实现，旧 tools 为兼容导出。Windows CPU534+7 skips、Linux538+3 skips，integration各3，显式固定源码3及26/26 checks、新wheel两端干净安装通过；失败的贪心多采样探针已修正并保留证据。
+
+**仍未完成**：原生成熟 Router→真实后端的组合、在线 M7→M2、已热/超窗恢复、长期 GC、图/完整启停和 SLO 容量。当前 observer 有限留存64 family/256 child，不是长期生产方案；MOD import_only、生产 ABI 未冻结。主动停服后的 HUST EngineDeadError 仍保留，未用 exit0 掩盖 G3。独立人工审查待完成，代码/现场与交付状态见[本轮证据](../evidence/cedb477-live-terminal-2026-10-14.md)。
+
+下一步先将已有 Router 自有 attempt、动态准入/传输生命周期与本次终态消费组合到同一 owner，再接真实 KV 订阅到原索引；受控完整链路成立即做两副本强基线和 Host 开销，不继续堆算法。现在2张卡足够：单后端1张、双TP1共2张，无需额外卡。详见[新执行清单](planning/cedb477-live-terminal.md)。下方同日 CPU 段落及旧机器描述是历史过程，不是当前待申请状态。
+
+交付[草稿PR20](https://github.com/WMASTER123/prefix-routing-mod/pull/20)，基于未合并PR19；7c3bd4b的[CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38508875672)四个job全部success，3.11/3.12各CPU538+3 skips、integration3和新制品通过，专用源码各3项及26/26 checks通过。源码/文档已同步新服务器和GitHub，原始证据双端校验一致；后续记录提交按对应head另查。独立人工审查与合并仍待完成。
+
 ## 当前执行：新版入口/终态到同一账本的 CPU 接线（2026-10-14）
 
 基于8997ae8，在codex/cedb477-terminal-boundaries推进；代码e9f3a5b复用原审计、EntryCapture/TerminalJournal/OnlineConsumer/DurableLedger。新版终态26 checks、入口账本26 checks通过；旧源码25/25 checks回归。完整关联后核心清理成功才结清，部分提交/准入拒绝/清理失败保债，stop string早删映射与提交后丢ACK恢复均覆盖。固定输出接收方法的取消→EngineDeadError路径已CPU复现，与旧停服日志相符；完整现场因果待验。

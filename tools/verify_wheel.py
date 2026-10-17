@@ -32,6 +32,7 @@ def main() -> int:
         clean = os.environ.copy()
         clean.pop("PYTHONPATH", None)
         clean.pop("PREFIX_ROUTING_HUST_PUBLISHER", None)
+        clean.pop("PREFIX_ROUTING_HUST_TERMINAL", None)
         subprocess.run(
             [str(binary), "-m", "pip", "install", "--no-deps", str(wheel)],
             cwd=root,
@@ -49,6 +50,10 @@ def main() -> int:
             "assert m['activation']['entry_points'] == []; "
             "hook = next(iter(entry_points(group='vllm.general_plugins', "
             "name='prefix_routing_publisher'))).load(); hook(); "
+            "terminal = next(iter(entry_points(group='vllm.general_plugins', "
+            "name='prefix_routing_terminal'))).load(); terminal(); "
+            "endpoint = next(iter(entry_points(group='vllm.endpoint_plugins', "
+            "name='prefix_routing_terminal'))).load()(); assert not endpoint.active; "
             "import sys; assert 'torch' not in sys.modules; "
             "assert 'vllm' not in sys.modules; "
             "from prefix_routing_mod.contracts import CONTRACT_VERSION, WorkerRef; "
@@ -56,6 +61,8 @@ def main() -> int:
             "assert WorkerRef('replica', 'instance').instance_epoch == 'instance'; "
             "from prefix_routing_mod.adapters.profiles import get_profile; "
             "assert not get_profile('hust-cedb477-native-v1').native_epoch; "
+            "from prefix_routing_mod.adapters.terminal_guard import terminal_profile; "
+            "assert terminal_profile()['schema_version'] == 1; "
             "assert 'torch' not in sys.modules and 'vllm' not in sys.modules; "
             "print('Clean wheel: descriptor and bundled manifest verified')"
         )

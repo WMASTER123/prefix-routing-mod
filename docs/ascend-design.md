@@ -1,5 +1,7 @@
 # Ascend 优先：设计约束与验证路线
 
+2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+
 2026-10-14 当前迁移：HUST ced6857/b47795c、FP16/eager、两张910B2顺序单实例子集通过。版本/协议差异集中M7，依赖与恢复独立记录，见[本轮证据](../evidence/hust-version-adapters-2026-10-14.md)。旧归档/BF16与图机制资料不作为新目标验收。
 
 更新：2026-10-11。状态：规划约束；HUST 统一恢复和四卡逐卡 eager 功能已通过，见[W1](../evidence/w1-runtime-restore-2026-10-11.md)。原生事件生命周期子集见 [G2](../evidence/g2-native-events-subset-2026-10-11.md)，完整恢复、图与路由性能仍未验收。

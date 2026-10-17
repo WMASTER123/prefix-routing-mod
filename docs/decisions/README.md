@@ -1,5 +1,7 @@
 # 决策索引
 
+- [2026-10-14：复用 HUST utility/endpoint 的有限终态实机接线](2026-10-14-live-terminal-utility.md)；默认关闭、8处可逆包装，不冻结生产ABI。
+
 - [2026-10-13：HUST cedb477 迁移与版本适配](2026-10-13-hust-version-adapters.md)；新旧映射、能力边界、只读制品复用与独立环境。
 
 - [2026-10-13：实际 Router 进程故障与单 owner 恢复](2026-10-13-router-process-recovery.md)；本地排他、运行时标识与完整 CPU 组合验证，真实 HUST 接线另验。

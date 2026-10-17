@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "profile_id": "hust-cedb477-native-v1",
+  "sources": {
+    "vllm/v1/request.py": "da610d5203e72d2d524adc5fb39df11502a23520f2f31d9a44cf13d343f9c25d",
+    "vllm/v1/core/sched/scheduler.py": "c1db45f3bbad3a875dd8638331b8870c4380ac1ab4734265ba5c863833a82884",
+    "vllm/v1/engine/core.py": "268bf40534a853812867ae8e80040f190983cb364b41182b55969aace20c93f5",
+    "vllm/v1/engine/output_processor.py": "e47b86cd69ce1c1e3f53dac655eaa75c32a4057d10f4a1db16bb83a397f2a329",
+    "vllm/v1/engine/core_client.py": "fd6ca0cb7499b3086eef2fc57674b7ace56ef1c648f09e92e144b255b79018f8",
+    "vllm/v1/engine/async_llm.py": "52cbf404f1dbc99c6bebf4a50a7eb18ff842a1f53106a45f365523192d816be1",
+    "vllm/v1/engine/input_processor.py": "c8abd8e4e14d99929d45a7ff3b2a74898269c5e2a7fa30b826623ee85e4ce813",
+    "vllm/v1/engine/parallel_sampling.py": "bf3f0a3c6640aaf706d1b6f7ec3a8e09a970f3dd9e7e96fa6a901779ea84f61d",
+    "vllm/entrypoints/serve/engine/serving.py": "70143311acc2230b925e7f3603b8b9314f029ff5e98d5af990b3bdca691331f1",
+    "vllm/entrypoints/openai/completion/serving.py": "75d05ddddf303734a078a3e42fcb173fef58ea56da09bc0b5c7525cb9bbbf527",
+    "vllm/entrypoints/openai/chat_completion/serving.py": "ea1f76074a9587c8054f54d30a6ba748b6a5fc4d90dd82c801504505c1da1f92",
+    "vllm/plugins/endpoint_plugins/interface.py": "9293616ccd3cdf725fa087d3f76a518dba871ef2c796446990fa2a0a5fc159ee",
+    "vllm/entrypoints/launchers/api_server/app_state.py": "7a00aa48a9b4d62961e64b33d78c3016e6eccd684c7f8bf5ff221b2ac27eeb10"
+  }
+}

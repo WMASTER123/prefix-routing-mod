@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import secrets
 import socket
 import sys
 import time
@@ -96,12 +97,16 @@ def run(args, output, report):
         messages, tokenize=True, add_generation_prompt=True, return_dict=False
     )
     report["input_tokens"] = {"completion": len(tokens), "chat": len(chat_tokens)}
-    env = build_environment(args.device, output)
+    env = build_environment(
+        args.device, output, pycache_root=getattr(args, "pycache_root", None)
+    )
     for name in (
         "PYTHONPATH",
         "PYTHONHOME",
         "VIRTUAL_ENV",
         "PREFIX_ROUTING_HUST_PUBLISHER",
+        "PREFIX_ROUTING_HUST_TERMINAL",
+        "PREFIX_ROUTING_TERMINAL_TOKEN",
     ):
         env.pop(name, None)
     env.update(
@@ -111,6 +116,16 @@ def run(args, output, report):
         VLLM_USE_FASTOKENS="0",
         VLLM_USE_RUST_FRONTEND="0",
     )
+    terminal_token = None
+    if getattr(args, "terminal_observer", False):
+        terminal_token = secrets.token_hex(32)
+        env.update(
+            PREFIX_ROUTING_HUST_TERMINAL="1",
+            PREFIX_ROUTING_TERMINAL_TOKEN=terminal_token,
+            PREFIX_ROUTING_TERMINAL_PREFIX="prm-",
+            PREFIX_ROUTING_TERMINAL_WORKER="replica-a",
+        )
+        env["VLLM_PLUGINS"] += ",prefix_routing_terminal"
     origin = f"http://127.0.0.1:{args.port}"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     context = zmq.Context()
@@ -206,6 +221,13 @@ def run(args, output, report):
         }
         # Only transient normalized keys feed the existing index experiment.
         (output / "normalized.json").write_text(json.dumps(live), "utf-8")
+        if terminal_token is not None:
+            from tools.live_terminal_cases import run as terminal_cases
+
+            report["terminal"] = terminal_cases(opener, origin, output, terminal_token)
+            report["terminal_observer_verified"] = (
+                report["terminal"]["status"] == "pass"
+            )
         report["status"] = "pass"
     finally:
         try:
@@ -224,6 +246,8 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", type=int, required=True)
     parser.add_argument("--port", type=int, default=18146)
+    parser.add_argument("--terminal-observer", action="store_true")
+    parser.add_argument("--pycache-root", type=Path)
     args = parser.parse_args(argv)
     try:
         output = private_path(args.output)
