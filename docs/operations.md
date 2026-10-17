@@ -45,7 +45,7 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 这是单次进程的来源镜像映射，版本仍由 uv.lock 的 commit 校验；不改变全局 Git 配置。创建 bundle 时必须包含完整对象历史且实际导入指定 ref；浅克隆生成的 bundle 不足以保证异机可还原。辅助目录也是私有 /root 持久存储，不应放共享区。
 
-系统推理包：torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0，CANN 9.1.0。项目 .venv 与它们隔离。用户已选择优先验证预装组合；本次使用原环境执行功能探测，没有安装/替换这些包。版本及测试边界见兼容矩阵。
+历史系统推理包：torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0，CANN 9.1.0。项目 .venv 与隔离 HUST 服务环境分别记录；当前统一恢复入口已通过，见[环境恢复](runtime.md)。预装包保留，当前源与测试范围见兼容矩阵。
 
 ## 实验前检查
 
@@ -57,6 +57,20 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
 
 ## 单后端局部探测（显式手动触发）
+
+当前已完成四张设备的串行真实模型烟测；主回归仍单卡。环境恢复与四卡结果见 [W1](../evidence/w1-runtime-restore-2026-10-11.md)，真实存储/淘汰/清空/重放子集见 [G2](../evidence/g2-native-events-subset-2026-10-11.md)。所有临时服务已关闭，不通过空转维持在线。
+
+恢复环境下事件子集示例，运行前确认卡/端口可用及新输出目录：
+
+```bash
+PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+  artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_events.py \
+  --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
+  --model /data/shared_models/Qwen2.5-14B-Instruct \
+  --device 0 --port 18231 --output artifacts/g2-events-20261011/run-next
+```
+
+该工具只在自有 loopback 服务进程开启 reset 所需 dev API；采用专用小 KV 配置产生自然淘汰，不能作为最终性能配置。完整事件恢复、断连/重启和精确索引仍未通过，见[事件合同](kv-event-contract.md)。
 
 最新 HUST 隔离探测示例（目录/端口每次新选；先确认逻辑设备和无人争用）：
 
