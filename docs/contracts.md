@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-12 终态原型使用独立 `Binding(worker, instance, observer)` 与显式完整 family，所有子请求结束才产生一条正证据；不从缺失记录推断未接受，不从逻辑结束推断 KV/HBM free。M5 仍须统一生命周期序号和业务结果，observer 不能直接把通用 ended 伪装为 COMPLETED。进程内 journal/ACK/快照实验不改变生产协议，整进程恢复与 GC 未实现；见[候选边界](planning/terminal-observer-scope.md)。
+
 2026-10-12 审查收尾：`experiments/router-extension/lifecycle_bridge.rs` 将真实 Lease 回调转换成 component-v0.1 的有限传输事件。每尝试最多两个事件，使用同一 Router 单调时钟；状态码不认定后端接受，EOF/error/drop 不认定结束。`tools/lifecycle_trace_probe.py` 在实验结束后将记录重放到现有账本 oracle；可靠在线投递、正常/取消终态、进程重启恢复仍未实现。终态来源与接线门槛见[固定 HUST 审计](planning/backend-terminal-evidence.md)。生产 ID 分配和内部请求关联尚未冻结，CPU 记录只支持有界 ASCII ID 子集。
 
 2026-10-12 增量实验见[目录/流式适配 ADR](decisions/2026-10-12-bounded-router-adapters.md)。Rust 目录实验使用 `Binding`、不可复用的恢复 `Ticket`、规范化 `Block/Batch` 与排他快照/重放水位；这些是实验输入，不替代 component-v0.1，也不是已冻结的 HUST wire 或生产 ABI。一个分区只支持 worker 实例/publisher/完整身份/block_size、group 0/device/DP 0。`lookup=None` 表示未可信或身份不符，`Some(0)` 才是已观测未命中。

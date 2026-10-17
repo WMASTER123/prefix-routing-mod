@@ -1,5 +1,13 @@
 # 进度与下一步
 
+## 当前执行：终态来源验证与进程内在线原型（2026-10-12）
+
+交付位于[草稿 PR #13](https://github.com/WMASTER123/prefix-routing-mod/pull/13)，基于 PR #12；待另一成员独立审查，不自动合并。正文证据代码及后续文档格式修复分别记录，CI 以确切 head 为准。
+
+固定 HUST 四文件完整 hash 守卫后，25 项源码方法检查在 Windows/Linux aarch64 CPU 通过；11 项工具守卫与 24 项 journal/在线参考账本回归新增。普通取消没有逐请求确认，stop string 删除映射早于核心取消，核心清理不等于 blocks/设备全部释放。已获用户同意做小范围 CPU observer 评估，但本轮没有安装引擎 hook。代码 801b628：Windows 全量 CPU 317+4 skips、Linux 321、mock 各 3、两端新制品及干净安装通过；开销初测、首次构建下载失败及局限见[本轮证据](../evidence/terminal-observer-cpu-2026-10-12.md)。
+
+在线原型不再仅做事后 transcript 重放，但只在单进程连接旧参考账本；consumer 重建保留账本，不代表 Router 整进程恢复。真实关联封口、跨进程投递和长期留存仍未完成，M7→M2 wire/新鲜度/总预算尚未新增实现。[范围与成本](planning/terminal-observer-scope.md)明确接入与否决线。接下来先收敛这些接线，之后冻结首版生产接口。CPU 够用，需 1 张 NPU 时提前通知；MOD import_only 保持。
+
 ## 当前执行：审查修复与标准生命周期记录（2026-10-12）
 
 在 `codex/stream-review-lifecycle` 修复持续空块绕过 idle 的遗漏、Windows 大响应 fixture 的连接 reset 不稳定，并统一流式 ADR 与直接拉取实现。新原生反例在旧代码失败，新共享 helper 的 10 项测试通过，进入独立 CI。代码 d51be7a：Windows CPU 282+4 skips、Linux aarch64 CPU 286、mock 各 3、两端新制品/干净安装通过。完整宿主最终 example 构建及真实 HTTP 流式/default-off/准入回归通过；24 尝试/46 条有限标准事件在旧账本重放后保留 22 个未知、释放 2 个未发送，未认定后端结束。记录提交 2f2b737 的 Python 3.11/3.12 与原生 helper CI success；后续提交不自动继承成绩。结果与局限见[本轮证据](../evidence/stream-lifecycle-review-2026-10-12.md)；[草稿 PR #12](https://github.com/WMASTER123/prefix-routing-mod/pull/12) 待另一成员审查，不自动合并。

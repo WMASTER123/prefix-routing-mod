@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-12 新增 `test_backend_terminal_audit.py` 的工具/hash/证据保护测试，以及 `test_terminal_observer_prototype.py` 的进程内在线账本与故障测试，自动进入原 CPU CI。固定源码方法审计另手动执行 `python -m tools.audit_backend_terminal --source-directory <四个固定源码文件所在目录> --output <新的报告路径>`；四文件先完整 hash 校验，不导入引擎。真实源码未纳入仓库/CI，不能将工具单测说成 CI 执行了 HUST。consumer 重建测试保留参考账本，未覆盖 kill -9/持久化、真实网络或 NPU。
+
 2026-10-12 审查收尾：新增 `Native HTTP extension helper checks`，锁定小型 checks crate 并直接编译宿主共用的 `prefix_extension.rs` / `lifecycle_bridge.rs`；包含空块让出/超时、慢消费者、响应限制、关闭恰一次及有限标准事件。该 CI 不编译完整 Router 或测试真实后端终态。完整 aarch64 example 人工测试另输出原生传输记录，由 `tools.lifecycle_trace_probe` 重放到现有账本 oracle；实验结束后的重放不算可靠在线投递。Windows 大响应 fixture 先消费请求体再关闭连接，避免 TCP reset 隐藏大小限制断言。
 
 2026-10-12 原生增量：新增 `Native index adapter checks`，固定 Rust 1.99.0 和两个原索引源文件 hash，执行 Rust 格式、原生语义与短更替 smoke。它不构建完整 Router 或占用 NPU。完整 aarch64 Router 的 release 与 `tools.router_extension_probe` / `tools.router_stream_probe` 仍由项目私有构建环境手动运行；[本轮记录](../evidence/bounded-router-adapters-2026-10-12.md)单独区分这些成绩。Python CPU 的 probe 守卫测试不能替代真正执行 Rust。
