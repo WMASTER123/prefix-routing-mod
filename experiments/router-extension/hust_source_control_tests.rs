@@ -20,7 +20,9 @@ fn body() -> serde_json::Value {
         "schema_version": 1,
         "binding": {"worker_id": "replica-a", "instance_epoch": "core-a", "observer_epoch": "observer-a"},
         "frontend_pid": 101, "core_pid": 102, "core_boundary": 0,
-        "frontend_boundary": 0, "family_count": 0, "disabled": false
+        "frontend_boundary": 0, "family_count": 0, "reserved_children": 0,
+        "acknowledged": 0, "retired_through": 0,
+        "ownership_mode": "observe_only", "disabled": false
     })
 }
 
@@ -173,4 +175,41 @@ fn warm_identity_or_wrong_owned_pid_cannot_initialize_control() {
             Err(OwnerFault::Source)
         ));
     }
+}
+
+#[test]
+fn retirement_identity_fields_are_bounded_monotonic_and_mode_stable() {
+    let invalid = [
+        ("reserved_children", serde_json::json!(257)),
+        ("acknowledged", serde_json::json!(1)),
+        ("retired_through", serde_json::json!(1)),
+        ("ownership_mode", serde_json::json!("trust_prefix")),
+    ];
+    for (field, value) in invalid {
+        let mut initial = body();
+        initial[field] = value;
+        let server = Server::new(vec![(200, initial.to_string())]);
+        assert!(matches!(
+            HustSourceControl::connect_cold(
+                &server.origin,
+                TOKEN.into(),
+                "replica-a",
+                101
+            ),
+            Err(OwnerFault::Source)
+        ));
+    }
+
+    let mut first = body();
+    first["ownership_mode"] = serde_json::json!("exclusive_router_v1");
+    let mut changed = first.clone();
+    changed["ownership_mode"] = serde_json::json!("observe_only");
+    let server = Server::new(vec![(200, first.to_string()), (200, changed.to_string())]);
+    let mut control =
+        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101)
+            .unwrap();
+    assert_eq!(
+        control.verify(&spec(&server.origin)),
+        Err(OwnerFault::Source)
+    );
 }

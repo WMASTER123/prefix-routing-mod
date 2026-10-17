@@ -33,6 +33,10 @@ pub struct SourceIdentity {
     pub core_boundary: u64,
     pub frontend_boundary: u64,
     pub family_count: usize,
+    pub reserved_children: usize,
+    pub acknowledged: u64,
+    pub retired_through: u64,
+    pub ownership_mode: String,
     pub disabled: bool,
 }
 
@@ -47,6 +51,13 @@ impl SourceIdentity {
             && self.core_pid > 0
             && self.frontend_pid != self.core_pid
             && self.family_count <= 64
+            && self.reserved_children <= 256
+            && self.acknowledged <= self.frontend_boundary
+            && self.retired_through <= self.acknowledged
+            && matches!(
+                self.ownership_mode.as_str(),
+                "observe_only" | "exclusive_router_v1"
+            )
     }
 }
 
@@ -103,6 +114,9 @@ impl HustSourceControl {
             || identity.core_boundary != 0
             || identity.frontend_boundary != 0
             || identity.family_count != 0
+            || identity.reserved_children != 0
+            || identity.acknowledged != 0
+            || identity.retired_through != 0
         {
             return Err(OwnerFault::Source);
         }
@@ -153,6 +167,9 @@ impl SourceControl for HustSourceControl {
             || current.core_pid != self.identity.core_pid
             || current.core_boundary < self.identity.core_boundary
             || current.frontend_boundary < self.identity.frontend_boundary
+            || current.acknowledged < self.identity.acknowledged
+            || current.retired_through < self.identity.retired_through
+            || current.ownership_mode != self.identity.ownership_mode
         {
             return Err(OwnerFault::Source);
         }

@@ -34,6 +34,8 @@
 
 新增版本化控制路径 `/prefix-routing/terminal/retire`，仍复用既有私有控制 token。顺序固定为：M3 原子提交终态与 consumer cursor；读取接口以同一 cursor ACK；退役调用携带精确 observer epoch、`through` 与相等的 `checkpointed_through`；Frontend 仅删除该水位内、完整终态且受管的 family/child/status。任何外部 family、binding 不符、cursor 回退、未 ACK 或持久水位不等均拒绝，未知/未决 family 不参与回收。
 
+身份响应新增 `reserved_children/acknowledged/retired_through/ownership_mode` 后，固定 Rust `HustSourceControl` 必须显式解码并校验这些字段；它仍使用 `deny_unknown_fields`，不以忽略未知字段换取表面兼容。计数必须满足 `retired_through <= acknowledged <= frontend_boundary`，资源上限分别为 64 family/256 child，ownership mode 在同一实例内不可改变。该调用方同步修改是接口变更的一部分。
+
 退役后 `retired_through` 以前的 cursor 不再能请求“完整快照”，必须失败关闭并从持久 consumer cursor 恢复。重复退役调用是幂等的：已达到同一水位时可返回 `retired=0`，不能把不确定响应误判为数据丢失。CPU 已覆盖累计 600 个 family 的小窗口循环、重复/旧 cursor 和 observe-only 拒绝；这只证明状态机没有 64 次生命周期上限，不代替真实 NPU、进程崩溃或内存趋势资格。
 
 ## 后续共享后端方案
