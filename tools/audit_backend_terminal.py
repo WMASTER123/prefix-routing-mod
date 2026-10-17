@@ -10,6 +10,7 @@ import ast
 import asyncio
 import hashlib
 import json
+import weakref
 from collections import defaultdict, deque
 from enum import IntEnum
 from pathlib import Path
@@ -17,8 +18,10 @@ from queue import Queue
 from types import SimpleNamespace as NS
 
 if __package__:
+    from .hust_source_profiles import CED_COMMIT, CED_TERMINAL_HASHES, is_ced_profile
     from .terminal_observer_prototype import Binding, OnlineConsumer, TerminalJournal
 else:
+    from hust_source_profiles import CED_COMMIT, CED_TERMINAL_HASHES, is_ced_profile
     from terminal_observer_prototype import Binding, OnlineConsumer, TerminalJournal
 
 CORE_COMMIT = "13f11da44455d2f85f00f810a04e1bd2eaf30ba6"
@@ -91,7 +94,9 @@ def source_class(
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name in methods
     ]
-    if {node.name for node in selected} != set(methods):
+    if len(selected) != len(methods) or {node.name for node in selected} != set(
+        methods
+    ):
         raise ValueError("source method set changed")
     if any(
         not isinstance(decorator, ast.Name) or decorator.id not in allowed_decorators
@@ -116,16 +121,8 @@ def source_class(
     return env[class_name]
 
 
-def run_audit(directory):
-    sources = load_sources(directory)
-    common = {
-        "RequestStatus": Status,
-        "remove_all": lambda items, removed: [x for x in items if x not in removed],
-        "FinishReason": NS(STOP="stop", ABORT="abort", ERROR="error"),
-        "OutputProcessorOutput": NS,
-        "EngineCoreRequestType": NS(ABORT="abort"),
-    }
-    scheduler_type = source_class(
+def scheduler_class(sources, newer):
+    return source_class(
         sources,
         "scheduler.py",
         "Scheduler",
@@ -135,9 +132,106 @@ def run_audit(directory):
             "_free_blocks",
             "_free_request_blocks",
             "_drain_deferred_frees",
-        ),
-        common,
+        )
+        + (("_request_blocks_can_be_freed",) if newer else ()),
+        {
+            "RequestStatus": Status,
+            "remove_all": lambda items, removed: [x for x in items if x not in removed],
+        },
     )
+
+
+def scheduler_fixture(scheduler_type, requests, *, export=False, observer=None):
+    """Explicit synthetic queues/managers; complete source cleanup methods run."""
+    value = scheduler_type()
+    value.requests = {r.request_id: r for r in requests}
+    value.running = [r for r in requests if r.status == Status.RUNNING]
+    value.waiting = Waiting(r for r in requests if r.status != Status.RUNNING)
+    value.skipped_waiting = Waiting()
+    value.num_waiting_for_streaming_input = 0
+    value.finished_recving_kv_req_ids = set()
+    value.failed_recving_kv_req_ids = set()
+    value._inflight_prefills = set()
+    value._connector_finished = lambda request: (False, None)
+    value.encoder_cache_manager = NS(free=lambda request: None)
+    value.ec_connector = None
+    value.finished_req_ids = set()
+    value.finished_req_ids_dict = defaultdict(set) if export else None
+    value._cancel_kv_cache_compression_transaction = lambda *args: None
+    value._pending_kv_cache_compression_block_table_updates = None
+    value.defer_block_free = True
+    value.processed_step_seq = 0
+    value.sched_step_seq = 1
+    value.deferred_frees = deque()
+    value.freed = []
+    value.kv_cache_manager = NS(
+        free=lambda request: value.freed.append(request.request_id),
+        pop_blocks_for_free=lambda request: [request.request_id],
+        block_pool=NS(free_blocks=lambda blocks: value.freed.extend(blocks)),
+    )
+    if observer is not None:
+        original_cleanup = value._free_request
+
+        def observed_cleanup(request, delay_free_blocks=False):
+            result = original_cleanup(request, delay_free_blocks=delay_free_blocks)
+            observer.observe_core_end(request.request_id)
+            return result
+
+        # Only this synthetic object is wrapped. No engine module is imported.
+        value._free_request = observed_cleanup
+    return value
+
+
+def output_fixture(processor_type, *, stop_string, core_finished):
+    """Fake detokenizer/output; complete frontend processing/removal methods run."""
+    queue = Queue()
+    processor = processor_type()
+    state = NS(
+        request_id="child",
+        external_req_id="parent",
+        parent_req=None,
+        is_prefilling=False,
+        streaming_input=False,
+        queue=queue,
+        detokenizer=NS(update=lambda *args: "STOP" if stop_string else None),
+        logprobs_processor=NS(update_from_output=lambda output: None),
+        make_request_output=lambda tokens, pool, reason, stop, kv, *extra: NS(
+            finished=reason is not None
+        ),
+    )
+    processor.request_states = {"child": state}
+    processor.external_req_ids = {"parent": {"child"}}
+    processor._update_stats_from_output = lambda *args: None
+    processor._update_stats_from_finished = lambda *args: None
+    processor.tracing_enabled = False
+    processor.admission_stats = None
+    output = NS(
+        request_id="child",
+        new_token_ids=[1],
+        pooling_output=None,
+        finish_reason="stop" if core_finished else None,
+        stop_reason=None,
+        kv_transfer_params=None,
+        ec_transfer_params=None,
+        spec_decode_metrics=None,
+        new_sampling_mask=None,
+        routed_experts=None,
+        finished=core_finished,
+    )
+    return processor, queue, output
+
+
+def run_audit(directory, *, profile="hust-legacy-publisher-v1"):
+    newer = is_ced_profile(profile)
+    hashes = CED_TERMINAL_HASHES if newer else SOURCE_HASHES
+    sources = load_sources(directory, hashes)
+    common = {
+        "RequestStatus": Status,
+        "FinishReason": NS(STOP="stop", ABORT="abort", ERROR="error"),
+        "OutputProcessorOutput": NS,
+        "EngineCoreRequestType": NS(ABORT="abort"),
+    }
+    scheduler_type = scheduler_class(sources, newer)
     core_type = source_class(
         sources, "core.py", "EngineCore", ("abort_requests",), common
     )
@@ -145,7 +239,8 @@ def run_audit(directory):
         sources,
         "output_processor.py",
         "OutputProcessor",
-        ("process_outputs", "_finish_request"),
+        ("process_outputs", "_finish_request")
+        + (("_update_admission_stats",) if newer else ()),
         common,
     )
     client_type = source_class(
@@ -174,43 +269,9 @@ def run_audit(directory):
     checks = {}
 
     def scheduler(requests, export=False, observer=None):
-        value = scheduler_type()
-        value.requests = {r.request_id: r for r in requests}
-        value.running = [r for r in requests if r.status == Status.RUNNING]
-        value.waiting = Waiting(r for r in requests if r.status != Status.RUNNING)
-        value.skipped_waiting = Waiting()
-        value.num_waiting_for_streaming_input = 0
-        value.finished_recving_kv_req_ids = set()
-        value.failed_recving_kv_req_ids = set()
-        value._inflight_prefills = set()
-        value._connector_finished = lambda request: (False, None)
-        value.encoder_cache_manager = NS(free=lambda request: None)
-        value.finished_req_ids = set()
-        value.finished_req_ids_dict = defaultdict(set) if export else None
-        value._cancel_kv_cache_compression_transaction = lambda *args: None
-        value._pending_kv_cache_compression_block_table_updates = None
-        value.defer_block_free = True
-        value.processed_step_seq = 0
-        value.sched_step_seq = 1
-        value.deferred_frees = deque()
-        value.freed = []
-        value.kv_cache_manager = NS(
-            free=lambda request: value.freed.append(request.request_id),
-            pop_blocks_for_free=lambda request: [request.request_id],
-            block_pool=NS(free_blocks=lambda blocks: value.freed.extend(blocks)),
+        return scheduler_fixture(
+            scheduler_type, requests, export=export, observer=observer
         )
-        if observer is not None:
-            original_cleanup = value._free_request
-
-            def observed_cleanup(request, delay_free_blocks=False):
-                result = original_cleanup(request, delay_free_blocks=delay_free_blocks)
-                observer.observe_core_end(request.request_id)
-                return result
-
-            # Only this synthetic object is wrapped; no imported HUST class,
-            # registry, file or running engine is modified.
-            value._free_request = observed_cleanup
-        return value
 
     # Normal completion enters _free_request after the scheduler's stop branch.
     # Stop detection and the surrounding update_from_output loop are not executed.
@@ -303,7 +364,7 @@ def run_audit(directory):
     # EngineCore.abort_requests above does not invoke it. Do not conflate them.
     proc = proc_type()
     proc.output_queue = Queue()
-    proc._send_abort_outputs([("admin", 0)])
+    proc._send_abort_outputs([Request("admin")] if newer else [("admin", 0)])
     client_index, batch = proc.output_queue.get_nowait()
     checks["admin_abort_helper_emits_explicit_output"] = (
         client_index == 0
@@ -323,7 +384,8 @@ def run_audit(directory):
         sched = scheduler([Request("all", status)], export=True)
         result = sched.finish_requests(None, Status.FINISHED_ABORTED)
         checks[f"finish_all_{status.name.lower()}"] = (
-            result == [("all", 0)]
+            ([(r.request_id, r.client_index) for r in result] if newer else result)
+            == [("all", 0)]
             and not sched.requests
             and not sched.running
             and not sched.waiting
@@ -332,37 +394,8 @@ def run_audit(directory):
 
     # Exercise the complete front-end method with an explicitly fake detokenizer.
     for stop_string, core_finished in ((True, False), (False, True)):
-        queue = Queue()
-        processor = processor_type()
-        state = NS(
-            request_id="child",
-            external_req_id="parent",
-            parent_req=None,
-            is_prefilling=False,
-            streaming_input=False,
-            queue=queue,
-            detokenizer=NS(
-                update=lambda *args, stop=stop_string: "STOP" if stop else None
-            ),
-            logprobs_processor=NS(update_from_output=lambda output: None),
-            make_request_output=lambda tokens, pool, reason, stop, kv: NS(
-                finished=reason is not None
-            ),
-        )
-        processor.request_states = {"child": state}
-        processor.external_req_ids = {"parent": {"child"}}
-        processor._update_stats_from_output = lambda *args: None
-        processor._update_stats_from_finished = lambda *args: None
-        processor.tracing_enabled = False
-        output = NS(
-            request_id="child",
-            new_token_ids=[1],
-            pooling_output=None,
-            finish_reason="stop" if core_finished else None,
-            stop_reason=None,
-            kv_transfer_params=None,
-            routed_experts=None,
-            finished=core_finished,
+        processor, queue, output = output_fixture(
+            processor_type, stop_string=stop_string, core_finished=core_finished
         )
         result = processor.process_outputs([output])
         name = "stop_string" if stop_string else "core_finished"
@@ -378,11 +411,52 @@ def run_audit(directory):
             not later.request_outputs and not later.reqs_to_abort and queue.empty()
         )
 
+    if newer:
+        socket_client_type = source_class(
+            sources,
+            "core_client.py",
+            "AsyncMPClient",
+            ("_ensure_output_queue_task", "get_output_async"),
+            {
+                "asyncio": asyncio,
+                "weakref": weakref,
+                "EngineDeadError": type("EngineDeadError", (Exception,), {}),
+            },
+        )
+
+        async def cancel_output_task():
+            client = socket_client_type()
+
+            async def receive(**kwargs):
+                await asyncio.Future()
+
+            client.resources = NS(
+                output_queue_task=None, output_socket=NS(recv_multipart=receive)
+            )
+            client.outputs_queue = asyncio.Queue()
+            client.utility_results = {}
+            client.decoder = NS()
+            client._format_exception = lambda error: error
+            client._ensure_output_queue_task()
+            await asyncio.sleep(0)
+            client.resources.output_queue_task.cancel()
+            await client.resources.output_queue_task
+            try:
+                await asyncio.wait_for(client.get_output_async(), timeout=1)
+            except Exception as error:
+                return type(error).__name__ == "EngineDeadError"
+            return False
+
+        checks["cancelled_output_task_reports_engine_dead"] = asyncio.run(
+            cancel_output_task()
+        )
+
     return {
         "schema_version": 1,
         "status": "pass" if all(checks.values()) else "fail",
-        "source_commit": CORE_COMMIT,
-        "source_sha256": SOURCE_HASHES,
+        "source_commit": CED_COMMIT if newer else CORE_COMMIT,
+        "profile_id": profile,
+        "source_sha256": hashes,
         "scope": "hash-pinned source methods with synthetic CPU collaborators",
         "checks": checks,
         "engine_started": False,
@@ -402,11 +476,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-directory", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--profile", default="hust-legacy-publisher-v1")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("output already exists; preserve previous evidence")
     try:
-        report = run_audit(args.source_directory)
+        report = (
+            run_audit(args.source_directory)
+            if args.profile == "hust-legacy-publisher-v1"
+            else run_audit(args.source_directory, profile=args.profile)
+        )
     except (OSError, ValueError) as error:
         parser.error(str(error))
     args.output.parent.mkdir(parents=True, exist_ok=True)

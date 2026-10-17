@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-14：新版完整family、原核心清理、journal/ACK与同一账本已CPU组合；部分提交、后端准入拒绝和核心清理失败不得结清，通用Ended与业务结果仍分别提供。方法审计中的业务结果/健康/时钟/IPC为替身，公开schema未变，实际跨进程观测协议未冻结。候选安装接缝见[现场计划](planning/cedb477-terminal-boundaries.md)。
+
 2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
 
 2026-10-13 进程恢复补充：工具账本的排他打开覆盖创建/重放/事务/关闭，锁文件不删除；规范化本地路径限定单 owner，不声明多主机或别名隔离。CPU supervisor 另行验证旧 Router 进程组结束后才开启下一次交接；账本锁本身不提供发送 fencing。新 clock/请求命名空间不复用，旧尝试保留原身份和负债；旧观察可对账但不能授予新许可。真实服务状态尚由 fixture 提供，component-v0.1 及生产 ABI 不变。

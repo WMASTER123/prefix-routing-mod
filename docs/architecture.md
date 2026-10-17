@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-14：新版固定入口与终态方法已在CPU上组合到原实验账本，复用共用fixture而不增加在线组件。实际hook安装、核心/前端跨进程投递与在线KV目录仍未完成。当前接缝和性能实验提前安排见[现场接线计划](planning/cedb477-terminal-boundaries.md)；源码审计不是生产ABI冻结。
+
 2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
 
 2026-10-13 进程恢复收尾：CPU supervisor 复用同一 Router/接收器/账本，验证实际旧 Router 退出后保留旧债的新 runtime 与再次重启额度约束。工具日志增加本地 OS owner 排他锁；它不充当 dispatcher 停止或真实服务身份凭据。没有增加生产服务/组件，安装与真实后端链路按[后续清单](planning/hust-first-real-chain.md)验收；本轮状态见[ADR](decisions/2026-10-13-router-process-recovery.md)。

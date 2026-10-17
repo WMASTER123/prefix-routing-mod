@@ -1,5 +1,7 @@
 # Prefix Routing MOD
 
+2026-10-14：新版HUST入口/终态→原账本的固定源码CPU组合和独立CI门槛已补充；实际后端观测安装和跨进程链路仍待验收，见[当前接线计划](docs/planning/cedb477-terminal-boundaries.md)。
+
 2026-10-13：新增 HUST 固定版本 profile、`backend-doctor` 和共用 KV 规范化入口；迁移至 ced6857 / b47795c 的步骤与能力缺口见[版本适配](docs/planning/hust-version-adapters.md)。环境和协议子集不代表生产 Router 或性能验收，MOD 仍 import_only。
 
 主要面向华为 Ascend NPU 上 vLLM / Ascend 同模型多副本服务的前缀路由综合套件。目标是在固定 NPU 与 Host 资源下提高同时满足 TTFT、生成停顿和完成率要求的服务容量，优先复用成熟路由宿主和索引；设备执行假设须在目标平台验证。
