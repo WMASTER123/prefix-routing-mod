@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
+
 2026-10-13 进程恢复补充：工具账本的排他打开覆盖创建/重放/事务/关闭，锁文件不删除；规范化本地路径限定单 owner，不声明多主机或别名隔离。CPU supervisor 另行验证旧 Router 进程组结束后才开启下一次交接；账本锁本身不提供发送 fencing。新 clock/请求命名空间不复用，旧尝试保留原身份和负债；旧观察可对账但不能授予新许可。真实服务状态尚由 fixture 提供，component-v0.1 及生产 ABI 不变。
 
 2026-10-13 入口/恢复增量：一个 HTTP attempt 关联全部 rendered prompt × sampling child；实际 external/internal ID 从调用处捕获，全部组成功提交才封口。参考账本保留每 attempt 的原时钟；旧传输观察仍按旧时钟验证，可靠 ENDED 的新接收确认可使用当前 runtime 时钟，不跨时钟比较数值。新 runtime 必须是从未用过的时钟、同实例的新鲜观测和进位控制版本，计数必须保留旧负债；旧 dispatcher 停止证明目前是 CPU 调用方前置条件，不是自动完成的生产 fencing。异步 reserve 仅提交成功返回新许可，重复申请不重新许可；普通拒绝不关闭旧工作的观察通道。见[ADR](decisions/2026-10-13-entry-recovery.md)。基础公开 schema 未变，这些仍为 tools/experiments 接缝。

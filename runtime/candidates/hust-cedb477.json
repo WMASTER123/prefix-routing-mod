@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "profile_id": "hust-cedb477-native-v1",
+  "python": "3.12.13",
+  "machine": "aarch64",
+  "uv": "0.12.23",
+  "locks": {
+    "hust-cedb477-py312-aarch64.txt": "eaf9ee2626590bc9fd6c94ae679010e32feaabc8979245265401f24f8da295fe",
+    "hust-cedb477-extra.txt": "93eda8c203eff19e828ccc1cfcf6e56884d07181da1303cc66c69ab6eccc3091"
+  },
+  "wheels": {
+    "vllm-0.30.0+empty-cp312-cp312-linux_aarch64.whl": "98493f7052a47187de0506afaa6b530c1b510393d07995606218375460dc2170",
+    "vllm_ascend-0.25.1rc2.dev766+hust.20260903.4.gb47795c63-cp312-cp312-linux_aarch64.whl": "2e9673dde020b2b34d801aeb491bd8acefa2919487933a663dbd38bb00a48b57",
+    "triton_ascend-3.6.0+git27efffea-cp312-cp312-linux_aarch64.whl": "5b6de6792843b8210b296c0cf32facc5f19c5f76e9275b9aad12ddc8857bf269",
+    "flash_linear_attention_npu_a2-26.9.1+deva4a7958-py3-none-manylinux_2_34_aarch64.whl": "7c3d3d07419a9cb1a17ca0d683d4d5de82d69c6523ada96396c9d6d0317e583a",
+    "arctic_inference-0.1.1-cp312-cp312-linux_aarch64.whl": "eea0d5b5da8f823423cfabe0455bf41f976322245ff437d2e5cd4079c5d54dbe"
+  },
+  "indexes": ["https://pypi.org/simple", "https://download.pytorch.org/whl/cpu", "https://mirrors.huaweicloud.com/ascend/repos/pypi"],
+  "cann_acl_path": "/usr/local/Ascend/cann-9.1.0/python/site-packages/acl",
+  "cann_acl_sha256": "34303ba302bde3cd44dd5bd7bc01fb216cbc5123e7db797a9834c9fa58e3f185",
+  "scope": "owner-local-wheel-rebuild-eager-candidate",
+  "artifact_distribution_public": false
+}

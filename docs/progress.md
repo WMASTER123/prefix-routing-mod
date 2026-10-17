@@ -1,5 +1,17 @@
 # 进度与下一步
 
+## 当前执行：HUST 版本映射与新版实机子集（2026-10-14）
+
+用户选定 Core ced6857 / Ascend b47795c，在 codex/hust-cedb477-adapter 基于41117eb推进。M7已有集中版本/能力映射、安装接口检查与共用原生KV规范化；旧publisher常量和旧工具复用同一映射/实现。新协议无权威epoch/token snapshot，旧hook不在新版启用，未新增Router或索引。
+
+审查代码28b81a1：Windows490+4 skips、Linux494、两端integration各3、干净wheel/default-off/profile资源通过。188包新隔离环境与全新脚本重建通过；两张910B2顺序逐卡Qwen14B/FP16/eager、0→384后端缓存复用、2 live/2 replay batches和6块规范化通过。捕获事件离线送入原索引得到[0,3,3]，不是在线目录。首次nullable usage探针失败及主动停服后的EngineDeadError日志均保留，见[本轮证据](../evidence/hust-version-adapters-2026-10-14.md)。
+
+三份中文规划和架构/接口/兼容/恢复入口同步新目标。当前8核配额/64GiB/两张NPU，模型已清理；两张足够后续双TP1。下一步先核验新版真实入口和可靠终态接同一账本，再补共同水位publisher与在线目录。图/并发取消/长期GC/MOD启停、双副本和SLO容量未过；MOD仍import_only，生产ABI未冻结，独立人工审查/合并待完成，新CI按实际head另验。
+
+下方旧固定源码、当时机器和下一步仅适用于各段日期；当前优先本段和[迁移入口](planning/hust-version-adapters.md)。
+
+交付：[草稿PR18](https://github.com/WMASTER123/prefix-routing-mod/pull/18)，基于未合并PR17。本机/GitHub/服务器代码文档同步，原报告/日志双端归档SHA一致。1761f57的Python3.11/3.12 CPU、integration、build/wheel CI已核验success；后续记录提交以对应head另查。独立人工审查/合并待完成。
+
 ## 当前执行：实际 Router 进程恢复与审查收尾（2026-10-13）
 
 在 codex/router-recovery-faults 基于 2177297 推进。同一工具账本增加 OS 排他 owner 锁，新 Router 使用新的 clock/请求命名空间。实际 Router 与独立接收进程的六阶段组合通过：提交后丢准入 ACK/取消等待均零扩展发送，恢复保留 1 笔旧债并允许剩余额度，再重启保留 2 笔占用且不额外发送；旧观察重复幂等。恢复前实际确认旧 Router 及其进程组退出，取消组另覆盖接收器异常终止；这不是任意并发 kill 或真实后端自动恢复。

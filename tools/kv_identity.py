@@ -1,16 +1,6 @@
 """Bounded request/event correspondence checks, without a residency index."""
 
-import hashlib
-
-
-def local_block_digest(tokens):
-    """Mirror the pinned Router's plain-text local key (u32 little endian)."""
-    digest = hashlib.sha256()
-    for token in tokens:
-        if type(token) is not int or not 0 <= token < 2**32:
-            raise ValueError("Invalid token ID")
-        digest.update(token.to_bytes(4, "little"))
-    return digest.digest()
+from prefix_routing_mod.adapters.kv import local_block_digest
 
 
 def check_stored_chain(event, request_tokens, anchors, *, hash_function=None):

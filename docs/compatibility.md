@@ -1,11 +1,15 @@
 # 支持与候选矩阵
 
+2026-10-13 当前迁移覆盖：用户选定 Core ced6857 / Ascend b47795c；新版本 profile、原生 KV 规范化和独立制品恢复见[版本适配入口](planning/hust-version-adapters.md)。以下固定旧源码、旧 publisher/终态 hook 和历史验收仅属于原提交；不能据此在新版本启用。新版可靠终态、共同水位恢复与在线目录接线仍须逐项验收。
+
 最新方向：用户已纠正目标为指定 HUST 仓库。两份完整 Git 历史已校验并在新服务器隔离构建，见[候选决策](decisions/2026-10-11-hust-runtime-candidate.md)。HUST 的 NumPy 依赖联合解析成功；预装上游的冲突不能移植为 HUST 结论。下面早期预装记录保留历史范围，不代表新候选已验收。
 
 历史上游复核：预装组合有 eager 局部功能证据，但依赖检查失败，不能冻结为一致基线；详见[旧环境证据](../evidence/runtime-gate-2026-10-11.md)。当前 HUST 已独立恢复并实际验证，旧冲突和旧事件成绩均不继承。恢复和功能子集通过仍不等于完整兼容或发布支持。
 
 | 对象 | 固定版本 / 范围 | 当前状态 |
 |---|---|---|
+| 当前HUST迁移目标 | Core ced6857/vllm0.30.0+empty；Ascend b47795c/vllm-ascend0.25.1rc2.dev766+hust.20260903.4.gb47795c63 | 新环境/全新重建、逐卡Qwen14B FP16/eager/原生事件子集通过；热接入/完整恢复/终态/MOD/性能未验收 |
+| 当前研发分配 | aarch64/8核配额/64GiB/2×910B2 | 枚举0/1顺序单实例通过，未同时双副本；模型已清理 |
 | 元数据工具 | Python >=3.11；CI 目标 3.11/3.12 | Windows 3.12、Linux x86_64 3.11/3.12、Linux aarch64 3.12 基础检查通过 |
 | Extension template | 0d537f3193f217b21cf730a32f0a2629b631244b | 已用于生成，非完整发布认证 |
 | Extension Manager | 00d1b940dc6ce8d60e2cd28708b80d80e9c33a09 | 仅静态发现、schema、拒绝启用检查 |
@@ -13,7 +17,7 @@
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
 | vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 check/release、启动、completion/chat JSON/SSE 与关闭重试单次 503 通过；仅 CPU/mock 准入，未接 HUST、索引未在在线策略接线，见[最新证据](../evidence/router-cpu-admission-2026-10-12.md) |
-| 当前研发服务器 | aarch64 / Python 3.12.13 / 16 核配额 / 64 GiB RAM / 0 NPU | CPU 合同、隔离 Rust 构建及模拟；不能验收 NPU 能力 |
+| 历史CPU研发分配 | aarch64 / Python 3.12.13 / 16 核配额 / 64 GiB RAM / 0 NPU | 当时用于CPU合同/隔离Rust构建/模拟，不代表当前分配 |
 | 历史 NPU 分配 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 当时物理枚举 0/1/2/7，身份/hook 主回归仅逻辑 0；更早四卡结果分别记录，不继承到当前分配 |
 | HUST 环境恢复入口 | 两个固定源码 + 186 包及 builder 锁 | 全新目录 13 步通过，本机研发证据齐备、正式冻结待人工复核；不等于可移植镜像 |
 | 原生 KV 回归子集 | HUST IPC + 结构化 replay；1024 context / 1 GiB KV | 真实存储/自然移除/清空/重放子集通过；快照水位风险复现，完整恢复/身份未验收 |

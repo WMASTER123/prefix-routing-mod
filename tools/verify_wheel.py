@@ -54,6 +54,8 @@ def main() -> int:
             "from prefix_routing_mod.contracts import CONTRACT_VERSION, WorkerRef; "
             "assert CONTRACT_VERSION == 'component-v0.1'; "
             "assert WorkerRef('replica', 'instance').instance_epoch == 'instance'; "
+            "from prefix_routing_mod.adapters.profiles import get_profile; "
+            "assert not get_profile('hust-cedb477-native-v1').native_epoch; "
             "assert 'torch' not in sys.modules and 'vllm' not in sys.modules; "
             "print('Clean wheel: descriptor and bundled manifest verified')"
         )
