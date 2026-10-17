@@ -1,6 +1,6 @@
 # 测试与 CI
 
-2026-10-17 终态退役增量：Python 全量 585 passed/7 skipped，Ruff 检查与格式检查通过；累计 600 family、observe-only 拒绝、重复退役、旧 cursor 和丢准入许可均有 CPU 覆盖。head `3594171` 的 GitHub 三个 workflow/七个 job 全部 success，其中 Native index job 已在 Linux x86_64 编译并执行严格身份控制回归。真实单副本曾返回 commit→ACK→retire 通过，但报告未在平台回收服务器前归档；双副本首轮暴露严格身份解码缺字段，修复后 ARM 完整宿主测试链接被服务器回收中断。因此当前不能把修订后 ARM 二进制或双 NPU 写成通过，重跑清单见[终态退役记录](../evidence/terminal-retirement-2026-10-17.md)。
+2026-10-17 终态退役增量：Python 全量 585 passed/7 skipped，Ruff 检查与格式检查通过；累计 600 family、observe-only 拒绝、重复退役、旧 cursor 和丢准入许可均有 CPU 覆盖。head `3594171` 的 GitHub 三个 workflow/七个 job 全部 success，其中 Native index job 已在 Linux x86_64 编译并执行严格身份控制回归。真实单副本曾返回 commit→ACK→retire 通过，但报告未在服务器变得不可访问前归档；双副本首轮暴露严格身份解码缺字段，修复后 ARM 完整宿主测试链接因服务器 SSH 持续拒绝连接而中断。因此当前不能把修订后 ARM 二进制或双 NPU 写成通过，重跑清单见[终态退役记录](../evidence/terminal-retirement-2026-10-17.md)。
 
 2026-10-17 较早持久化增量：最终最小 SQLite feature 下 helper 57 项、Clippy 和 Python CPU 576/7 skipped、integration 3 项通过；代码 `3264050` 对应 5 项 GitHub 检查通过。新增真正子进程未提交退出、变化行回滚、行身份错配和整批损坏反例；固定 ARM 宿主新增显式 durable feature，真实接线与存储对照见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。以下按日期段落只描述当时范围；索引/完整宿主/真实 NPU 与 helper CI 不互相替代。
 

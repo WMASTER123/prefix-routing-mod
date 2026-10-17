@@ -21,9 +21,9 @@
 
 两张 910B2、固定 HUST Core `ced6857` / Ascend `b47795c`、Qwen2.5-14B-Instruct、TP1/eager。没有更换 CANN、驱动或全局 Python。
 
-1. 单副本有限链曾在服务器目录 `artifacts/terminal-retire-real-20261017` 返回 `status=pass`，completion 与 cancel 都经过真实 Core，临时报告字段 `durable_terminal_retirement_verified=true`；Router/后端均返回 0，结束时无 NPU 残留。该目录在平台回收服务器前未复制到本地或生成校验归档，因此只记为诊断观察，必须重跑后才算可复验证据。
+1. 单副本有限链曾在服务器目录 `artifacts/terminal-retire-real-20261017` 返回 `status=pass`，completion 与 cancel 都经过真实 Core，临时报告字段 `durable_terminal_retirement_verified=true`；Router/后端均返回 0，结束时无 NPU 残留。该目录在服务器变得不可访问前未复制到本地或生成校验归档，因此只记为诊断观察，必须重跑后才算可复验证据。
 2. 双副本 `artifacts/t10-retention-regression` 在请求前失败：旧 Rust `SourceIdentity` 使用 `deny_unknown_fields`，无法接受 Python identity 新增字段，Router exit 101；两个模型均曾真实加载并被清理。这是接口调用方遗漏，不是 NPU、模型或 KV 数据面失败。
-3. `ed05639` 同步字段后，审查再补 `9340f16` 的资源关系/单调反例。项目隔离 Rust 1.99 release 测试正在 thin-LTO 链接时，SSH `36.140.239.91:32093` 开始持续拒绝连接，服务器被平台回收。没有取得测试完成输出，也没有构建修订后的新 ARM 二进制；旧 `d92e856...` 不包含完整修复，禁止复用为最终验证制品。
+3. `ed05639` 同步字段后，审查再补 `9340f16` 的资源关系/单调反例。项目隔离 Rust 1.99 release 测试正在 thin-LTO 链接时，SSH `36.140.239.91:32093` 开始持续拒绝连接；只能确认实例已不可访问，不能从客户端断定是回收、重启还是其他平台故障。没有取得测试完成输出，也没有构建修订后的新 ARM 二进制；旧 `d92e856...` 不包含完整修复，禁止复用为最终验证制品。
 
 ## 下一台服务器的固定重跑顺序
 
