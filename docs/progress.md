@@ -40,7 +40,7 @@
 
 ## 测试与审查
 
-代码 `3264050` 的既有成绩仍按原证据保留。当前退役增量本地 Python 全量为 585 通过/7 跳过，Ruff 检查与格式检查通过；修订后的 Rust source-control 测试、ARM 完整宿主构建和双 NPU 结果尚未取得，等待新服务器重跑。离线 wheel 的干净安装验证通过；当前服务 venv 的全量 `pip check` 有平台预装工具依赖缺口，不能计为本轮通过。
+代码 `3264050` 的既有成绩仍按原证据保留。当前退役增量本地 Python 全量为 585 通过/7 跳过，Ruff 检查与格式检查通过；head `3594171` 的 GitHub CPU 3.11/3.12、HUST source-methods、Native helper 和包含严格身份控制的 Native index 共 7 个 job 均通过。修订后的 ARM 完整宿主构建和双 NPU 结果尚未取得，等待新服务器重跑。离线 wheel 的干净安装验证通过；当前服务 venv 的全量 `pip check` 有平台预装工具依赖缺口，不能计为本轮通过。
 
 PR23 已合并到阶段分支 `codex/online-kv-directory`；后续为[草稿 PR24](https://github.com/WMASTER123/prefix-routing-mod/pull/24)，`main` 尚不包含全部研发进展。实机代码输入为 `3264050`，文档收尾提交另记。真实新持久链 `artifacts/t9` 通过且三个自有进程正常退出、两卡无残留。没有自动合并，也没有正式发布。
 
