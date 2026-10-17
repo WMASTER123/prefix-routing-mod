@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-13 实验通道 transport-observer-cpu-v1：源回调序号与账本生命周期序号分开；只接收 SEND_STARTED/NOT_SENT/OUTCOME_UNKNOWN，拒绝从该通道注入 backend ENDED。每个源观察的完整载荷和账本转换在同一事务持久化，重复冲突拒绝；终态先结清后的迟到关闭只记录观察。接收历史发送不等于许可新发送，重启后的 admission_ready 不自动打开。此协议是有界 loopback CPU 实验，未冻结生产 ABI；见[ADR](decisions/2026-10-13-online-transport.md)。
+
 2026-10-12 候选接线补充：关联 begin 预留全部 child 额度，bind 使用实际内部 ID，全部成功提交后 seal，abandon 保留未决；已知 child 全部结束不替代 seal。事务接收实验提交成功才返回 applied，单一 owner 分配生命周期序号，重复终态使用原已提交载荷。重建历史时钟只用于重放校验，新派发暂停，未实现生产时钟交接。KV pool 的恢复结果/增量/控制确认都携带当前 ticket；lease 从控制请求发送时点计算，实时帧不续期。M7 必须在解码前限额并提供完整必需元数据，不能将缺失 parent/LoRA 当 None。新增对象均为实验端口，component-v0.1 未变；见[范围](planning/capture-recovery-wire-boundaries.md)。
 
 2026-10-12 终态原型使用独立 `Binding(worker, instance, observer)` 与显式完整 family，所有子请求结束才产生一条正证据；不从缺失记录推断未接受，不从逻辑结束推断 KV/HBM free。M5 仍须统一生命周期序号和业务结果，observer 不能直接把通用 ended 伪装为 COMPLETED。进程内 journal/ACK/快照实验不改变生产协议，整进程恢复与 GC 未实现；见[候选边界](planning/terminal-observer-scope.md)。

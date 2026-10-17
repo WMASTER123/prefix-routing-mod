@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-13 新增真实 socket/独立接收进程回归和原生控制线程测试。原 helper CI 直接包含 online_bridge.rs，覆盖断连后原载荷重发、错误/超大确认、期限、留存上限和关闭派发；Python CPU CI 包含进程终止与重建。完整 Router 通过 tools.router_extension_probe 的显式 --online 手动验收，仍用合成 HTTP 后端与预先持久化的有限 fixture，不代表真实 HUST 终态或动态准入通过。结果见[证据](../evidence/online-transport-2026-10-13.md)。
+
 2026-10-12 新增独立子进程在 SQLite commit 前/后强制退出的回归、原生 family fanout 的方法审计，以及 wire 解码限额/必需字段测试。原生索引 CI 新增规范化 fixture→原索引的断言；fixture 来自固定 HUST codec 合成数据，CI 不启动 HUST。方法审计在目标 CPU 手动运行；msgspec 0.22.0 仅从既有隔离服务 venv 显式调用，不加入 Router 的运行依赖。逐条与有界批量提交都覆盖原子性/幂等/崩溃；没有生产 IPC、真实 NPU、持久化时钟交接或 GC 验收。
 
 2026-10-12 新增 `test_backend_terminal_audit.py` 的工具/hash/证据保护测试，以及 `test_terminal_observer_prototype.py` 的进程内在线账本与故障测试，自动进入原 CPU CI。固定源码方法审计另手动执行 `python -m tools.audit_backend_terminal --source-directory <四个固定源码文件所在目录> --output <新的报告路径>`；四文件先完整 hash 校验，不导入引擎。真实源码未纳入仓库/CI，不能将工具单测说成 CI 执行了 HUST。consumer 重建测试保留参考账本，未覆盖 kill -9/持久化、真实网络或 NPU。

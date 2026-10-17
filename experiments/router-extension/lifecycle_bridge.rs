@@ -44,14 +44,14 @@ pub struct WorkerRef {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LifecycleEvent {
-    event_id: String,
+    pub event_id: String,
     request_id: String,
-    attempt_id: String,
+    pub attempt_id: String,
     worker: WorkerRef,
-    sequence: u64,
+    pub sequence: u64,
     kind: &'static str,
     confirmation: &'static str,
-    clock_id: String,
+    pub clock_id: String,
     at_ns: u64,
     error_class: Option<&'static str>,
 }
@@ -162,6 +162,23 @@ impl LifecycleTrace {
         } else {
             Ok(self.events.clone())
         }
+    }
+
+    /// Copy at most two immutable observations while holding only the trace
+    /// lock. The delivery controller performs I/O after releasing this lock.
+    pub fn pending(&self, acknowledged: usize) -> Result<Vec<LifecycleEvent>, &'static str> {
+        if self.fault || acknowledged > self.events.len() {
+            return Err("invalid_lifecycle_cursor");
+        }
+        Ok(self.events[acknowledged..].to_vec())
+    }
+
+    pub fn identity(&self) -> &str {
+        &self.attempt_id
+    }
+
+    pub fn delivered(&self, acknowledged: usize) -> bool {
+        !self.fault && self.closed && acknowledged == self.events.len()
     }
 }
 

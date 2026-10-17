@@ -9,7 +9,7 @@ paused after reopening until a production clock/observation handover exists.
 import hashlib
 import json
 import sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from threading import RLock
 
@@ -219,6 +219,7 @@ class DurableLedger:
             meta["config_version"],
         )
         terminal_receipts = {}
+        transport_receipts = {}
         for expected, (sequence, payload) in enumerate(
             self.connection.execute("SELECT seq,payload FROM receipts ORDER BY seq"), 1
         ):
@@ -233,8 +234,16 @@ class DurableLedger:
                 if key in terminal_receipts:
                     raise ValueError("duplicate observer receipt")
                 terminal_receipts[key] = operation
+            if operation["kind"] == "transport":
+                source = event_from(operation["source"])
+                key = transport_key(source)
+                if key in transport_receipts:
+                    raise ValueError("duplicate transport receipt")
+                validate_transport_order(source, transport_receipts)
+                transport_receipts[key] = operation
         self.oracle = oracle
         self.terminal_receipts = terminal_receipts
+        self.transport_receipts = transport_receipts
         self.operation_count = count
         self.payload_bytes = size
 
@@ -268,6 +277,18 @@ class DurableLedger:
             return "applied"
         if operation.get("kind") == "event" and set(operation) == {"kind", "event"}:
             return oracle.apply(event_from(operation["event"]))
+        if operation.get("kind") == "transport" and set(operation) == {
+            "kind",
+            "source",
+            "event",
+        }:
+            source = event_from(operation["source"])
+            generated = transport_transition(oracle, source)
+            if operation["event"] != (asdict(generated) if generated else None):
+                raise ValueError("transport transition differs from stored receipt")
+            if generated is not None and oracle.apply(generated) != "applied":
+                raise LifecycleRejected("transport transition was not applied")
+            return "applied"  # The observation itself is durably acknowledged.
         if operation.get("kind") == "terminal" and set(operation) == {
             "kind",
             "event",
@@ -361,6 +382,33 @@ class DurableLedger:
                 context.now_ns,
             )
             return self._receive({"kind": "event", "event": asdict(generated)})
+
+    def receive_transport(self, source):
+        """Receive old or live observations; NEVER authorize a new HTTP send.
+
+        The source sequence belongs to the callback stream. Only this owner
+        assigns ledger sequence numbers; terminal evidence may interleave.
+        """
+        with self.lock:
+            if self.failed:
+                raise RuntimeError("receipt owner failed; reopen for recovery")
+            validate_transport(source)
+            key = transport_key(source)
+            prior = self.transport_receipts.get(key)
+            if prior is not None:
+                if prior["source"] != asdict(source):
+                    raise LifecycleRejected("transport source reused with new payload")
+                return "duplicate"
+            validate_transport_order(source, self.transport_receipts)
+            generated = transport_transition(self.oracle, source)
+            operation = {
+                "kind": "transport",
+                "source": asdict(source),
+                "event": asdict(generated) if generated else None,
+            }
+            result = self._receive(operation)
+            self.transport_receipts[key] = operation
+            return result
 
     def confirm_end(self, record, kind, context, *, error_class=None):
         """One owner allocates lifecycle sequence; repeat uses committed payload.
@@ -491,4 +539,73 @@ def terminal_key(record):
         record.binding.instance_epoch,
         record.binding.observer_epoch,
         record.sequence,
+    )
+
+
+def transport_key(source):
+    return (source.clock_id, source.attempt_id, source.sequence)
+
+
+def validate_transport(source):
+    if not isinstance(source, LifecycleEvent):
+        raise ValueError("transport observation must be a lifecycle record")
+    expected = {
+        EventKind.SEND_STARTED: (1, BackendConfirmation.NONE, (None,)),
+        EventKind.NOT_SENT: (1, BackendConfirmation.NOT_ACCEPTED, (None,)),
+        EventKind.OUTCOME_UNKNOWN: (
+            2,
+            BackendConfirmation.NONE,
+            ("transport_eof", "transport_error", "transport_dropped"),
+        ),
+    }.get(source.kind)
+    if expected is None or (
+        source.sequence != expected[0]
+        or source.confirmation != expected[1]
+        or source.error_class not in expected[2]
+    ):
+        raise LifecycleRejected("invalid transport observation")
+
+
+def validate_transport_order(source, receipts):
+    validate_transport(source)
+    if source.sequence == 2:
+        previous = receipts.get((source.clock_id, source.attempt_id, 1))
+        if previous is None:
+            raise LifecycleRejected("transport source gap")
+        first = event_from(previous["source"])
+        if (
+            first.kind is not EventKind.SEND_STARTED
+            or first.request_id != source.request_id
+            or first.worker != source.worker
+            or first.at_ns > source.at_ns
+        ):
+            raise LifecycleRejected("transport source order/identity mismatch")
+
+
+def transport_transition(oracle, source):
+    validate_transport(source)
+    attempt = oracle._attempts.get(source.attempt_id)
+    if attempt is None:
+        raise LifecycleRejected("transport cannot invent a reservation")
+    decision = attempt.decision
+    worker = oracle._workers.get(decision.worker.worker_id)
+    if (
+        source.request_id != decision.request_id
+        or source.worker != decision.worker
+        or worker is None
+        or worker.ref != source.worker
+        or source.clock_id != worker.clock_id
+        or source.at_ns < attempt.created_at_ns
+    ):
+        raise LifecycleRejected("transport binding mismatch")
+    if attempt.state == "released" or (
+        source.kind is EventKind.OUTCOME_UNKNOWN and attempt.state == "uncertain"
+    ):
+        if source.kind is not EventKind.OUTCOME_UNKNOWN:
+            raise LifecycleRejected("conflicting late send/unsent observation")
+        return None
+    return replace(
+        source,
+        event_id=hashlib.sha256(encode(asdict(source)).encode()).hexdigest(),
+        sequence=len(attempt.events) + 1,
     )
