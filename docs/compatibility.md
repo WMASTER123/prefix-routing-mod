@@ -1,5 +1,7 @@
 # 支持与候选矩阵
 
+最新方向：用户已纠正目标为指定 HUST 仓库。两份完整 Git 历史已校验并在新服务器隔离构建，见[候选决策](decisions/2026-10-11-hust-runtime-candidate.md)。HUST 的 NumPy 依赖联合解析成功；预装上游的冲突不能移植为 HUST 结论。下面早期预装记录保留历史范围，不代表新候选已验收。
+
 2026-10-11 补充：预装组合虽然有 eager 局部功能证据，但依赖一致性检查失败，**不能冻结为可复现运行基线**。Triton Ascend 3.2.2 与 OpenCV 存在 NumPy 约束冲突，已查官方候选尚未消除；详见[环境门槛证据](../evidence/runtime-gate-2026-10-11.md)。原生事件正向诊断已有成功样本，完整恢复仍未通过；不继承到尚未建成的隔离环境。
 
 | 对象 | 固定版本 / 范围 | 当前状态 |
@@ -7,18 +9,18 @@
 | 元数据工具 | Python >=3.11；CI 目标 3.11/3.12 | Windows 3.12、Linux x86_64 3.11/3.12、Linux aarch64 3.12 基础检查通过 |
 | Extension template | 0d537f3193f217b21cf730a32f0a2629b631244b | 已用于生成，非完整发布认证 |
 | Extension Manager | 00d1b940dc6ce8d60e2cd28708b80d80e9c33a09 | 仅静态发现、schema、拒绝启用检查 |
-| vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 用户指定候选，未验证运行 |
-| vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 用户指定候选，未验证与上行匹配 |
+| vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 与下行隔离构建；本机 TP=1 Qwen14B BF16 eager 局部验证及 venv 重建通过 |
+| vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
 | vLLM Router | 待 P1a 固定 commit | 第一评估候选，没有接入 |
 | 新服务器 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 已盘点；空闲不证明独占 |
 | 预装系统推理栈 | CANN 9.1.0、torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0 | 用户选择优先首验；Qwen2.5-14B TP=1 BF16 eager 功能探测通过；未覆盖图/完整事件恢复/路由性能 |
 
-不同包的元数据版本号不能证明或否定兼容，必须核查依赖约束和实际调用。本轮不安装候选大规模引擎。运行声明需要：提交、制品 hash、环境指纹、配置、测试结果、局限和回退。版本变化重新验收。
+不同包的元数据版本号不能证明或否定兼容，必须核查依赖约束和实际调用。最新本轮仅在私有隔离环境构建 HUST 候选，没有改全局引擎。运行声明需要：提交、制品 hash、环境指纹、配置、测试结果、局限和回退。版本变化重新验收。
 
 不支持的产品能力：当前没有线上 Router、精确路由、生产 KV 事件订阅/恢复、引擎 observer、Manager 运行激活或性能声明。探测工具能采样原生事件，不等同生产订阅器。
 
-首验源码提交：vLLM `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；vLLM-Ascend `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。仅为本机固定源码/环境结果，不据包名外推官方发行制品认证。归档 HUST 组合后续独立验证；详见[决策](decisions/2026-10-11-qwen14b-first.md)和[证据](../evidence/qwen14b-preflight-2026-10-11.md)。
+早期预装首验源码提交：vLLM `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；vLLM-Ascend `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。仅为旧环境结果；HUST 已独立构建验证，见[最新证据](../evidence/hust-runtime-candidate-2026-10-11.md)，不据包名外推官方发行制品认证。
 
 ## Ascend 支持声明的粒度
 

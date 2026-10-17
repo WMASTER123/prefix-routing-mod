@@ -5,6 +5,8 @@
 | 文档 | 用途 |
 |---|---|
 | [进度](progress.md) | 实际完成状态、证据和接下来可执行任务 |
+| [下一阶段执行计划](planning/next-execution-plan.md) | HUST 验证后的 W1–W4、交付物、退出条件、用卡与审查 |
+| [运行门槛](planning/runtime-event-gates.md) | G1–G4 准入及真实事件恢复的判定条件 |
 | [架构](architecture.md) | 产品范围、八项职责、复用边界和链路 |
 | [Ascend 设计约束](ascend-design.md) | NPU 知识应用、三道复用门槛、档案与 N0–N6 验收 |
 | [接口契约](contracts.md) | 七类对象、所有权、代次及生命周期语义 v0 |
