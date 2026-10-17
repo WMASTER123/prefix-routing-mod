@@ -28,6 +28,7 @@ uv run --frozen python tools/verify_wheel.py
 ## 文档与实施
 
 - [文档总览](docs/README.md)：架构、契约、规范、测试、运维、决策。
+- [项目接手指南](docs/项目接手指南_2026-10-17.md)：框架、代码入口、当前进展、三人工作包、接口边界与协作规范。
 - [当前进度与后续工作](docs/progress.md)：完成证据、未决项、P0–P7 门槛。
 - [当前详细实现计划](docs/planning/前缀路由MOD_整体实现计划与工程验收.md)：三人协作、NPU 校准和完整阶段验收。
 - [Ascend 设计约束](docs/ascend-design.md)：复用边界、能力/执行档案、N0–N6 实验；不宣称已经实现。
