@@ -71,6 +71,8 @@ python tools/audit_runtime.py --output artifacts/runtime-audit-new.json
 
 ## 环境准入交付物
 
+本轮新分配上的[启动诊断](../evidence/g2-recovery-regression-2026-10-11.md)复现冷 bytecode 的 torch 导入 22.36 秒超过原 20 秒 preflight。重复探测提供显式私有 bytecode 复用入口，先导入/来源审计，再启动；见[操作步骤](operations.md)。这属于环境准备条件，不能把缓存准备后的成绩称为原始冷启动，也不代表已经修改恢复入口或完成可移植镜像。
+
 1. 固定 Python/aarch64、驱动/固件、CANN/NNAL、核心包与源码提交；本机已核验固件 9.0.0.0.205；镜像 digest 等未知来源明确记录。
 2. 完整服务依赖解析、锁文件、下载来源与制品 SHA256；本地构建还需源码提交、构建依赖和构建日志。只有包版本列表不能叫可复现锁。
 3. 全新隔离环境安装并 `pip check` 通过；不得忽略冲突、伪造版本或默改 wheel 元数据后称为官方制品。
