@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Finite public HTTP qualification with real M1, native KV and HUST terminals.
 //! Run only against the two owned, initially cold HUST services in its config.
+#![allow(unexpected_cfgs)] // Optional candidate feature is absent in the original host manifest.
 use futures_util::StreamExt;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -31,6 +32,9 @@ mod prefix_extension {
 }
 #[path = "../src/routers/http/runtime_directory.rs"]
 mod directory;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/durable_runtime.rs"]
+mod durable_runtime;
 #[path = "../src/routers/http/hust_source_control.rs"]
 mod hust_source_control;
 #[path = "../src/routers/http/native_kv_owner.rs"]
@@ -49,6 +53,15 @@ mod runtime_cache_port;
 mod runtime_owner;
 #[path = "../src/routers/http/runtime_provider.rs"]
 mod runtime_provider;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/runtime_store.rs"]
+mod runtime_store;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/sqlite_row_runtime_store.rs"]
+mod sqlite_row_runtime_store;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/sqlite_runtime_store.rs"]
+mod sqlite_runtime_store;
 
 use directory::{Binding, Limits};
 use hust_source_control::{HustSourceControl, SourceBinding, SourceIdentity};
@@ -58,6 +71,18 @@ use request_feature_port::{CompletionFeaturePort, TokenizerPort};
 use runtime_cache_port::{InProcessCache, MonotonicClock, PartitionSpec};
 use runtime_owner::{CachePort, RuntimeOwner, TerminalResult, WorkerControl};
 use runtime_provider::{FeaturePort, RuntimeProvider};
+#[cfg(feature = "durable-candidate")]
+use {
+    durable_runtime::{DurableRuntime, TerminalRecord},
+    runtime_store::{RuntimeStore, TerminalCursor},
+    sqlite_row_runtime_store::SqliteRowRuntimeStore,
+    sqlite_runtime_store::DEFAULT_MAX_SNAPSHOT_BYTES,
+};
+
+#[cfg(feature = "durable-candidate")]
+type DurableOption = Option<Arc<DurableRuntime>>;
+#[cfg(not(feature = "durable-candidate"))]
+type DurableOption = Option<()>;
 
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -77,6 +102,8 @@ struct Config {
     tokenizer_sha256: String,
     identity: String,
     model: String,
+    #[serde(default)]
+    durable_store: Option<PathBuf>,
 }
 
 struct LocalTokenizer(Tokenizer);
@@ -206,7 +233,7 @@ impl Drop for Session {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 struct Ended {
     binding: SourceBinding,
     sequence: u64,
@@ -239,8 +266,8 @@ fn terminal_poll(
     worker: Worker,
     source: SourceIdentity,
     after: u64,
-    owner: Arc<RuntimeOwner>,
-) -> (u64, BTreeMap<String, usize>) {
+    acknowledge: u64,
+) -> (TerminalReply, BTreeMap<String, usize>) {
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -252,7 +279,7 @@ fn terminal_poll(
     url.query_pairs_mut()
         .append_pair("observer_epoch", &source.binding.observer_epoch)
         .append_pair("after", &after.to_string())
-        .append_pair("acknowledge", "0");
+        .append_pair("acknowledge", &acknowledge.to_string());
     let response = client
         .get(url)
         .header("X-Prefix-Routing-Control", worker.token)
@@ -316,10 +343,128 @@ fn terminal_poll(
         }
     }
     let mut statuses = BTreeMap::new();
-    for item in reply.records {
+    for item in &reply.records {
         for (status, count) in &families[item.attempt_id.as_str()].core_statuses {
             *statuses.entry(status.clone()).or_insert(0) += count;
         }
+    }
+    (reply, statuses)
+}
+
+async fn reconcile(
+    config: &Config,
+    sessions: &[Session],
+    cursors: &mut [u64],
+    owner: &Arc<RuntimeOwner>,
+    durable: &DurableOption,
+) -> BTreeMap<String, usize> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut statuses = BTreeMap::new();
+    while owner.active_len().unwrap() != 0 {
+        for index in 0..config.workers.len() {
+            let worker = config.workers[index].clone();
+            let source = sessions[index].identity.clone();
+            let after = cursors[index];
+            let (reply, observed) =
+                tokio::task::spawn_blocking(move || terminal_poll(worker, source, after, 0))
+                    .await
+                    .unwrap();
+            #[cfg(feature = "durable-candidate")]
+            if let Some(runtime) = durable {
+                if !reply.records.is_empty() {
+                    let source = &sessions[index].identity.binding;
+                    let cursor = TerminalCursor {
+                        source_id: config.workers[index].worker_id.clone(),
+                        worker_url: config.workers[index].origin.clone(),
+                        instance_epoch: source.instance_epoch.clone(),
+                        observer_epoch: source.observer_epoch.clone(),
+                        through: after,
+                    };
+                    let records: Vec<_> = reply
+                        .records
+                        .iter()
+                        .map(|item| TerminalRecord {
+                            sequence: item.sequence,
+                            attempt_id: item.attempt_id.clone(),
+                            worker_url: config.workers[index].origin.clone(),
+                            instance_epoch: source.instance_epoch.clone(),
+                        })
+                        .collect();
+                    let through = runtime
+                        .apply_terminal_batch(cursor.clone(), &records)
+                        .await
+                        .unwrap();
+                    assert_eq!(through, reply.boundary);
+                    let worker = config.workers[index].clone();
+                    let source = sessions[index].identity.clone();
+                    let (replayed, _) = tokio::task::spawn_blocking(move || {
+                        terminal_poll(worker, source, after, 0)
+                    })
+                    .await
+                    .unwrap();
+                    assert_eq!(replayed.records, reply.records);
+                    // A lost ACK must not authorize applying the old batch again.
+                    assert_eq!(
+                        runtime.apply_terminal_batch(cursor, &records).await,
+                        Err("terminal_cursor_conflict")
+                    );
+                    assert_eq!(
+                        runtime
+                            .terminal_cursor(&config.workers[index].worker_id)
+                            .unwrap()
+                            .unwrap()
+                            .through,
+                        through
+                    );
+                    let worker = config.workers[index].clone();
+                    let source = sessions[index].identity.clone();
+                    let (ack, _) = tokio::task::spawn_blocking(move || {
+                        terminal_poll(worker, source, through, through)
+                    })
+                    .await
+                    .unwrap();
+                    assert_eq!(ack.boundary, through);
+                    assert!(ack.records.is_empty());
+                }
+            } else {
+                settle_volatile(
+                    owner,
+                    &config.workers[index],
+                    &sessions[index].identity,
+                    &reply,
+                );
+            }
+            #[cfg(not(feature = "durable-candidate"))]
+            {
+                let _ = durable;
+                settle_volatile(
+                    owner,
+                    &config.workers[index],
+                    &sessions[index].identity,
+                    &reply,
+                );
+            }
+            cursors[index] = reply.boundary;
+            for (status, count) in observed {
+                *statuses.entry(status).or_insert(0) += count;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "real terminal reconciliation timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    statuses
+}
+
+fn settle_volatile(
+    owner: &RuntimeOwner,
+    worker: &Worker,
+    source: &SourceIdentity,
+    reply: &TerminalReply,
+) {
+    for item in &reply.records {
         assert!(matches!(
             owner
                 .apply_terminal(
@@ -341,40 +486,6 @@ fn terminal_poll(
             TerminalResult::Duplicate
         );
     }
-    // Finite qualification: deliberately do not ACK without durable M3 storage.
-    (reply.boundary, statuses)
-}
-
-async fn reconcile(
-    config: &Config,
-    sessions: &[Session],
-    cursors: &mut [u64],
-    owner: &Arc<RuntimeOwner>,
-) -> BTreeMap<String, usize> {
-    let deadline = Instant::now() + Duration::from_secs(15);
-    let mut statuses = BTreeMap::new();
-    while owner.active_len().unwrap() != 0 {
-        for index in 0..config.workers.len() {
-            let worker = config.workers[index].clone();
-            let source = sessions[index].identity.clone();
-            let owner = owner.clone();
-            let after = cursors[index];
-            let (through, observed) =
-                tokio::task::spawn_blocking(move || terminal_poll(worker, source, after, owner))
-                    .await
-                    .unwrap();
-            cursors[index] = through;
-            for (status, count) in observed {
-                *statuses.entry(status).or_insert(0) += count;
-            }
-        }
-        assert!(
-            Instant::now() < deadline,
-            "real terminal reconciliation timed out"
-        );
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    statuses
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -448,6 +559,25 @@ async fn main() {
         )
         .unwrap(),
     );
+    #[cfg(feature = "durable-candidate")]
+    let durable = config.durable_store.as_ref().map(|path| {
+        assert!(!path.exists(), "candidate store must be newly created");
+        Arc::new(
+            DurableRuntime::create(
+                owner.clone(),
+                Arc::new(SqliteRowRuntimeStore::create(path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap()),
+            )
+            .unwrap(),
+        )
+    });
+    #[cfg(not(feature = "durable-candidate"))]
+    let durable = {
+        assert!(
+            config.durable_store.is_none(),
+            "binary lacks durable candidate feature"
+        );
+        None::<()>
+    };
     let urls: Vec<_> = config.workers.iter().map(|w| w.origin.clone()).collect();
     assert!(
         urls[0] < urls[1],
@@ -470,12 +600,29 @@ async fn main() {
         .unwrap();
     let context =
         Arc::new(AppContext::new(router_config, client.clone(), 16, None, vec![]).unwrap());
+    let snapshot: Arc<dyn runtime_provider::SnapshotPort>;
+    let admission: Arc<dyn runtime_provider::AdmissionPort>;
+    #[cfg(feature = "durable-candidate")]
+    {
+        if let Some(runtime) = &durable {
+            snapshot = runtime.clone();
+            admission = runtime.clone();
+        } else {
+            snapshot = owner.clone();
+            admission = owner.clone();
+        }
+    }
+    #[cfg(not(feature = "durable-candidate"))]
+    {
+        snapshot = owner.clone();
+        admission = owner.clone();
+    }
     context
         .policy_registry
         .install_http_extension(Arc::new(RuntimeProvider::new(
             features.clone(),
-            owner.clone(),
-            owner.clone(),
+            snapshot,
+            admission,
         )))
         .unwrap();
     let router = Arc::new(Router::new(urls, &context).await.unwrap());
@@ -550,9 +697,33 @@ async fn main() {
         let active = owner.checkpoint().unwrap().active;
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].worker_url, config.workers[expected_worker].origin);
+        #[cfg(feature = "durable-candidate")]
+        if let Some(path) = &config.durable_store {
+            let reopened =
+                Arc::new(SqliteRowRuntimeStore::open(path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap());
+            let persisted = reopened.load().unwrap();
+            assert_eq!(persisted.checkpoint.active.len(), 1);
+            assert_eq!(
+                persisted.checkpoint.active[0].attempt_id,
+                active[0].attempt_id
+            );
+            let paused = DurableRuntime::recover(
+                cache.clone(),
+                uuid::Uuid::new_v4().simple().to_string(),
+                reopened,
+                16,
+                16,
+            )
+            .unwrap();
+            assert!(!paused.admission_ready());
+            let debt = paused.owner().checkpoint().unwrap().active;
+            assert_eq!(debt.len(), 1);
+            assert_eq!(debt[0].attempt_id, active[0].attempt_id);
+            assert_eq!(debt[0].phase, runtime_owner::AttemptPhase::Uncertain);
+        }
         results
             .push(serde_json::json!({"worker": expected_worker, "cached_tokens": expected_cached}));
-        reconcile(&config, &sessions, &mut cursors, &owner).await;
+        reconcile(&config, &sessions, &mut cursors, &owner, &durable).await;
         assert_eq!(owner.active_len().unwrap(), 0);
     }
     let invalid = client.post(format!("{origin}/v1/completions"))
@@ -601,11 +772,45 @@ async fn main() {
     assert!(saw_text, "cancel must follow an actual generated output");
     drop(stream);
     assert_eq!(owner.active_len().unwrap(), 1);
-    let cancellation = reconcile(&config, &sessions, &mut cursors, &owner).await;
+    let cancellation = reconcile(&config, &sessions, &mut cursors, &owner, &durable).await;
     assert_eq!(cancellation.get("FINISHED_ABORTED"), Some(&1));
     // Graceful HTTP shutdown precedes source teardown; source stop invalidates M2.
     shutdown_tx.send(()).unwrap();
     http.await.unwrap();
+    let mut durable_verified = false;
+    #[cfg(feature = "durable-candidate")]
+    if let Some(path) = &config.durable_store {
+        let reopened =
+            Arc::new(SqliteRowRuntimeStore::open(path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap());
+        let stored = reopened.load().unwrap();
+        assert!(stored.checkpoint.active.is_empty());
+        for (index, worker) in config.workers.iter().enumerate() {
+            assert_eq!(
+                stored
+                    .terminal_cursors
+                    .iter()
+                    .find(|cursor| cursor.source_id == worker.worker_id)
+                    .unwrap()
+                    .through,
+                cursors[index]
+            );
+        }
+        let recovered = DurableRuntime::recover(
+            cache.clone(),
+            uuid::Uuid::new_v4().simple().to_string(),
+            reopened,
+            16,
+            16,
+        )
+        .unwrap();
+        assert!(!recovered.admission_ready());
+        assert_eq!(recovered.owner().active_len().unwrap(), 0);
+        durable_verified = true;
+    }
+    #[cfg(not(feature = "durable-candidate"))]
+    {
+        let _ = &mut durable_verified;
+    }
     for session in &mut sessions {
         session.stop();
     }
@@ -622,6 +827,6 @@ async fn main() {
     }
     println!(
         "{}",
-        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
+        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
     );
 }

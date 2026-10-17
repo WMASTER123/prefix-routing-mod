@@ -1,0 +1,13 @@
+diff --git a/Cargo.toml b/Cargo.toml
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -14,5 +14,9 @@
+ path = "src/main.rs"
+ 
++[features]
++durable-candidate = ["dep:rusqlite"]
++
+ [dependencies]
++rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"], optional = true }
+ clap = { version = "4", features = ["derive"] }
+ axum = { version = "0.8.4", features = ["macros", "ws", "tracing"] }

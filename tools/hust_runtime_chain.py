@@ -114,6 +114,8 @@ def run(args, output, report):
             "identity": identity,
             "model": MODEL,
         }
+        if args.durable_store:
+            config["durable_store"] = str(output / "runtime.sqlite")
         config_path = output / "private-runtime-config.json"
         with os.fdopen(
             os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w"
@@ -141,6 +143,11 @@ def run(args, output, report):
                     records.append(value)
         if len(records) != 1 or records[0].get("status") != "pass":
             raise ValueError("Missing complete public-chain report")
+        if (
+            bool(records[0].get("durable_commit_ack_and_paused_reopen_verified"))
+            != args.durable_store
+        ):
+            raise ValueError("Durable qualification result differs from requested mode")
         report.update(status="pass", chain=records[0])
     finally:
         if process is not None:
@@ -166,6 +173,11 @@ def main():
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--pycache-root", type=Path)
+    parser.add_argument(
+        "--durable-store",
+        action="store_true",
+        help="Require durable-candidate binary and a new private SQLite store",
+    )
     parser.add_argument("--port", type=int, default=18170)
     args = parser.parse_args()
     if os.name != "posix" or not 0 < args.port < 65535:

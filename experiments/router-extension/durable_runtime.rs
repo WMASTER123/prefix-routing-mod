@@ -334,6 +334,23 @@ impl DurableRuntime {
                 return Err("invalid_terminal_sequence");
             }
         }
+        let checkpoint = self.owner.checkpoint().map_err(|_| "owner_unavailable")?;
+        for record in records {
+            match checkpoint
+                .active
+                .iter()
+                .find(|attempt| attempt.attempt_id == record.attempt_id)
+            {
+                Some(attempt)
+                    if attempt.worker_url == record.worker_url
+                        && attempt.instance_epoch == record.instance_epoch => {}
+                None if checkpoint.retired.contains(&record.attempt_id) => {}
+                _ => {
+                    self.fail_closed();
+                    return Err("unknown_or_conflicting_terminal_attempt");
+                }
+            }
+        }
         let mut mutation = MutationFence::armed(self);
         for record in records {
             match self.owner.apply_terminal(

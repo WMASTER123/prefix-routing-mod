@@ -5,6 +5,7 @@ on:
       - experiments/router-extension/**
       - .github/workflows/router-extension.yml
       - tools/stage_router_runtime.sh
+      - tools/stage_durable_router_probe.sh
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,6 +23,7 @@ jobs:
       - name: Check shared helper and deterministic transport regressions
         run: |
           bash -n tools/stage_router_runtime.sh
+          bash -n tools/stage_durable_router_probe.sh
           cargo +1.99.0 fmt --manifest-path experiments/router-extension/checks/Cargo.toml --check
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/live_terminal_chain.rs
           rustfmt +1.99.0 --edition 2021 --config skip_children=true --check experiments/router-extension/runtime_provider_probe.rs
