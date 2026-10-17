@@ -1,6 +1,8 @@
 # 测试与 CI
 
-2026-10-17 当前增量：最终最小 SQLite feature 下 helper 57 项、Clippy 和 Python CPU 576/7 skipped、integration 3 项通过；代码 `3264050` 对应 5 项 GitHub 检查通过。新增真正子进程未提交退出、变化行回滚、行身份错配和整批损坏反例；固定 ARM 宿主新增显式 durable feature，真实接线与存储对照见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。以下按日期段落只描述当时范围；索引/完整宿主/真实 NPU 与 helper CI 不互相替代。
+2026-10-17 终态退役增量：Python 全量 585 passed/7 skipped，Ruff 检查与格式检查通过；累计 600 family、observe-only 拒绝、重复退役、旧 cursor 和丢准入许可均有 CPU 覆盖。真实单副本曾返回 commit→ACK→retire 通过，但报告未在平台回收服务器前归档；双副本首轮暴露严格身份解码缺字段，修复后 ARM 测试链接被服务器回收中断。因此当前不能把 Rust source-control、修订后二进制或双 NPU 写成通过，重跑清单见[终态退役记录](../evidence/terminal-retirement-2026-10-17.md)。
+
+2026-10-17 较早持久化增量：最终最小 SQLite feature 下 helper 57 项、Clippy 和 Python CPU 576/7 skipped、integration 3 项通过；代码 `3264050` 对应 5 项 GitHub 检查通过。新增真正子进程未提交退出、变化行回滚、行身份错配和整批损坏反例；固定 ARM 宿主新增显式 durable feature，真实接线与存储对照见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。以下按日期段落只描述当时范围；索引/完整宿主/真实 NPU 与 helper CI 不互相替代。
 
 2026-10-16 持久提交增量：独立 helper crate 直接编译 Rust `DurableRuntime`/SQLite store，release 44 项与 clippy `-D warnings` 通过，覆盖许可前提交、提交结果不确定、终态/cursor 原子性、恢复暂停、takeover fencing、缺失/损坏/超预算。CI workflow 已纳入相同 crate 和 probe 格式检查；完整 Router Cargo 未增加依赖。手动本地开销及限制见[证据](../evidence/durable-runtime-candidate-2026-10-16.md)，不能视为 aarch64、整机断电、真实 ACK/GC 或性能资格。
 
