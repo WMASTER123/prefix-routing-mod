@@ -51,6 +51,7 @@ impl SourceIdentity {
             && self.core_pid > 0
             && self.frontend_pid != self.core_pid
             && self.family_count <= 64
+            && self.family_count <= self.reserved_children
             && self.reserved_children <= 256
             && self.acknowledged <= self.frontend_boundary
             && self.retired_through <= self.acknowledged
@@ -170,6 +171,9 @@ impl SourceControl for HustSourceControl {
             || current.acknowledged < self.identity.acknowledged
             || current.retired_through < self.identity.retired_through
             || current.ownership_mode != self.identity.ownership_mode
+            || (current.retired_through == self.identity.retired_through
+                && (current.family_count < self.identity.family_count
+                    || current.reserved_children < self.identity.reserved_children))
         {
             return Err(OwnerFault::Source);
         }

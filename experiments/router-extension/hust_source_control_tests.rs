@@ -184,18 +184,14 @@ fn retirement_identity_fields_are_bounded_monotonic_and_mode_stable() {
         ("acknowledged", serde_json::json!(1)),
         ("retired_through", serde_json::json!(1)),
         ("ownership_mode", serde_json::json!("trust_prefix")),
+        ("family_count", serde_json::json!(1)),
     ];
     for (field, value) in invalid {
         let mut initial = body();
         initial[field] = value;
         let server = Server::new(vec![(200, initial.to_string())]);
         assert!(matches!(
-            HustSourceControl::connect_cold(
-                &server.origin,
-                TOKEN.into(),
-                "replica-a",
-                101
-            ),
+            HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101),
             Err(OwnerFault::Source)
         ));
     }
@@ -206,8 +202,26 @@ fn retirement_identity_fields_are_bounded_monotonic_and_mode_stable() {
     changed["ownership_mode"] = serde_json::json!("observe_only");
     let server = Server::new(vec![(200, first.to_string()), (200, changed.to_string())]);
     let mut control =
-        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101)
-            .unwrap();
+        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101).unwrap();
+    assert_eq!(
+        control.verify(&spec(&server.origin)),
+        Err(OwnerFault::Source)
+    );
+
+    let mut current = body();
+    current["family_count"] = serde_json::json!(1);
+    current["reserved_children"] = serde_json::json!(2);
+    let mut changed = current.clone();
+    changed["family_count"] = serde_json::json!(0);
+    changed["reserved_children"] = serde_json::json!(0);
+    let server = Server::new(vec![
+        (200, body().to_string()),
+        (200, current.to_string()),
+        (200, changed.to_string()),
+    ]);
+    let mut control =
+        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101).unwrap();
+    control.verify(&spec(&server.origin)).unwrap();
     assert_eq!(
         control.verify(&spec(&server.origin)),
         Err(OwnerFault::Source)
