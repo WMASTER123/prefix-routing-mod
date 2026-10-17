@@ -138,9 +138,29 @@ def test_two_replica_environment_has_explicit_worker_and_no_old_hook(
     assert env["ASCEND_RT_VISIBLE_DEVICES"] == "1"
     assert env["PREFIX_ROUTING_TERMINAL_WORKER"] == "replica-b"
     assert env["PREFIX_ROUTING_TERMINAL_TOKEN"] == "a" * 64
+    assert env["PREFIX_ROUTING_TERMINAL_OWNERSHIP"] == "observe_only"
     assert env["PYTHONPATH"] == str(tmp_path / "acl")
     assert "PREFIX_ROUTING_HUST_PUBLISHER" not in env
     assert "prefix_routing_terminal" in env["VLLM_PLUGINS"].split(",")
+
+
+def test_exclusive_router_ownership_is_explicit_and_validated(tmp_path):
+    env = service_environment(
+        0,
+        tmp_path,
+        tmp_path / "acl",
+        token="a" * 64,
+        ownership_mode="exclusive_router_v1",
+    )
+    assert env["PREFIX_ROUTING_TERMINAL_OWNERSHIP"] == "exclusive_router_v1"
+    with pytest.raises(ValueError, match="ownership mode"):
+        service_environment(
+            0,
+            tmp_path,
+            tmp_path / "acl",
+            token="a" * 64,
+            ownership_mode="trust_prefix",
+        )
 
 
 def test_terminal_entry_points_must_be_complete_before_model_start():

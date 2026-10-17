@@ -113,6 +113,66 @@ def test_identity_is_independent_of_retired_frontend_history_and_ack():
         asyncio.run(state.identity())
 
 
+def test_external_family_cannot_retire_in_observe_only_mode():
+    core, state = frontend()
+    state.journal.register("prm-external", ("child",))
+    core.source.observe("child")
+    reply = asyncio.run(state.read(None, 0, 0))
+    epoch = reply["binding"]["observer_epoch"]
+    asyncio.run(state.read(epoch, 1, 1))
+    with pytest.raises(RuntimeError, match="exclusive Router"):
+        asyncio.run(state.retire(epoch, 1, 1))
+    assert "prm-external" in state.journal.families
+
+
+def test_exclusive_router_family_retires_after_exact_durable_cursor():
+    core, state = frontend()
+    state.ownership_mode = "exclusive_router_v1"
+    state.journal.begin_managed("prm-owned", 1)
+    state.journal.bind_child("prm-owned", "opaque-child")
+    state.journal.seal("prm-owned")
+    core.source.observe("opaque-child", "FINISHED_STOPPED")
+    reply = asyncio.run(state.read(None, 0, 0))
+    epoch = reply["binding"]["observer_epoch"]
+    asyncio.run(state.read(epoch, 1, 1))
+
+    with pytest.raises(ValueError, match="cursor"):
+        asyncio.run(state.retire(epoch, 1, 0))
+    retired = asyncio.run(state.retire(epoch, 1, 1))
+    assert retired["retired"] == 1
+    assert retired["family_count"] == retired["reserved_children"] == 0
+    assert not state.child_statuses
+    repeated = asyncio.run(state.retire(epoch, 1, 1))
+    assert repeated["retired"] == 0 and repeated["retired_through"] == 1
+
+    # A consumer that lost a cursor older than the retired boundary must stop.
+    with pytest.raises(RuntimeError, match="window exhausted"):
+        asyncio.run(state.read(epoch, 0, 0))
+
+
+def test_exclusive_router_reclaims_cumulatively_without_lifetime_cap():
+    core, state = frontend()
+    state.ownership_mode = "exclusive_router_v1"
+    epoch = state.journal.binding.observer_epoch
+    for number in range(600):
+        attempt = f"prm-{number}"
+        child = f"opaque-{number}"
+        state.journal.begin_managed(attempt, 1)
+        state.journal.bind_child(attempt, child)
+        state.journal.seal(attempt)
+        core.source.observe(child, "FINISHED_STOPPED")
+        reply = asyncio.run(state.read(epoch, number, number))
+        assert reply["boundary"] == number + 1
+        asyncio.run(state.read(epoch, number + 1, number + 1))
+        retired = asyncio.run(state.retire(epoch, number + 1, number + 1))
+        assert retired["family_count"] == 0
+        assert retired["reserved_children"] == 0
+        assert not core.source.records and not core.source.seen
+
+    assert state.journal.next_sequence == 601
+    assert state.journal.retired_through == 600
+
+
 @pytest.mark.parametrize(
     "failure",
     [

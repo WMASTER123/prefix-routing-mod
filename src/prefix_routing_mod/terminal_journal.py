@@ -55,6 +55,7 @@ class Family:
     ended: set[str] = field(default_factory=set)
     record: Ended | None = None
     managed: bool = False
+    scoped_children: bool = False
 
 
 class TerminalJournal:
@@ -107,7 +108,16 @@ class TerminalJournal:
 
     def begin(self, attempt_id, expected):
         """Reserve the COMPLETE child budget before any simulated submission."""
-        self._begin(attempt_id, expected, managed=False)
+        self._begin(attempt_id, expected, managed=False, scoped_children=False)
+
+    def begin_managed(self, attempt_id, expected):
+        """Reserve a trusted, externally allocated attempt for later retirement.
+
+        The caller must establish ownership before using this method.  A string
+        prefix is not proof.  The HUST adapter exposes this only in its explicit
+        exclusive-Router mode, with the backend bound to loopback.
+        """
+        self._begin(attempt_id, expected, managed=True, scoped_children=False)
 
     def begin_owned(self, expected):
         """Allocate a non-reused attempt ID within this observer epoch.
@@ -121,7 +131,7 @@ class TerminalJournal:
         self.next_attempt += 1
         prefix = sha256(self.binding.observer_epoch.encode()).hexdigest()
         attempt_id = f"{prefix}:{counter}"
-        self._begin(attempt_id, expected, managed=True)
+        self._begin(attempt_id, expected, managed=True, scoped_children=True)
         return attempt_id
 
     def allocate_child(self, attempt_id):
@@ -131,7 +141,7 @@ class TerminalJournal:
             raise ValueError("owner-managed family required")
         return f"{attempt_id}/{len(family.children) + 1}"
 
-    def _begin(self, attempt_id, expected, *, managed):
+    def _begin(self, attempt_id, expected, *, managed, scoped_children):
         _identifier(attempt_id)
         if type(expected) is not int or not 0 < expected <= self.max_children:
             raise ValueError("bounded positive expected child count required")
@@ -144,7 +154,12 @@ class TerminalJournal:
             or self.reserved_children + expected > self.max_children
         ):
             raise RuntimeError("retention full; do not dispatch")
-        self.families[attempt_id] = Family(frozenset(), expected, managed=managed)
+        self.families[attempt_id] = Family(
+            frozenset(),
+            expected,
+            managed=managed,
+            scoped_children=scoped_children,
+        )
         self.reserved_children += expected
 
     def bind_child(self, attempt_id, child):
@@ -154,7 +169,7 @@ class TerminalJournal:
             raise RuntimeError("capture unavailable or already closed")
         if child in self.owners or len(family.children) >= family.expected:
             raise ValueError("duplicate child or expected count exceeded")
-        if family.managed and not child.startswith(attempt_id + "/"):
+        if family.scoped_children and not child.startswith(attempt_id + "/"):
             raise ValueError("managed child must use owner-scoped identity")
         family.children = family.children | {child}
         self.owners[child] = attempt_id

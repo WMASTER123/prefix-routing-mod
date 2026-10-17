@@ -93,7 +93,14 @@ def require_terminal_plugins(discovery=None):
 
 
 def service_environment(
-    device, output, acl, *, pycache_root=None, token=None, worker="replica-a"
+    device,
+    output,
+    acl,
+    *,
+    pycache_root=None,
+    token=None,
+    worker="replica-a",
+    ownership_mode="observe_only",
 ):
     """Same explicit native qualification configuration for one or two replicas."""
     env = build_environment(device, output, pycache_root=pycache_root)
@@ -104,6 +111,9 @@ def service_environment(
         "PREFIX_ROUTING_HUST_PUBLISHER",
         "PREFIX_ROUTING_HUST_TERMINAL",
         "PREFIX_ROUTING_TERMINAL_TOKEN",
+        "PREFIX_ROUTING_TERMINAL_PREFIX",
+        "PREFIX_ROUTING_TERMINAL_WORKER",
+        "PREFIX_ROUTING_TERMINAL_OWNERSHIP",
     ):
         env.pop(name, None)
     env.update(
@@ -114,11 +124,14 @@ def service_environment(
         VLLM_USE_RUST_FRONTEND="0",
     )
     if token is not None:
+        if ownership_mode not in ("observe_only", "exclusive_router_v1"):
+            raise ValueError("Unsupported terminal ownership mode")
         env.update(
             PREFIX_ROUTING_HUST_TERMINAL="1",
             PREFIX_ROUTING_TERMINAL_TOKEN=token,
             PREFIX_ROUTING_TERMINAL_PREFIX="prm-",
             PREFIX_ROUTING_TERMINAL_WORKER=worker,
+            PREFIX_ROUTING_TERMINAL_OWNERSHIP=ownership_mode,
         )
         env["VLLM_PLUGINS"] += ",prefix_routing_terminal"
     return env
@@ -171,6 +184,11 @@ def run(args, output, report):
         acl,
         pycache_root=getattr(args, "pycache_root", None),
         token=terminal_token,
+        ownership_mode=(
+            "exclusive_router_v1"
+            if getattr(args, "router_binary", None) is not None
+            else "observe_only"
+        ),
     )
     origin = f"http://127.0.0.1:{args.port}"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

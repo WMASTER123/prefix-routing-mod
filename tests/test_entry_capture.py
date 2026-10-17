@@ -71,3 +71,31 @@ def test_unconsumed_second_generator_never_seals():
     entry.submitted("a")
     assert not entry.journal.families["attempt"].sealed
     assert entry.journal.snapshot(entry.journal.binding) == (0, ())
+
+
+def test_explicit_managed_capture_accepts_real_child_and_can_retire():
+    journal = TerminalJournal(
+        Binding("worker", "instance", "observer"),
+        max_families=1,
+        max_children=2,
+        max_events=1,
+    )
+    entry = EntryCapture(journal, "prm-router-attempt", (1,), managed=True)
+    entry.register_group("external-generated-id", 1)
+    entry.bind("external-generated-id", "opaque-hust-internal-id")
+    entry.submitted("external-generated-id")
+    assert journal.observe_core_end("opaque-hust-internal-id")
+    journal.acknowledge(journal.binding, 1)
+    assert journal.retire(journal.binding, 1, checkpointed_through=1) == 1
+    assert not journal.families and not journal.owners
+
+
+def test_managed_flag_must_be_explicit_boolean():
+    journal = TerminalJournal(
+        Binding("worker", "instance", "observer"),
+        max_families=1,
+        max_children=2,
+        max_events=1,
+    )
+    with pytest.raises(ValueError, match="boolean"):
+        EntryCapture(journal, "attempt", (1,), managed=1)

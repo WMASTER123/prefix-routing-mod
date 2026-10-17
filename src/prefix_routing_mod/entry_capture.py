@@ -19,7 +19,9 @@ class Group:
 class EntryCapture:
     """One attempt, finite retention; partial capture cannot emit ENDED."""
 
-    def __init__(self, journal: TerminalJournal, attempt_id, group_sizes):
+    def __init__(
+        self, journal: TerminalJournal, attempt_id, group_sizes, *, managed=False
+    ):
         _identifier(attempt_id)
         if (
             not isinstance(group_sizes, tuple)
@@ -28,7 +30,10 @@ class EntryCapture:
             or any(type(size) is not int or size <= 0 for size in group_sizes)
         ):
             raise ValueError("complete bounded group sizes required")
-        journal.begin(attempt_id, sum(group_sizes))
+        if type(managed) is not bool:
+            raise ValueError("managed must be boolean")
+        begin = journal.begin_managed if managed else journal.begin
+        begin(attempt_id, sum(group_sizes))
         self.journal = journal
         self.attempt_id = attempt_id
         self.group_sizes = group_sizes
