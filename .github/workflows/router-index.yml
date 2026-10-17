@@ -3,6 +3,13 @@ on:
   pull_request:
     paths:
       - experiments/router-index/**
+      - experiments/router-extension/runtime_cache_port.rs
+      - experiments/router-extension/native_kv_wire.rs
+      - experiments/router-extension/native_kv_owner.rs
+      - experiments/router-extension/native_kv_zmq.rs
+      - experiments/router-extension/native_kv_zmq_tests.rs
+      - experiments/router-extension/hust_source_control.rs
+      - experiments/router-extension/hust_source_control_tests.rs
       - .github/workflows/router-index.yml
       - tools/online_kv_directory.py
       - tools/probe_online_index.py
@@ -43,6 +50,8 @@ jobs:
           cargo +1.99.0 test --locked --release --manifest-path experiments/router-index/Cargo.toml
       - name: Bounded synthetic churn smoke
         run: cargo +1.99.0 run --locked --release --manifest-path experiments/router-index/Cargo.toml -- adapter 20000 512
+      - name: Real private IPC transport and original-index owner regressions
+        run: cargo +1.99.0 test --locked --release --features hust-control --manifest-path experiments/router-index/Cargo.toml
       - name: Running owner with two partitions and fail-closed subscription boundary
         env:
           PYTHONPATH: ${{ github.workspace }}/src

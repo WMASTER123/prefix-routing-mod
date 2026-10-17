@@ -1,5 +1,9 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-16：`durable_runtime.rs` 在现有 `RuntimeOwner` 外增加候选持久提交边界，`runtime_store.rs` 定义 owner/generation/cursor 契约，`sqlite_runtime_store.rs` 是只在独立 helper crate 锁定的 SQLite WAL/FULL 候选。发送许可在 commit 后返回；终态、checkpoint 和 cursor 同一替换事务；恢复默认暂停。同步 Lease 回调不做磁盘 I/O，阻塞存储调用在有界异步提交任务中执行。该候选尚未复制到固定 Router 宿主或修改其 Cargo；结果与限制见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
+
+2026-10-16：固定原版和三文件 patch 准入后，用 `bash tools/stage_router_runtime.sh --execute <artifacts下已审查的宿主目录>` 统一复制候选模块、原 Directory/Pool、共享 fixture 和 examples，避免漏文件或沿用旧副本。工具核验固定 Cargo 两文件、不改依赖，也不代替宿主 patch 审计。新 `hust_runtime_probe` 的真实公开入口/原生订阅验收见[计划](../../docs/planning/native-public-chain.md)；手动命令和通过范围以 evidence 为准。
+
 2026-10-13 进程恢复 probe：`python -m tools.router_recovery_probe --binary <本次构建的prefix_extension_probe> --output <新目录>` 使用同一持久工具账本，启动实际 Router/独立接收器，组合准入 ACK 丢失、等待取消、接收器异常终止、新 clock/命名空间交接、再重启额度拒绝和旧观察幂等。接收器故障注入时暂停新准入；恢复前 supervisor 必须实际停止其拥有的旧 Router 进程组。工具日志通过 OS 锁排他打开，锁不充当旧派发停止证明。真实服务身份仍为 fixture，参见[证据](../../evidence/router-process-recovery-2026-10-13.md)。原三文件 patch、Cargo 依赖和生产进程划分均未增加。
 
 2026-10-13 新增可选 `reserve_async`，默认 provider 仍调用原 reserve；宿主改为 await 后再建立 guard，实际发送前的 registry/control 检查保留。同步 Lease 回调仍不得进行磁盘/网络阻塞。可选 `request_id_header` 只作关联：宿主替换全部客户端 X-Request-Id，未提供 carrier 时保留原转发行为；它不是后端鉴权。固定 HUST 来源审计证明 header 优先于 body.request_id，真正引擎 hook 尚未安装。
@@ -28,7 +32,7 @@
 
 ## 实际增量
 
-`router-91b65ee.patch` 只改 policy registry、HTTP mod 和 typed HTTP Router 三个宿主文件；`prefix_extension.rs` 是本项目接口/guard，`prefix_extension_probe.rs` 是实际宿主库测试 example，不是新代理。没有引入 P/D、分层、program 调度或 Python/Rust 逐请求互调。
+`router-91b65ee.patch` 只改 policy registry、HTTP mod 和 typed HTTP Router 三个宿主文件；`prefix_extension.rs` 是本项目接口/guard，`runtime_provider.rs` 是M1/M2/M3本地端口与基础选点的候选组合层，`runtime_owner.rs` 是同进程M3状态/准入owner与M2只读端口，`runtime_cache_port.rs` 把同一进程的原索引Pool映射为该只读端口，`native_kv_wire.rs` 有界解码固定 HUST MessagePack 帧并维护序号连续性，`native_kv_owner.rs` 管理单分区的受控冷起点、控制确认和失败失信，`native_kv_zmq.rs` 提供显式创建、同机IPC限定的单SUB/DEALER传输。`prefix_extension_probe.rs` 是宿主边界/生命周期探针。`runtime_provider_probe.rs` 用固定Router的typed公开请求路径与真实HTTP转发验证候选组合（M1/M2/M3均为fixture）；`runtime_owner_probe.rs` 将真实owner装入相同路径但M1/M2仍是fixture；`runtime_cache_owner_probe.rs` 进一步接入原Router KV索引、分区身份/租约和全池预算，并编译上述M7候选；真实HUST socket与公开HTTP全链仍须联调。这些example都不是新代理。没有引入 P/D、分层、program 调度或 Python/Rust 逐请求互调。
 
 | 接缝 | 原型行为 | 尚未证明的生产能力 |
 |---|---|---|
@@ -48,12 +52,18 @@ provider 回调必须本地、有界、无阻塞、不抛 panic；完整决策�
 
 在项目 artifacts 下新建独立实验目录，从已校验原 tar 解包；应用前核对归档 SHA256 `eba53db252b19decc7d239a4b2f8c3b0e354db899793555cb1dad05f3c71156f`。该固定提交部分源码是 CRLF，patch 是 LF：在非 Git 的独立副本使用进程级 `GIT_CEILING_DIRECTORIES` 阻止父仓库发现，`git -c core.autocrlf=true -C "$task_prototype" apply --check --whitespace=error <绝对 patch 路径>`，通过后同设置 apply；不改全局 Git 或原版源码。随后仅对 registry.rs、router.rs 运行 `rustfmt --edition 2021 --config newline_style=Unix`，不对 mod.rs 递归格式化子模块。本轮已核对复放输出与实际编译输入逐字节一致，新增/删除行数为规范化后的逻辑增量。本原型 patch 不应应用到原版准入目录或 HUST。把 helper `prefix_extension.rs` 复制到 `src/routers/http/prefix_extension.rs`，把两个 probe `.rs` 复制到 `examples/` 下各自同名文件。共享已锁构建环境/target，运行：
 
-本轮还需将 `lifecycle_bridge.rs` 复制为实验宿主的 `examples/lifecycle_bridge.rs`，并使用更新后的 admission example；它不修改宿主模块注册或引擎。原生 helper 快速检查可独立执行 `cargo test --locked --manifest-path experiments/router-extension/checks/Cargo.toml`。
+本轮还需将 `runtime_provider.rs` 与 `runtime_owner.rs` 复制到宿主 `src/routers/http/`，将 `runtime_owner_probe.rs` 复制到宿主 `examples/`；M2组合探针还需把 `router-index/src/directory.rs`、`pool.rs` 分别复制为宿主 `src/routers/http/runtime_directory.rs`、`runtime_pool.rs`，并复制 `runtime_cache_port.rs`、`native_kv_wire.rs`、`native_kv_owner.rs`、`native_kv_zmq.rs` 与 `runtime_cache_owner_probe.rs`。这些复制只用于固定源码隔离构建，不修改宿主模块注册或引擎。另将 `lifecycle_bridge.rs` 复制为实验宿主的 `examples/lifecycle_bridge.rs`，并使用更新后的 admission example。原生 helper 快速检查可独立执行 `cargo test --locked --manifest-path experiments/router-extension/checks/Cargo.toml`。
+
+completion M1 的固定宿主对照还需把 `request_feature_port.rs` 复制到宿主 `src/routers/http/`，把 `request_feature_host_probe.rs` 复制到 `examples/`，构建该example后由 `tools/request_feature_host_probe.py` 使用固定HUST环境的同一模型目录对照token IDs与完整块摘要。它只证明字符串completion的tokenizer/M2键兼容，不证明公开请求链已经安装或chat/template可用。
 
 ```bash
-cargo build --release --locked --example prefix_extension_probe --example stream_extension_probe --manifest-path "$task_prototype/Cargo.toml"
+cargo build --release --locked --example prefix_extension_probe --example stream_extension_probe --example runtime_provider_probe --example runtime_owner_probe --example runtime_cache_owner_probe --manifest-path "$task_prototype/Cargo.toml"
 python -m tools.router_extension_probe --binary "$task_target/release/examples/prefix_extension_probe" --output artifacts/router-admission-20261011/prototype-http-new
 python -m tools.router_stream_probe --binary "$task_target/release/examples/stream_extension_probe" --output artifacts/router-admission-20261011/prototype-stream-new
+python -m tools.runtime_provider_probe --binary "$task_target/release/examples/runtime_provider_probe" --output artifacts/router-admission-20261011/runtime-provider-new
+python -m tools.request_feature_host_probe --binary "$task_target/release/examples/request_feature_host_probe" --model /data/shared_models/Qwen2.5-14B-Instruct --output artifacts/request-feature-host-new
+python -m tools.runtime_owner_probe --binary "$task_target/release/examples/runtime_owner_probe" --output artifacts/runtime-owner-new
+python -m tools.runtime_owner_probe --binary "$task_target/release/examples/runtime_cache_owner_probe" --output artifacts/runtime-cache-owner-new
 ```
 
 `task_prototype` 和 `task_target` 是操作员核验过的本项目私有绝对路径，输出目录须新建。首次 example 会启用原锁中的 dev-dependency 图，离线 cache 不全可能失败；保留失败，再允许原锁下载，不改依赖。Rustfmt 同样安装在私有工具链，不改系统 Rust。

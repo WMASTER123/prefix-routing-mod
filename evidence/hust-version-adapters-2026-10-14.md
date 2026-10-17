@@ -66,4 +66,3 @@ M7 增加集中 profile、安装接口检查及 backend-doctor；旧 publisher �
 | 离线原index结果 | 3cc032c3fa88c0d0ac047a17e0a4488119e658dc7e622fcbd56e3a799d604969 |
 
 尚未完成：新版真实入口/child/可靠ENDED对账、native超窗/热接管共同水位hook、在线M7→M2、长期GC/生产持久化、并发取消/图/持续运行、MOD启停、双副本强基线和SLO容量。MOD仍import_only，没有性能提升声明。下一步按 [新版接线指南](../docs/planning/hust-version-adapters.md)推进；HTTP结束/END_SEQ不能释放未知负债。
-

@@ -24,6 +24,19 @@ from tools.smoke_backend import build_command, build_environment, ipc_endpoint
 
 PROFILE = "hust-cedb477-native-v1"
 
+TERMINAL_ENTRY_POINTS = (
+    (
+        "vllm.general_plugins",
+        "prefix_routing_terminal",
+        "prefix_routing_mod.hust_terminal:load_plugin",
+    ),
+    (
+        "vllm.endpoint_plugins",
+        "prefix_routing_terminal",
+        "prefix_routing_mod.hust_terminal:endpoint_plugin",
+    ),
+)
+
 
 def command(executable, model, port, output):
     argv = build_command(executable, model, port, events_ipc=output / "events.sock")
@@ -58,6 +71,25 @@ def cached_tokens(usage):
     if value is not None and (type(value) is not int or value < 0):
         raise ValueError("Invalid backend cached-token count")
     return value
+
+
+def require_terminal_plugins(discovery=None):
+    """Reject a stale installed wheel before an expensive model startup."""
+    if discovery is None:
+        from importlib.metadata import entry_points
+
+        discovery = entry_points
+    verified = {}
+    for group, name, expected in TERMINAL_ENTRY_POINTS:
+        matches = list(discovery(group=group, name=name))
+        values = [entry.value for entry in matches]
+        if values != [expected]:
+            raise RuntimeError(
+                "Installed prefix-routing-mod terminal entry point mismatch: "
+                f"{group}/{name} expected {expected!r}, found {values!r}"
+            )
+        verified[group] = expected
+    return verified
 
 
 def service_environment(
@@ -131,6 +163,7 @@ def run(args, output, report):
     report["input_tokens"] = {"completion": len(tokens), "chat": len(chat_tokens)}
     terminal_token = None
     if getattr(args, "terminal_observer", False):
+        report["terminal_entry_points"] = require_terminal_plugins()
         terminal_token = secrets.token_hex(32)
     env = service_environment(
         args.device,

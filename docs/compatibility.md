@@ -16,15 +16,15 @@
 
 | 对象 | 固定版本 / 范围 | 当前状态 |
 |---|---|---|
-| 当前HUST迁移目标 | Core ced6857/vllm0.30.0+empty；Ascend b47795c/vllm-ascend0.25.1rc2.dev766+hust.20260903.4.gb47795c63 | 新环境/全新重建、逐卡Qwen14B FP16/eager/原生事件子集通过；热接入/完整恢复/终态/MOD/性能未验收 |
-| 当前研发分配 | aarch64/8核配额/64GiB/2×910B2 | 枚举0/1顺序单实例通过，未同时双副本；模型已清理 |
+| 当前HUST迁移目标 | Core ced6857/vllm0.30.0+empty；Ascend b47795c/vllm-ascend0.25.1rc2.dev766+hust.20260903.4.gb47795c63 | 新环境/全新重建；Qwen14B FP16/eager、真实终态、原生事件在线目录及双TP1同时运行子集通过；已热接管/完整恢复/公开HTTP全链/MOD激活/容量性能未验收 |
+| 当前研发分配 | aarch64/8核配额/64GiB/2×910B2 | 两个TP1副本同时运行、隔离、真实cached_tokens 0→384及单侧目录失效通过；实验后自有进程已清理 |
 | 元数据工具 | Python >=3.11；CI 目标 3.11/3.12 | Windows 3.12、Linux x86_64 3.11/3.12、Linux aarch64 3.12 基础检查通过 |
 | Extension template | 0d537f3193f217b21cf730a32f0a2629b631244b | 已用于生成，非完整发布认证 |
 | Extension Manager | 00d1b940dc6ce8d60e2cd28708b80d80e9c33a09 | 仅静态发现、schema、拒绝启用检查 |
 | vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 与下行隔离构建；本机 TP=1 Qwen14B BF16 eager 局部验证及 venv 重建通过 |
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
-| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 check/release、启动、completion/chat JSON/SSE 与关闭重试单次 503 通过；仅 CPU/mock 准入，未接 HUST、索引未在在线策略接线，见[最新证据](../evidence/router-cpu-admission-2026-10-12.md) |
+| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 构建及HTTP/SSE通过；typed Router→HUST真实终态有限闭环、原索引→HUST在线事件双副本子集分别通过。两条接缝尚未在公开HTTP入口合并为生产选点链，见[当前进度](progress.md) |
 | 历史CPU研发分配 | aarch64 / Python 3.12.13 / 16 核配额 / 64 GiB RAM / 0 NPU | 当时用于CPU合同/隔离Rust构建/模拟，不代表当前分配 |
 | 历史 NPU 分配 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 当时物理枚举 0/1/2/7，身份/hook 主回归仅逻辑 0；更早四卡结果分别记录，不继承到当前分配 |
 | HUST 环境恢复入口 | 两个固定源码 + 186 包及 builder 锁 | 全新目录 13 步通过，本机研发证据齐备、正式冻结待人工复核；不等于可移植镜像 |
@@ -36,7 +36,7 @@
 
 不同包的元数据版本号不能证明或否定兼容，必须核查依赖约束和实际调用。最新本轮仅在私有隔离环境构建 HUST 候选，没有改全局引擎。运行声明需要：提交、制品 hash、环境指纹、配置、测试结果、局限和回退。版本变化重新验收。
 
-不支持的产品能力：当前没有线上 Router、精确路由、生产 KV 事件订阅/恢复、Manager 运行激活或性能声明。实验 publisher hook 与测试 oracle 不等同已交付的生产订阅器/目录；不得扩展到未经测试的模型、TP、图模式、LoRA/多模态或跨节点。
+不支持的产品能力：当前没有可交付的公开HTTP精确路由全链、任意已热服务恢复、Manager运行激活或容量提升声明。已有受控空起点的真实在线KV订阅与目录资格，但实验owner/stdio和测试oracle不等同生产热路径；不得扩展到未经测试的模型、TP、图模式、LoRA/多模态或跨节点。
 
 早期预装首验源码提交：vLLM `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；vLLM-Ascend `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。仅为旧环境结果；HUST 已独立构建验证，见[最新证据](../evidence/hust-runtime-candidate-2026-10-11.md)，不据包名外推官方发行制品认证。
 

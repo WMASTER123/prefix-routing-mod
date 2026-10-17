@@ -1,5 +1,13 @@
 # 测试与 CI
 
+2026-10-16 持久提交增量：独立 helper crate 直接编译 Rust `DurableRuntime`/SQLite store，release 44 项与 clippy `-D warnings` 通过，覆盖许可前提交、提交结果不确定、终态/cursor 原子性、恢复暂停、takeover fencing、缺失/损坏/超预算。CI workflow 已纳入相同 crate 和 probe 格式检查；完整 Router Cargo 未增加依赖。手动本地开销及限制见[证据](../evidence/durable-runtime-candidate-2026-10-16.md)，不能视为 aarch64、整机断电、真实 ACK/GC 或性能资格。
+
+2026-10-16 公开链收尾：固定完整 Router example test 36 项、aarch64 原索引/IPC/控制 90 项、原 mock HTTP 组合回归和双 NPU 的真实公开 HTTP 链均通过。真实请求同时使用 M1/M2/M3/M4/M5/M7，包含 ABORTED 取消和最终零负债，见[证据](../evidence/native-public-chain-2026-10-16.md)。这些是手动实机/完整宿主验证，不能归给仅编译 helper/index 的 CI；生产持久恢复和长期 GC 仍待验证。
+
+2026-10-16 后续：`validate-index` 已加入 `--features hust-control`，直接编译共享传输/源控制并运行真实 Linux 私有 IPC 与 loopback HTTP 反例，当前本地 90 项 release 通过。此项替换“ZMQ 仅格式检查”的覆盖缺口；完整宿主和真实 HUST 仍独立验收。`tools/npu_stability_probe.py` 提供 1..1800 秒、两 TP1 的有限后端稳定性负载，真实生成 16/64/128 tokens，默认不安装终态 hook，只输出有界计数；不作为 Router 容量或终态长期回收证明。
+
+2026-10-16 较早回归直接编译 `native_kv_wire.rs` / `native_kv_owner.rs`，固定 HUST msgspec fixture 和 78 项 release 测试由 CI 通过。该组没有 socket；后来 SSH 中断时完整宿主测试未取得结果，原因未确认。本轮实际 IPC 增量见上段，真实 HUST 订阅仍独立验收，见[单owner证据](../evidence/native-kv-owner-zmq-2026-10-16.md)。
+
 现行完成范围以[progress](progress.md)和[在线目录证据](../evidence/online-kv-directory-2026-10-14.md)为准，下方日期段落保留历史。原索引CI新增常驻owner双分区/缺口/租约/身份/全池预算进程检查；NPU手动工具为`tools.hust_native_probe --index-binary ... --terminal-observer`和`tools.two_replica_kv_probe --execute ...`。前者可组合既有Router终态，后者验证两个TP1真实副本/共享索引/隔离；均不代替公开HTTP组件装配、容量或完整恢复。
 
 2026-10-14 用户确认：暂无固定业务SLO，双副本评测先报告多阈值容量曲线与输入/输出长度分组。阈值/分组在基础校准后、策略对比前统一冻结；同时报告各组P95/P99、完成/拒绝/超时率，不事后挑阈值或删失败样本。当前未新增性能结果，具体口径见[当前计划](planning/router-hust-terminal-chain.md)。

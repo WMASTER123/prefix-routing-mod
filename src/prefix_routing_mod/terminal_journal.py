@@ -7,6 +7,7 @@ authentication and device operations belong to callers, not this state machine.
 
 from collections import deque
 from dataclasses import dataclass, field
+from hashlib import sha256
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class Family:
     abandoned: bool = False
     ended: set[str] = field(default_factory=set)
     record: Ended | None = None
+    managed: bool = False
 
 
 class TerminalJournal:
@@ -79,8 +81,10 @@ class TerminalJournal:
         self.events = deque()
         self.next_sequence = 1
         self.acknowledged = 0
+        self.retired_through = 0
         self.failed = False
         self.reserved_children = 0
+        self.next_attempt = 1
 
     def register(self, attempt_id, children):
         """Require an explicit, complete tuple, never a lazy/unbounded iterable."""
@@ -103,6 +107,31 @@ class TerminalJournal:
 
     def begin(self, attempt_id, expected):
         """Reserve the COMPLETE child budget before any simulated submission."""
+        self._begin(attempt_id, expected, managed=False)
+
+    def begin_owned(self, expected):
+        """Allocate a non-reused attempt ID within this observer epoch.
+
+        Only owner-allocated families can be retired. Callers using arbitrary
+        external IDs retain the original finite behavior because the journal
+        cannot prove those IDs will never be reused. Production restart must
+        restore this counter or allocate a new observer epoch before dispatch.
+        """
+        counter = self.next_attempt
+        self.next_attempt += 1
+        prefix = sha256(self.binding.observer_epoch.encode()).hexdigest()
+        attempt_id = f"{prefix}:{counter}"
+        self._begin(attempt_id, expected, managed=True)
+        return attempt_id
+
+    def allocate_child(self, attempt_id):
+        """Return the next scoped correlation ID before binding a real child."""
+        family = self.families[attempt_id]
+        if not family.managed:
+            raise ValueError("owner-managed family required")
+        return f"{attempt_id}/{len(family.children) + 1}"
+
+    def _begin(self, attempt_id, expected, *, managed):
         _identifier(attempt_id)
         if type(expected) is not int or not 0 < expected <= self.max_children:
             raise ValueError("bounded positive expected child count required")
@@ -115,7 +144,7 @@ class TerminalJournal:
             or self.reserved_children + expected > self.max_children
         ):
             raise RuntimeError("retention full; do not dispatch")
-        self.families[attempt_id] = Family(frozenset(), expected)
+        self.families[attempt_id] = Family(frozenset(), expected, managed=managed)
         self.reserved_children += expected
 
     def bind_child(self, attempt_id, child):
@@ -125,6 +154,8 @@ class TerminalJournal:
             raise RuntimeError("capture unavailable or already closed")
         if child in self.owners or len(family.children) >= family.expected:
             raise ValueError("duplicate child or expected count exceeded")
+        if family.managed and not child.startswith(attempt_id + "/"):
+            raise ValueError("managed child must use owner-scoped identity")
         family.children = family.children | {child}
         self.owners[child] = attempt_id
 
@@ -191,14 +222,19 @@ class TerminalJournal:
         return tuple(event for event in self.events if event.sequence > after)
 
     def snapshot(self, binding):
-        self._validate_cursor(binding, 0)
+        return self.snapshot_after(binding, 0)
+
+    def snapshot_after(self, binding, after):
+        self._validate_cursor(binding, after)
+        if after < self.retired_through:
+            raise RuntimeError("snapshot window exhausted; restore durable cursor")
         # Only positive ended evidence. Absence is NOT a not-accepted proof.
         return self.next_sequence - 1, tuple(
             sorted(
                 (
                     family.record
                     for family in self.families.values()
-                    if family.record is not None
+                    if family.record is not None and family.record.sequence > after
                 ),
                 key=lambda record: record.sequence,
             )
@@ -211,6 +247,38 @@ class TerminalJournal:
         self.acknowledged = through
         while self.events and self.events[0].sequence <= through:
             self.events.popleft()
+
+    def retire(self, binding, through, *, checkpointed_through):
+        """Reclaim only durably consumed, owner-allocated terminal families.
+
+        checkpointed_through is supplied by the consumer after its own durable
+        cursor commit. A lost consumer cursor therefore cannot be hidden by
+        source-side reclamation.
+        """
+        self._validate_cursor(binding, through)
+        if (
+            type(checkpointed_through) is not int
+            or checkpointed_through != through
+            or through > self.acknowledged
+            or through < self.retired_through
+        ):
+            raise ValueError("durable consumer cursor must match acknowledged boundary")
+        retiring = [
+            (attempt_id, family)
+            for attempt_id, family in self.families.items()
+            if family.record is not None and family.record.sequence <= through
+        ]
+        if any(not family.managed for _, family in retiring):
+            raise RuntimeError("external attempt identity cannot be retired safely")
+        for attempt_id, family in retiring:
+            for child in family.children:
+                if self.owners.get(child) != attempt_id:
+                    raise RuntimeError("terminal ownership changed before retirement")
+                del self.owners[child]
+            self.reserved_children -= family.expected
+            del self.families[attempt_id]
+        self.retired_through = through
+        return len(retiring)
 
     def _validate_cursor(self, binding, cursor):
         if self.failed:
@@ -237,11 +305,14 @@ class OnlineConsumer:
 
     def recover(self, journal):
         self.requires_recovery = True
-        boundary, records = journal.snapshot(self.binding)
+        if self.cursor == 0 and journal.retired_through == 0:
+            boundary, records = journal.snapshot(self.binding)
+        else:
+            boundary, records = journal.snapshot_after(self.binding, self.cursor)
         if boundary < self.cursor:
             raise ValueError("snapshot regressed")
-        self._validate_records(records, 0)
-        if len(records) != boundary:
+        self._validate_records(records, self.cursor)
+        if len(records) != boundary - self.cursor:
             raise ValueError("incomplete snapshot")
         for record in records:
             self.apply_terminal(record)

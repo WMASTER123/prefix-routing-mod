@@ -39,6 +39,10 @@
 
 幂等失效修正后，24d78d3重新通过62项原生测试、5组进程检查和双TP1实机`r2`。最终binary SHA df695e2e670d298ef7910a3a8e4c2778446e20753e2f7f2ae338e63df1828993；`r2/report.json` SHA e43a8cde896b3ac9f073305d6d78a1682a3f878af33ad8b60e64e4a281043ca1。两侧仍实际cached_tokens0→384，一侧订阅退出后另一侧继续服务，两个backend正常退出；随后npu-smi确认两卡均无进程。未运行空载保活任务。
 
+在首版请求链分支`codex/first-runtime-assembly`的0f05ae8上，又于新分配32064（2×910B2，可见物理2/3）重建受源码哈希守卫的原索引并复跑`two-replica-current-20261014a`。索引SHA为`ff0f3999ab0c7bc6307fdaf84648e1d5186347250f93f6f214cfe200c8e6139c`，报告SHA为`afda0c05fe5b7a9d6b0135738378ed1f4433d7837a7cea4a746ad742bc47cbb6`。两个真实TP1副本同时运行；449/450 token请求分别从cached_tokens 0升至384，单边驻留隔离和断开撤销信任通过，两个backend均returncode 0且无forced cleanup，结束后两卡无进程。该复验确认当前服务器和固定HUST数据面仍可用；报告继续保留`full_routing_verified=false`与`performance_verified=false`。
+
+首版M1候选完成后，又在469d06c和新分配32049上运行`two-replica-current-20261014c`。该机为2×910B2，可见物理5/6；两个Qwen2.5-14B TP1进程同时出现在对应设备，结束后均无残留进程。索引SHA仍为`ff0f3999ab0c7bc6307fdaf84648e1d5186347250f93f6f214cfe200c8e6139c`；报告SHA为`add28ab52c626ef5c925c8e29eab1b7d19a396d0a1e8a78b39589a96d15e06d0`，两侧backend日志SHA分别为`b3d53ef84b6b675fa395e6d60fce990365a83362c38df25d5b5044400f350b9a`和`fdc955068b5aa01d9a91d47b5d622912fe59af8ea548aa81ebb8a479f9d78867`。结果与上一轮一致：449/450 token请求分别从cached_tokens 0升至384，单边驻留隔离、断连撤销信任和另一分区继续服务均通过，两个backend均returncode 0且无forced cleanup。两份日志在排空完成、EngineCore收到SIGTERM并完成资源拆除之后各记录一次`AsyncLLM output_handler`的`EngineDeadError`，随后FastAPI正常关闭；这被保留为固定HUST停机日志噪声，不计作运行期错误，也不据此扩大兼容或性能结论。本轮报告仍明确`full_routing_verified=false`与`performance_verified=false`。
+
 ## 审查、测试与制品
 
 新增17项Python反例涵盖去重冲突/超窗、序号/原索引拒绝、真实实例/核心PID变化、另一个终态消费者ACK后只读身份检查、双副本环境与继承hook清理、接收前multipart数量/总字节限制。原生62项测试包含新增4项owner反例，复用原目录与原索引测试；另有真实stdio进程的5组双分区/预算/在线更新/身份/过期/缺口检查。不是独立人工审查完成。
@@ -61,6 +65,6 @@
 
 ## 剩余与计划修正
 
-M2在线子集成立；公开HTTP请求链、生产M1/M2/M3本地绑定、MOD完整启停和容量收益尚未成立。stdio/TCP/SQLite FULL仍是资格验证接线，不冻结成生产热路径。
+M2在线子集及当前服务器复验成立；公开HTTP请求链、生产M1/M2/M3本地绑定、MOD完整启停和容量收益尚未成立。stdio/TCP/SQLite FULL仍是资格验证接线，不冻结成生产热路径。
 
 发现必须提前处理的依赖：当前64family/256child及账本/outbox历史不回收，不能直接用于可持续容量测试，否则累计留存会造成假准入瓶颈。下一实现包先装配公开HTTP基础链并完成最小去重/回收和恢复语义，再做正式容量；无需等待M8或所有长期跨节点加固。具体代码归属、冻结清单和强基线见[首版装配](../docs/planning/first-runtime-assembly.md)。三人正式生产分工暂不冻结；接口/fixture/评测准备可独立开展。

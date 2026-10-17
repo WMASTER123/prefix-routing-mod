@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from prefix_routing_mod.terminal_journal import Binding
-from tools.hust_native_probe import service_environment
+from tools.hust_native_probe import require_terminal_plugins, service_environment
 from tools.online_kv_directory import (
     MAX_FRAME,
     NativeCursor,
@@ -141,6 +141,42 @@ def test_two_replica_environment_has_explicit_worker_and_no_old_hook(
     assert env["PYTHONPATH"] == str(tmp_path / "acl")
     assert "PREFIX_ROUTING_HUST_PUBLISHER" not in env
     assert "prefix_routing_terminal" in env["VLLM_PLUGINS"].split(",")
+
+
+def test_terminal_entry_points_must_be_complete_before_model_start():
+    expected = {
+        "vllm.general_plugins": "prefix_routing_mod.hust_terminal:load_plugin",
+        "vllm.endpoint_plugins": "prefix_routing_mod.hust_terminal:endpoint_plugin",
+    }
+
+    def complete(*, group, name):
+        assert name == "prefix_routing_terminal"
+        return [SimpleNamespace(value=expected[group])]
+
+    assert require_terminal_plugins(complete) == expected
+
+    def stale(*, group, name):
+        assert name == "prefix_routing_terminal"
+        if group == "vllm.endpoint_plugins":
+            return []
+        return complete(group=group, name=name)
+
+    with pytest.raises(RuntimeError, match="endpoint_plugins"):
+        require_terminal_plugins(stale)
+
+
+def test_terminal_entry_point_rejects_duplicate_or_wrong_target():
+    def invalid(*, group, name):
+        assert name == "prefix_routing_terminal"
+        if group == "vllm.general_plugins":
+            return [SimpleNamespace(value="wrong:target")]
+        return [
+            SimpleNamespace(value="prefix_routing_mod.hust_terminal:endpoint_plugin"),
+            SimpleNamespace(value="duplicate:target"),
+        ]
+
+    with pytest.raises(RuntimeError, match="general_plugins"):
+        require_terminal_plugins(invalid)
 
 
 def test_multipart_count_is_bounded_before_receiving_attacker_tail():

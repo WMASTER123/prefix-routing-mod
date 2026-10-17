@@ -31,11 +31,26 @@ def test_core_ack_duplicate_and_finite_retention():
     assert source.observe("a") and source.observe("a") and source.boundary == 1
     assert len(source.poll(source.epoch, 0, 0)["records"]) == 1
     assert source.poll(source.epoch, 1, 1)["records"] == []
-    assert not source.records and set(source.seen) == {"a"}
-    assert source.observe("b")
-    assert not source.observe("c") and source.failed
+    assert not source.records and not source.seen
+    assert source.observe("b") and source.observe("c")
+    assert not source.observe("d") and source.failed
     with pytest.raises(RuntimeError, match="unavailable"):
         source.poll(source.epoch, 1, 1)
+
+
+def test_core_ack_releases_duplicate_guard_at_exact_record_boundary():
+    source = CoreEnds(1)
+    assert source.observe("child", "FINISHED_STOPPED")
+    source.poll(source.epoch, 1, 1)
+
+    # Reuse after ACK is a new observation. The fixed HUST adapter guarantees
+    # one cleanup callback per concrete internal request; its randomized
+    # internal identity may legally be reused only by a later request.
+    assert source.observe("child", "FINISHED_ABORTED")
+    replay = source.poll(source.epoch, 1, 1)
+    assert replay["records"] == [
+        {"sequence": 2, "child": "child", "status": "FINISHED_ABORTED"}
+    ]
 
 
 @pytest.mark.parametrize(
@@ -70,7 +85,32 @@ def test_frontend_replay_snapshot_and_foreign_traffic():
     assert asyncio.run(state.read(epoch, 1, 1))["records"] == []
     recovered = asyncio.run(state.read(epoch, 0, 0))
     assert recovered["mode"] == "snapshot" and recovered["records"] == reply["records"]
-    assert state.cursor == 2 and len(core.source.seen) == 2
+    assert state.cursor == 2 and not core.source.seen
+
+
+def test_identity_is_independent_of_retired_frontend_history_and_ack():
+    core, state = frontend()
+    first = asyncio.run(state.identity())
+    assert first["core_boundary"] == first["frontend_boundary"] == 0
+    assert first["family_count"] == 0
+    capture = state.journal.begin_owned(1)
+    child = state.journal.allocate_child(capture)
+    state.journal.bind_child(capture, child)
+    state.journal.seal(capture)
+    core.source.observe(child)
+    observed = asyncio.run(state.identity())
+    assert observed["core_boundary"] == observed["frontend_boundary"] == 1
+    assert state.journal.acknowledged == 0
+    state.journal.acknowledge(state.journal.binding, 1)
+    state.journal.retire(state.journal.binding, 1, checkpointed_through=1)
+    retired = asyncio.run(state.identity())
+    assert retired["family_count"] == 0
+    assert retired["binding"] == first["binding"]
+    assert state.journal.acknowledged == 1
+    assert "records" not in retired and "families" not in retired
+    core.installed = False
+    with pytest.raises(ValueError, match="identity/coverage"):
+        asyncio.run(state.identity())
 
 
 @pytest.mark.parametrize(

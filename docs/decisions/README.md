@@ -30,6 +30,7 @@
 - [ADR-001：脚手架和诚实的 MOD 状态](001-scaffold-boundary.md)。
 - [2026-10-11：Ascend 优先规划与性能证据边界](2026-10-11-ascend-first.md)。
 - [2026-10-11：预装组合与 Qwen2.5-14B 首验](2026-10-11-qwen14b-first.md)；局部基线已定，完整 ADR-003 仍待事件/恢复证据。
+- [2026-10-16：终态源回收与受信请求归属](2026-10-16-terminal-source-retention.md)；Core ACK 回收已实现，Frontend 归属与 retire 待选择/验证。
 - 待 ADR-002：单 Router 宿主、扩展点、语言和构建制品（P1a）。
 - 待 ADR-003：引擎版本组合、原生 KV 事件及 observer 必要性（P1b）。
 - 待 ADR-004：完整身份、恢复和账本契约（P2/P3）。

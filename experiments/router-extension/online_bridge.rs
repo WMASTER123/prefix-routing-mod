@@ -93,6 +93,18 @@ impl Outbox {
             return Err("outbox_ack_gap");
         }
         slot.acknowledged += 1;
+        let delivered = slot
+            .trace
+            .lock()
+            .map_err(|_| "trace_poisoned")?
+            .delivered(slot.acknowledged);
+        if delivered {
+            // Capacity tracks unacknowledged work, not lifetime request count.
+            // Attempt IDs remain the admission owner's never-reused IDs; an
+            // old delivery after retirement is rejected by M3 as unknown and
+            // can never release capacity twice.
+            slots.remove(index);
+        }
         Ok(())
     }
 
@@ -502,6 +514,20 @@ mod tests {
             outbox.register(lease.inner.trace.clone()),
             Err("outbox_attempt_reused")
         );
+    }
+
+    #[test]
+    fn acknowledged_slot_is_reclaimed_for_later_unique_attempt() {
+        let outbox = Arc::new(Outbox::new(1).unwrap());
+        for sequence in 1..=300 {
+            let id = format!("runtime-a:{sequence}");
+            let current = lease(&outbox, &id);
+            current.closed(false, CloseEvidence::NotSent);
+            let (index, event) = outbox.next().unwrap().unwrap();
+            assert_eq!(event.attempt_id, id);
+            outbox.acknowledge(index, event.sequence).unwrap();
+            assert!(outbox.drained());
+        }
     }
 
     #[test]
