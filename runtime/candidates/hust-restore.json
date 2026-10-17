@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "python": "3.12.13",
+  "machine": "aarch64",
+  "uv": "0.11.19",
+  "locks": {
+    "hust-legacy-20260831-py312-aarch64.txt": "7bd3f97e9a632833a55209a285b2f3e2ff855e9ec1ce2136465a7de5f008d587",
+    "ascend-hust-build.txt": "cee3f81fcfe1a8650d40faad88b436f79c0fe5580264fb1e67ccd51129d5f35f"
+  },
+  "sources": {
+    "core": {
+      "commit": "13f11da44455d2f85f00f810a04e1bd2eaf30ba6",
+      "origin": "https://github.com/intellistream/vllm-hust-legacy-20260831.git"
+    },
+    "ascend": {
+      "commit": "3a61053d8b4133eae7c468c1567648048750be21",
+      "origin": "https://github.com/intellistream/vllm-ascend-hust-legacy-20260831.git"
+    }
+  },
+  "indexes": [
+    "https://pypi.org/simple",
+    "https://mirrors.huaweicloud.com/ascend/repos/pypi"
+  ],
+  "cann_python_path": "/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe",
+  "compile_custom_kernels": false,
+  "scope": "same_host_eager_development_candidate"
+}
