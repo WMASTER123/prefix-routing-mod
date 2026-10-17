@@ -222,12 +222,22 @@ def run(args, output, report):
         # Only transient normalized keys feed the existing index experiment.
         (output / "normalized.json").write_text(json.dumps(live), "utf-8")
         if terminal_token is not None:
-            from tools.live_terminal_cases import run as terminal_cases
+            if getattr(args, "router_binary", None) is not None:
+                from tools.router_terminal_chain import run as router_chain
 
-            report["terminal"] = terminal_cases(opener, origin, output, terminal_token)
-            report["terminal_observer_verified"] = (
-                report["terminal"]["status"] == "pass"
-            )
+                report["router_chain"] = router_chain(
+                    args.router_binary, opener, origin, output, terminal_token
+                )
+                report["router_terminal_chain_verified"] = True
+            else:
+                from tools.live_terminal_cases import run as terminal_cases
+
+                report["terminal"] = terminal_cases(
+                    opener, origin, output, terminal_token
+                )
+                report["terminal_observer_verified"] = (
+                    report["terminal"]["status"] == "pass"
+                )
         report["status"] = "pass"
     finally:
         try:
@@ -248,8 +258,13 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=18146)
     parser.add_argument("--terminal-observer", action="store_true")
     parser.add_argument("--pycache-root", type=Path)
+    parser.add_argument("--router-binary", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.router_binary is not None:
+            if not args.terminal_observer:
+                raise ValueError("Router chain requires explicit terminal observer")
+            args.router_binary = private_path(args.router_binary).resolve(strict=True)
         output = private_path(args.output)
         args.model = args.model.resolve(strict=True)
         if (

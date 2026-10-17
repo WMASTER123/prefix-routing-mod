@@ -1,5 +1,7 @@
 # Prefix Routing MOD
 
+2026-10-14 后续：实际Router库的准入/转发已与真实HUST终态接同一实验账本，普通n2与流式取消、确认前额度拒绝、丢许可保债通过；不是生产HTTP启动器、在线KV或性能验收。当前优先阅读[组合计划](docs/planning/router-hust-terminal-chain.md)、[实机证据](evidence/router-hust-terminal-chain-2026-10-14.md)，以下同日较早记录保留原范围。
+
 2026-10-14 最新：已在固定 HUST/Ascend 上通过可选真实终态子集，4 个 family/8 个 child 接原账本，重放和自有包装恢复通过。尚未把原生 Router 接入该链路、没有在线 KV 目录或性能结论；当前步骤见[实机接线说明](docs/planning/cedb477-live-terminal.md)和[证据](evidence/cedb477-live-terminal-2026-10-14.md)。下方较早记录只对应当时阶段。
 
 2026-10-14：新版HUST入口/终态→原账本的固定源码CPU组合和独立CI门槛已补充；实际后端观测安装和跨进程链路仍待验收，见[当前接线计划](docs/planning/cedb477-terminal-boundaries.md)。

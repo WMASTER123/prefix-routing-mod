@@ -31,14 +31,14 @@ MAX_REPLY = 1024 * 1024
 MODEL = "prefix-qwen14b-probe"
 
 
-def request_json(opener, origin, route, *, body=None, headers=None):
+def request_json(opener, origin, route, *, body=None, headers=None, timeout=60):
     headers = dict(headers or {})
     payload = None if body is None else json.dumps(body).encode()
     if payload is not None:
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(origin + route, data=payload, headers=headers)
     try:
-        with opener.open(request, timeout=60) as response:
+        with opener.open(request, timeout=timeout) as response:
             raw = response.read(MAX_REPLY + 1)
     except urllib.error.HTTPError as error:
         if route.startswith("/v1/"):
