@@ -1,6 +1,20 @@
 # 进度与下一步
 
-## 最新状态（本节优先，2026-10-11）
+## 最新状态：CPU 架构与接口工作（本节优先，2026-10-11）
+
+用户新申请为 CPU-only aarch64、16 核配额、64 GiB RAM、16 GiB shm，0 NPU。本轮只操作项目目录；不连接旧分配、不运行推理、不重新认定旧 NPU 环境兼容。
+
+新增 component-v0.1 可执行参考类型、五个组件端口、版本化生命周期样例、静态目录/有界账本组合及并发故障测试。服务实例代次与 publisher 代次分离；原子准入检查控制/配置版本与额度，负载变动不强制所有请求重选；发送后未知保留对账负债。代码与状态所有权见[合同](contracts.md)，部署与三人独立工作包见[联调计划](planning/component-work-packages.md)。这些是接口底座和测试参考，**不是 M1–M5 已有生产实现**。
+
+固定 Router 源码在项目隔离 Rust 工具链中做 aarch64 构建准入。网络 Git 依赖超时与原提交构建问题分开记录；不升级 HUST、不改原 Cargo 依赖掩盖失败。生产策略注入/生命周期/事件索引接缝与 ABI 仍未冻结，需要准入结果后再给生产实现分工。测试与审查证据见[本轮记录](../evidence/component-contracts-2026-10-11.md)。
+
+原锁编译的具体缺口已定位：openEuler 有 OpenSSL runtime，缺 openssl-devel SDK；exit 101，不是 HUST NumPy/NPU 问题。用户已选择先评估窄幅扩展，[六个接缝/维护风险/否决线](planning/router-extension-assessment.md)已记录，宿主源码未修改。当前代码本机 CPU 256+2 skips、远端 258、mock 各 3、两端 sdist/wheel/干净安装通过；另一成员审查仍待完成。
+
+[草稿 PR #9](https://github.com/WMASTER123/prefix-routing-mod/pull/9) 已建立并附到当前任务，基于未合并 PR #8；9e17ad3 的 Actions Python 3.11/3.12 success。新文档提交不自动继承前个 head 的 CI，按 PR 的确切提交检查；不自动合并。本机与服务器代码/文档同步在独立 codex/component-contracts-cpu 分支，不覆盖旧分支或环境。
+
+近期：人工审查契约与工作包 → R1 宿主构建/适配范围决策；CPU 语义与测试可并行。真实 G2/G3 仍需 1 张 NPU，G4 两个 TP=1 副本需 2 张，到需要时提前反馈。M8、成本档案和新算法后置；MOD import_only 保持，G2 开放、G3/G4 未通过，没有性能提升声明。
+
+## 此前 NPU 分配的状态（不是当前 CPU 机器的通过记录）
 
 新分配服务器物理枚举为 0/1/2/7；本轮只用逻辑 0 做真实 Qwen14B 身份/publisher 主回归，未重验当前其余三卡。持久 HUST 环境依赖审计与固定来源核查通过，不受早期上游 NumPy 冲突阻塞。
 

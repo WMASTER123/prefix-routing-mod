@@ -51,6 +51,10 @@ def main() -> int:
             "name='prefix_routing_publisher'))).load(); hook(); "
             "import sys; assert 'torch' not in sys.modules; "
             "assert 'vllm' not in sys.modules; "
+            "from prefix_routing_mod.contracts import CONTRACT_VERSION, WorkerRef; "
+            "assert CONTRACT_VERSION == 'component-v0.1'; "
+            "assert WorkerRef('replica', 'instance').instance_epoch == 'instance'; "
+            "assert 'torch' not in sys.modules and 'vllm' not in sys.modules; "
             "print('Clean wheel: descriptor and bundled manifest verified')"
         )
         subprocess.run(

@@ -13,7 +13,11 @@ uv run --frozen python tools/verify_wheel.py
 
 CPU 包含格式、静态检查、配置/CLI、真实 Manager 拒绝启用和未实现套件结果检查。integration 目前只测试合成 loopback 后端的健康、非流式响应、SSE 帧和 503；**尚未经过真实 Router，不能证明流式低延迟、取消传播或背压已正确**。
 
+component-v0.1 增加类型/精度/完整块、新鲜度、服务/publisher 代次隔离、配置切换、原子准入、幂等/冲突通知、发送前撤销/发送后不确定/迟到对账和上限拒绝测试；六组语言可移植的行为样例保存在 `tests/fixtures/component-v0.1.json`。跨组件测试只是静态目录和有界账本 oracle 的进程内组合，不启动生产 Router，不替代真实转发取消或性能评测。生产绑定必须保留这些语义，具体线程模型/ABI 和长期 GC 另外验收。
+
 verify_wheel 在源码目录之外新建临时 venv，安装无运行依赖的 wheel，加载 entry point 与包内 manifest、运行 doctor；Manager schema/启用拒绝由 CPU 测试负责。发布前还需完整安装链、目标宿主及真实启停验收。
+
+干净 wheel 同时导入新合同并构造实例身份，确认契约被打包且不加载 torch/vllm；不把接口制品成功称为 MOD 可启用。
 
 可选 publisher 的 CPU 测试另覆盖默认不导入引擎、版本/文件守卫、幂等、共同水位、发送/编码失败、元数据及重放 payload 上限、祖先拓扑和清空代次。干净 wheel 检查实际加载 general plugin 并调用默认关闭入口，确认 torch/vllm 未导入；不能由此证明 opt-in 的真机接线成功。
 
