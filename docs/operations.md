@@ -1,8 +1,8 @@
 # 新实验服务器操作基线
 
-2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+2026-10-17 当前操作入口：[接手指南](项目接手指南_2026-10-17.md)与[progress](progress.md)。本轮已核验 aarch64、两张910B2（本次物理4/5）、8核CPU配额/64GiB；使用项目隔离 HUST ced6857/b47795c 与 Qwen2.5-14B FP16/eager、双TP1。重分配后重新检查设备、路径与来源。已有公开HTTP全组件和真实持久commit→ACK有限资格，实验已正常清理；生产恢复/回收与完整MOD启停仍未通过。
 
-2026-10-11 当前分配为 CPU-only aarch64、16 核 CPU 配额、64 GiB RAM、16 GiB /dev/shm、0 NPU。项目目录仍为 /root/work/prefix-routing-mod；仅开展 CPU 契约、构建和模拟转发。需要真实 G2/G3 时申请 1 张 NPU，G4 申请 2 张，执行前重新盘点。
+历史分配（2026-10-11）：CPU-only aarch64、16核CPU配额、64GiB RAM、16GiB /dev/shm、0 NPU。该资源与下方旧版命令不描述本轮机器；项目目录仍为 /root/work/prefix-routing-mod。
 
 此前最近一次 NPU 分配为 4 张 Ascend 910B2，物理枚举 0/1/2/7、每张 HBM 65536 MiB、128 GiB RAM、32 GiB /dev/shm，身份/hook 主回归只使用逻辑 0。该分配及更早的卡映射、磁盘和四卡测试均为历史记录，不能用于当前操作。下面真实推理命令仅在新 NPU 分配核验通过后执行。
 
@@ -55,9 +55,9 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 1. 预约独占时段、核验设备可见性；本次首先使用 mask=0，物理映射重新核验，不能继承旧物理 1 的映射记录。
 2. 首先单卡单副本冒烟，再两个 TP=1 副本；TP=2 只有一个路由目的地。
-3. 按用户要求选择 `/data/shared_models/Qwen2.5-14B-Instruct`，BF16、TP=1、先 8k 上下文；不下载重复权重，不静默降为 7B，不依据目录名断言 revision。
+3. 按用户要求选择 `/data/shared_models/Qwen2.5-14B-Instruct`。当前已验组合为 FP16、TP=1、eager，1024 上下文仅用于功能资格；BF16/图/8k与性能调优另验。不下载重复权重，不静默降为7B，不依据目录名断言 revision。
 4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；当前验证 HUST 隔离候选，预装局部 eager 成绩不继承。图、完整恢复及性能均须后验。
-5. CPU 为 16 核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。先单卡，再两个 TP=1 副本，最后四副本容量实验。压测端/Router/后端的竞争必须测量，不外推跨节点收益。
+5. 本轮 CPU 为8核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。单副本用1卡，双TP1联调/比较用2卡；扩展设备规模另行申请与测量。压测端/Router/后端竞争必须测量，不外推跨节点收益。
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
 
 ## 可选 publisher 实验与关闭回退

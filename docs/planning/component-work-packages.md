@@ -1,6 +1,6 @@
 # 三人工作包与接口冻结条件
 
-更新：2026-10-16。完成情况以 [progress](../progress.md) 为准，旧讨论保存在 [历史记录](component-work-packages-history.md)。本页给出职责和准入条件，尚未指定人员。
+更新：2026-10-17。完成情况以 [progress](../progress.md) 为准，旧讨论保存在 [历史记录](component-work-packages-history.md)。本页给出职责和准入条件，尚未指定人员；实际端口、线程/错误边界及文件协调规则见[接手指南](../项目接手指南_2026-10-17.md)。
 
 ## 已确定的实现形态
 
@@ -26,7 +26,7 @@ HTTP → M1 → M4 → M3 reserve → M5 原宿主发送/SSE
 | B：M1/M4/M5 | 一次本地分词、纯选点、原 HTTP/SSE、发送门与传输观察 | `request_feature_port.rs`、`runtime_provider.rs`、`prefix_extension.rs` 和三文件宿主 patch | M1 输入/身份反例、策略纯函数、慢客户端/取消与默认关闭测试 |
 | C：M3/M6/交付 | 唯一账本、持久提交/游标、重启对账、统一评测和 MOD 工具 | `runtime_owner.rs`、`durable_runtime.rs`、`runtime_store.rs`（SQLite 仍为候选）；`tools/`、`.github/workflows/`、Python MOD 包 | aarch64 存储对照、真实 ACK/GC、强制退出恢复、负载与制品检查 |
 
-上述位置是候选实现，生产目录在集成验收后统一迁入；禁止每包另建代理、索引或账本。共享类型由集成负责人维护，契约变更与调用方和反例同 PR 更新。每包自测，另一成员交叉审查；C 不承担全队唯一测试职责。
+上述位置是候选实现，生产目录在集成验收后统一迁入；禁止每包另建代理、索引或账本。共享类型由集成负责人维护，契约变更与调用方和反例同 PR 更新。每包自测，另一成员交叉审查；C 不承担全队唯一测试职责。受当前端口约束的独立任务现在即可指定人员开展，不必等生产 ABI 全部冻结；跨包恢复/回收协议不能各自定稿。
 
 ## 正式分工的集成门槛
 
@@ -39,6 +39,6 @@ HTTP → M1 → M4 → M3 reserve → M5 原宿主发送/SSE
 
 ## 当前尚差的接线
 
-原生 IPC/控制和固定完整宿主测试已通过；真实 M1、Rust M7/M2、M3/M4/M5 与核心终态已在同一公开链完成有限实机验证，包括生成后取消。M3 持久提交/cursor/暂停恢复候选已过首轮 CPU 故障测试，但存储尚未选型或装入宿主；下一步集中 aarch64 对照、真实 ACK/回收、健康新鲜度和强制退出恢复，见[计划](durable-runtime-and-retention.md)。这些通过前不宣布生产接口冻结；具体成绩以 progress 和对应 evidence 为准。
+原生 IPC/控制和固定完整宿主测试已通过；真实 M1、Rust M7/M2、M3/M4/M5 与核心终态已在同一公开链完成有限实机验证，包括生成后取消。M3 增量 SQLite、持久提交/cursor/暂停恢复候选已经过 CPU 故障测试，本轮显式装入私有宿主做真实 ACK 资格；仍须完成长期回收、健康新鲜度和强制退出恢复，见[计划](durable-runtime-and-retention.md)。这些通过前不宣布生产接口冻结；具体成绩以 progress 和对应 evidence 为准。
 
 Linux CPU 负责传输和故障回归；1 张 NPU 做单副本真实联调，2 张做双 TP1。三人使用独立分支/工作区，由集成提交统一同步服务器，不同时修改远端同一 checkout。

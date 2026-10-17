@@ -1,6 +1,6 @@
 # 架构基线
 
-更新：2026-10-16。组件完成情况以[progress](progress.md)为准；[历史架构增量](architecture-history.md)保留各次实验边界。真实公开 HTTP、M1、Rust M7→原 M2、M3/M4/M5 与 HUST 终态的有限组合已通过，持久恢复/长期回收/生产启停仍待验收。详细功能需求仍在[总体规划](planning/前缀路由综合套件_总体架构与组件规划.md)。
+更新：2026-10-17。组件完成情况以[progress](progress.md)为准；[历史架构增量](architecture-history.md)保留各次实验边界。真实公开 HTTP、M1、Rust M7→原 M2、M3/M4/M5 与 HUST 终态的有限组合已通过，持久恢复/长期回收/生产启停仍待验收。三人代码所有权、当前真实端口及未决边界见[接手指南](项目接手指南_2026-10-17.md)。详细功能需求仍在[总体规划](planning/前缀路由综合套件_总体架构与组件规划.md)。
 
 ## 目标与范围
 
@@ -48,7 +48,7 @@ Python包已有规范描述、配置预检、合同参考、固定版本适配�
 
 在线目录实验使用同一个常驻原索引进程，异步订阅持续写入；stdio是资格验证接线，不是第二个生产索引服务。受控空起点支持新版原生三帧；无后端epoch/完整token快照时，不承诺已热接管、超窗或任意重启恢复。
 
-原公开 HTTP 入口与 M1/M2/M3 本地绑定已通过真实 HUST 有限链。Rust 持久提交候选现已验证“许可前提交”和“终态/checkpoint/cursor 同事务”，但只在独立 helper 中，完整快照开销尚待 aarch64 对照；健康新鲜度、真实源 ACK/GC、强制退出恢复与 MOD 完整启停仍未验收。example 不直接作为生产 ABI；按[持久恢复实现包](planning/durable-runtime-and-retention.md)完成后再冻结目录和接口，MOD 仍 import_only。
+原公开 HTTP 入口与 M1/M2/M3 本地绑定已通过真实 HUST 有限链。Rust 持久提交候选提供“许可前提交”和“终态/checkpoint/cursor 同事务”；本轮增加增量 SQLite 并显式装入私有宿主做 commit→ACK 资格。完整快照仍为对照，行布局不是 O(1)，也未选作生产默认。健康新鲜度、长期 GC、强制退出恢复与 MOD 完整启停仍须验收。实际结果见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。example 不直接作为生产 ABI；按[持久恢复实现包](planning/durable-runtime-and-retention.md)完成后再冻结目录和接口，MOD 仍 import_only。
 
 ## Ascend与兼容
 

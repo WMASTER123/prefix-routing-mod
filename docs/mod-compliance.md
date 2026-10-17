@@ -1,6 +1,6 @@
 # MOD / 插件规范映射
 
-2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+2026-10-17：原Router公开HTTP、M1/在线KV目录/准入/转发/真实终态的有限组合已有实机证据，见[progress](progress.md)。这不替代Manager运行激活、完整启停、恢复或发布资格；MOD仍import_only。分工和候选接口边界见[接手指南](项目接手指南_2026-10-17.md)。
 
 ## 已采用的真实来源
 
@@ -19,7 +19,7 @@
 | 制品可安装 | 干净临时 venv 安装 wheel、加载包内 manifest | CPU 仅是制品验证 |
 | 外部生命周期 | external_operator；当前无控制共享服务动作 | P1/P7 验证合法 plan/render/check |
 | 身份与版本 | 支持矩阵分候选/已验证 | 不将 metadata 版本当兼容证据 |
-| 启停/回退 | 当前仅卸载描述包；没有运行中的 Router | P2/P7 实测服务排空与入口回退 |
+| 启停/回退 | 已有实验Router/自有后端启停与清理；Manager尚不管理运行中的Router | P2/P7 验收生产启停、排空、故障恢复及入口回退 |
 | 可选引擎 hook | 用户批准实验的 general plugin publisher 适配；默认关闭、固定版本/源文件守卫，不替换 Ascend platform plugin | 见 [ADR](decisions/2026-10-11-optional-hust-publisher.md)；功能、关闭回退、开销与目标配置分别验收，实验入口不是 Manager 激活 |
 | 责任与证据 | WMASTER123 个人私有仓库、顾问 unknown、无性能声明 | 正式组内准入另行审查 |
 

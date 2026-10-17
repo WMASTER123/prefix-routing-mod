@@ -1,6 +1,6 @@
 # 当前进展与执行顺序
 
-更新：2026-10-16。本页是现行完成情况入口；[上一阶段](progress-native-owner-history-20261016.md)和 [更早历史](progress-history.md)保留原证据边界。组件数与测试数不用于计算“完成百分比”。
+更新：2026-10-17。本页是现行完成情况入口；[接手指南](项目接手指南_2026-10-17.md)集中记录框架、端口、三人所有权和未决边界。[上一阶段](progress-native-owner-history-20261016.md)和 [更早历史](progress-history.md)保留原证据边界。组件数与测试数不用于计算“完成百分比”。
 
 ## 本阶段已完成
 
@@ -9,6 +9,7 @@
 3. **新分配两卡复验与稳定性**：两张 910B2、Qwen2.5-14B TP1/FP16/eager，原目录隔离/断连复验通过；20 分钟后端稳定性完成 177/171 请求、12272/11856 生成 token，正常退出，无强制清理或残留设备进程。该稳定性未启用终态观测，不能替代其长期留存验收，见 [证据](../evidence/npu-stability-2026-10-16.md)。
 4. **M3 持久提交候选**：新增 Rust 单写提交包装与 SQLite WAL/FULL 候选，发送许可晚于持久提交，终态/M3/cursor 同一事务，恢复默认暂停并用 owner/generation CAS 围栏。审查补齐异步取消失败关闭、完整终态 source binding、歧义快照拒绝和整批预校验；x86_64/aarch64 release 各 48 项通过，本地 clippy 通过。aarch64 完整快照 commit 在 0/64/512 active 下 P50 为 0.673/0.809/2.320 ms，因此不选作默认生产热路径，见[证据](../evidence/durable-runtime-candidate-2026-10-16.md)。
 5. **Core 终态窗口回收**：按固定 HUST 源码与 hash 守卫确认 internal ID 和一次性清理边界，Core 记录及重复保护只保留到唯一 Frontend ACK，不再形成进程累计请求上限；CPU 回归覆盖 ACK 前重复、ACK 后复用和外来流量。Frontend family 退役仍待受信 Router 归属方案，不把前缀当凭据，见[ADR](decisions/2026-10-16-terminal-source-retention.md)。
+6. **增量存储与交接**：同一 SQLite WAL/FULL 适配器新增变化行布局，整批终态先验证再修改；最终 helper 57 项通过，包括真实子进程未提交退出与已提交 active 保债。最小 feature 只新增三个包、未升级原宿主依赖，ARM 完整候选已构建。两轮相同持久性对照中，512 active 行布局 P50 2.577–2.598ms，对照快照 4.239–4.665ms；0 active 尾延迟不优，不能外推服务收益。真实 commit→ACK 资格见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。交接文档已提供可独立开展的 A/B/C 工作与共享文件规则，生产 ABI 仍未冻结。
 
 固定基线为 HUST Core ced6857 / Ascend b47795c，Router91b65ee；未更换引擎、CANN 或全局 Python。服务使用项目隔离环境及窄 PYTHONPATH，pip check 通过。本轮新 MOD wheel、输入/二进制 hash、命令及失败重试均有记录。
 
@@ -18,7 +19,7 @@
 |---|---|---|
 | M1 | 真实本地 Qwen tokenizer、完整块摘要，已装入公开字符串 completion 链 | 输入/输出预算和一次分词开销；chat/template、数组/token-id 不在当前支持范围 |
 | M2 | 复用原索引/Directory/Pool；真实 Rust 订阅写入同进程目录，连续性/父链/总配额/失信/实例围栏 | 大工作集/长期资源与并发成本；原生已热/超窗恢复不支持 |
-| M3 | 条件准入、发出后保债、真实完整终态结清、幂等、有限墓碑；Rust 持久提交/cursor/暂停恢复候选已过 x86_64/aarch64 CPU 故障测试 | 选择增量/分组生产布局并装入宿主、真实源 ACK/GC、控制新鲜度、强制退出及实机恢复 |
+| M3 | 条件准入、发出后保债、真实完整终态结清、幂等、有限墓碑；增量存储及真实 commit→ACK、磁盘保债/暂停重开有限双 TP1 资格通过 | Frontend 长期退役、控制新鲜度、强制退出及生产恢复；生产默认未选 |
 | M4 | 基础可信正命中优先/最低在途回退，真实目标和缓存结果符合预期 | 配对开销与强基线；优化策略后置 |
 | M5 | 复用原 Router HTTP/SSE，公开入口、真实转发及生成后取消通过 | 生产启停/排空、并发配置竞争/故障和可发布二进制 |
 | M6 | CPU/源码/原生 CI、可重复装配、手动 NPU 公开链/稳定性及原始报告 | 同底座开销、持续服务、强基线和多阈值容量曲线 |
@@ -29,15 +30,17 @@
 
 ## 接下来集中完成什么
 
-1. aarch64 已证实完整快照随 active 数增长，不作为默认热路径。实现并比较规范化增量表与有界 group commit；宿主只采用满足提交语义、取消安全且开销可接受的一种。随后把同一 M3 的消费者 cursor 接到真实 terminal ACK。
+1. 真实 commit→ACK 有限资格已通过；下一项先收敛受信请求归属/退役协议及部署要求，补 CPU 反例，再做长期服务。存储的完整链开销另测，之后才决定是否需要 group commit。候选通过不等于选定生产默认或长期回收完成。
 2. 确认受信 Router 归属方案后接源端 retire，补真实控制新鲜度、旧派发者停止、存储错误、丢许可/ACK、配置竞争和强制退出恢复；未知负债保留。超过早期 64/256 上限持续服务并验证资源趋势。
 3. 对直连、原 Router、同底座仅加接线做配对 Host 开销，排除重复分词/远程目录查询/持久化放大；通过后冻结生产目录、类型、线程/时钟、配置、错误及启停语义。
-4. 冻结后按 A(M7/M2)、B(M1/M4/M5)、C(M3/M6/交付)正式分工。独立准备任务可先进行；不等待 M8 或最终算法，也不把尚未验收的恢复语义宣布为冻结。见 [工作包](planning/component-work-packages.md)。
+4. 现在可以按 A(M7/M2)、B(M1/M4/M5)、C(M3/M6/交付)指定受现有端口约束的独立任务；生产目录、恢复/退役及 Manager 交付仍由集成负责人先收敛、交叉审查后冻结。不等待 M8 或最终算法，也不把尚未验收的恢复语义宣布为冻结。见[工作包](planning/component-work-packages.md)和[接手指南](项目接手指南_2026-10-17.md)。
 
 用户暂无固定 SLO：容量评测仍按预冻结的多阈值 TTFT/生成停顿与输入/输出预算分组，保留失败分母；chunk 间隔不冒称逐 token 间隔。尚未开展正式容量实验。
 
 ## 测试与审查
 
-此前代码提交 `01e5817` 的 Python CPU 574 通过/7 跳过、integration 3 通过，wheel 干净安装验证通过，GitHub 六项 CI 全部通过。本轮 Rust 修复提交 `328e5ff`、`1e79035`：x86_64 release 48 项及 clippy 通过，aarch64 同锁 release 48 项通过；目标隔离 Rust 工具链未安装 clippy component，未修改工具链。当前 wheel 在干净环境验证并只安装到项目 HUST venv，`pip check` 通过；双 TP1 既有公开链复验通过且无残留进程。持久层仍未装入完整 Router 宿主。后续 head 状态以 [草稿 PR23](https://github.com/WMASTER123/prefix-routing-mod/pull/23) 为准。
+代码 `3264050` 的 Python CPU 576 通过/7 跳过/3 deselected，integration 3 通过；ARM helper 57 项通过，项目隔离 Rust 工具链已补 clippy，`-D warnings` 通过。该 head 的两个 Python validate、两个固定 HUST source-methods 和 Rust validate-helper 共 5 项 GitHub 检查通过；不挪用未改索引的旧 CI。离线构建 wheel 干净安装验证通过，仅安装到项目 HUST venv，`pip check` 通过。原索引/完整宿主的历史 90/36 项成绩保留原提交范围，本轮最终候选实际构建单列证据。
+
+PR23 已合并到阶段分支 `codex/online-kv-directory`；后续为[草稿 PR24](https://github.com/WMASTER123/prefix-routing-mod/pull/24)，`main` 尚不包含全部研发进展。实机代码输入为 `3264050`，文档收尾提交另记。真实新持久链 `artifacts/t9` 通过且三个自有进程正常退出、两卡无残留。没有自动合并，也没有正式发布。
 
 已完成自审、自动回归和上述实机子集；独立人工审查/合并未完成，不自动合并。Linux CPU 可推进持久化/协议；再次真实持续服务与恢复回归需要两个 TP1 NPU。测试完成清理自有进程，不运行空载保活负载。

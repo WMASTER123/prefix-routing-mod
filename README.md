@@ -4,7 +4,7 @@
 
 主要面向华为 Ascend NPU 上 vLLM / Ascend 同模型多副本服务的前缀路由综合套件。目标是在固定 NPU 与 Host 资源下提高同时满足 TTFT、生成停顿和完成率要求的服务容量，优先复用成熟路由宿主和索引；设备执行假设须在目标平台验证。
 
-当前为研发版本：真实Router库→HUST→同一账本的有限闭环、原生KV→常驻原索引和双TP1目录隔离已有实机子集。公开HTTP入口的完整组件装配、生产恢复/GC、MOD完整启停和容量收益仍待验收。Manager可发现描述，`import_only`保持，不可启用尚未交付的生产功能。
+当前为研发版本：原公开HTTP入口、真实M1、原生KV→同进程原索引、M3/M4/M5及HUST真实终态已完成双TP1有限装配验证。生产恢复/长期GC、MOD完整启停和容量收益仍待验收。Manager可发现描述，`import_only`保持，不可启用尚未交付的生产功能。
 
 ## 开发起步
 
@@ -34,6 +34,6 @@ uv run --frozen python tools/verify_wheel.py
 - [Ascend 设计约束](docs/ascend-design.md)：复用边界、能力/执行档案、N0–N6 实验；不宣称已经实现。
 - [贡献约定](CONTRIBUTING.md) / [AI 工作边界](AGENTS.md)。
 
-首版仅考虑一个外部 Router 接入已有服务。暂不做 P/D 分离、分层缓存、KV 搬运、异构调度、引擎淘汰改造。原生接口优先，observer 仅在证实必要后添加。当前 Python 包是工具和 MOD 元数据载体，不预先决定线上 Router 的实现语言。
+首版仅考虑一个外部 Router 接入已有服务。暂不做 P/D 分离、分层缓存、KV 搬运、异构调度、引擎淘汰改造。原生接口优先，observer 仅在证实必要后添加。在线候选采用 Rust Router；Python 包承担工具、MOD 元数据和窄幅后端适配。
 
 License: Apache-2.0；模板来源见 [NOTICE](NOTICE)。

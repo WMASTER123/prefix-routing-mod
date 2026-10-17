@@ -1,6 +1,6 @@
 # 支持与候选矩阵
 
-现行完成情况统一以[当前进度](progress.md)为准，近期接线见[在线目录计划](planning/online-kv-directory.md)。本页下方按日期追加的完成/未完成描述保留为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。新增双副本目录子集不表示公开HTTP全链路、长期恢复或容量验收通过。
+2026-10-17 当前状态以[progress](progress.md)和[接手指南](项目接手指南_2026-10-17.md)为准：固定HUST与双TP1的原公开HTTP/M1/M2/M3/M4/M5/M7有限链已通过，生产恢复、长期回收、Manager激活和容量收益尚未验收。下方按日期的旧状态为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。
 
 2026-10-14 后续：原typed Router库的异步准入/自有载体/转发/生命周期已和真实HUST终态组合到同一实验账本，2 family/3 child及丢许可保债通过。原三文件宿主patch与HUST包装不变；新接收器映射显式实例，新增完整终态批次校验。当前仍不是生产HTTP入口、在线KV或性能验收，component-v0.1/生产ABI和MOD import_only不变。范围与下一步见[组合计划](planning/router-hust-terminal-chain.md)和[证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，下面同日较早记录仅对应当时阶段。
 
@@ -16,7 +16,7 @@
 
 | 对象 | 固定版本 / 范围 | 当前状态 |
 |---|---|---|
-| 当前HUST迁移目标 | Core ced6857/vllm0.30.0+empty；Ascend b47795c/vllm-ascend0.25.1rc2.dev766+hust.20260903.4.gb47795c63 | 新环境/全新重建；Qwen14B FP16/eager、真实终态、原生事件在线目录及双TP1同时运行子集通过；已热接管/完整恢复/公开HTTP全链/MOD激活/容量性能未验收 |
+| 当前HUST迁移目标 | Core ced6857/vllm0.30.0+empty；Ascend b47795c/vllm-ascend0.25.1rc2.dev766+hust.20260903.4.gb47795c63 | Qwen14B FP16/eager、双TP1、真实M1/原生目录/准入/公开HTTP/取消终态的有限链通过；已热接管/完整恢复/长期回收/MOD激活/容量性能未验收 |
 | 当前研发分配 | aarch64/8核配额/64GiB/2×910B2 | 两个TP1副本同时运行、隔离、真实cached_tokens 0→384及单侧目录失效通过；实验后自有进程已清理 |
 | 元数据工具 | Python >=3.11；CI 目标 3.11/3.12 | Windows 3.12、Linux x86_64 3.11/3.12、Linux aarch64 3.12 基础检查通过 |
 | Extension template | 0d537f3193f217b21cf730a32f0a2629b631244b | 已用于生成，非完整发布认证 |
@@ -24,7 +24,7 @@
 | vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 与下行隔离构建；本机 TP=1 Qwen14B BF16 eager 局部验证及 venv 重建通过 |
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
-| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 构建及HTTP/SSE通过；typed Router→HUST真实终态有限闭环、原索引→HUST在线事件双副本子集分别通过。两条接缝尚未在公开HTTP入口合并为生产选点链，见[当前进度](progress.md) |
+| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 构建及HTTP/SSE通过；原公开HTTP、真实M1、在线M2、M3/M4/M5和HUST终态已在同一进程有限联通。生产恢复/启停/性能仍未验收，见[当前进度](progress.md) |
 | 历史CPU研发分配 | aarch64 / Python 3.12.13 / 16 核配额 / 64 GiB RAM / 0 NPU | 当时用于CPU合同/隔离Rust构建/模拟，不代表当前分配 |
 | 历史 NPU 分配 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 当时物理枚举 0/1/2/7，身份/hook 主回归仅逻辑 0；更早四卡结果分别记录，不继承到当前分配 |
 | HUST 环境恢复入口 | 两个固定源码 + 186 包及 builder 锁 | 全新目录 13 步通过，本机研发证据齐备、正式冻结待人工复核；不等于可移植镜像 |
@@ -36,7 +36,7 @@
 
 不同包的元数据版本号不能证明或否定兼容，必须核查依赖约束和实际调用。最新本轮仅在私有隔离环境构建 HUST 候选，没有改全局引擎。运行声明需要：提交、制品 hash、环境指纹、配置、测试结果、局限和回退。版本变化重新验收。
 
-不支持的产品能力：当前没有可交付的公开HTTP精确路由全链、任意已热服务恢复、Manager运行激活或容量提升声明。已有受控空起点的真实在线KV订阅与目录资格，但实验owner/stdio和测试oracle不等同生产热路径；不得扩展到未经测试的模型、TP、图模式、LoRA/多模态或跨节点。
+未交付的产品能力：任意已热服务恢复、完整生产启停、Manager运行激活和容量提升声明。公开HTTP精确路由已有真实有限接线，但不是最终用户制品；此前owner/stdio和Python测试oracle也不等同生产热路径。不得扩展到未经测试的模型、TP、图模式、LoRA/多模态或跨节点。
 
 早期预装首验源码提交：vLLM `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；vLLM-Ascend `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。仅为旧环境结果；HUST 已独立构建验证，见[最新证据](../evidence/hust-runtime-candidate-2026-10-11.md)，不据包名外推官方发行制品认证。
 
