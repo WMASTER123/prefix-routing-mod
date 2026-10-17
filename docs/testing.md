@@ -15,6 +15,10 @@ CPU 包含格式、静态检查、配置/CLI、真实 Manager 拒绝启用和未
 
 verify_wheel 在源码目录之外新建临时 venv，安装无运行依赖的 wheel，加载 entry point 与包内 manifest、运行 doctor；Manager schema/启用拒绝由 CPU 测试负责。发布前还需完整安装链、目标宿主及真实启停验收。
 
+可选 publisher 的 CPU 测试另覆盖默认不导入引擎、版本/文件守卫、幂等、共同水位、发送/编码失败、元数据及重放 payload 上限、祖先拓扑和清空代次。干净 wheel 检查实际加载 general plugin 并调用默认关闭入口，确认 torch/vllm 未导入；不能由此证明 opt-in 的真机接线成功。
+
+`tools/regress_kv_identity.py --publisher-hook` 在隔离 HUST 服务环境中做真实纯文本身份与恢复子集：已热快照、超窗快照、快照加增量、真实 clear、同地址重启、新旧实时 epoch。测试目录有界、仅暂存回归状态；不是生产索引。新代次须重建 SUB，完整报告保留失败和重试。压力/自然淘汰的 hook 重验、恢复竞态、资源成本和图模式仍是后续独立项目，不由这组串行请求替代。
+
 ## 统一报告
 
 tools/check.py 生成 artifacts/checks/<suite>.json，CPU / integration 同时生成 JUnit。退出码 0=通过，1=执行失败，2=参数错误，3=未实现/未运行。当前 npu-smoke、npu-routing、performance、release 是保留入口，返回 not-run 和 3，绝不静默成功。

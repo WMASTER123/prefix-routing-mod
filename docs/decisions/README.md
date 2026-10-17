@@ -1,6 +1,7 @@
 # 决策索引
 
 - [2026-10-11：HUST 配套源码候选与隔离验证](2026-10-11-hust-runtime-candidate.md)；替代继续盲选官方版本的执行方向，尚未冻结运行基线。
+- [2026-10-11：可选 HUST publisher hook 实验](2026-10-11-optional-hust-publisher.md)；用户批准，默认关闭，生产交付待压力/开销审查。
 
 - [ADR-001：脚手架和诚实的 MOD 状态](001-scaffold-boundary.md)。
 - [2026-10-11：Ascend 优先规划与性能证据边界](2026-10-11-ascend-first.md)。

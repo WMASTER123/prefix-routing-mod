@@ -18,9 +18,11 @@
 | 外部生命周期 | external_operator；当前无控制共享服务动作 | P1/P7 验证合法 plan/render/check |
 | 身份与版本 | 支持矩阵分候选/已验证 | 不将 metadata 版本当兼容证据 |
 | 启停/回退 | 当前仅卸载描述包；没有运行中的 Router | P2/P7 实测服务排空与入口回退 |
-| 可选引擎 hook | 目前没有任何 hook 或 platform plugin | 原生接口不足才提案，版本守卫/幂等/关闭/差分均验收 |
+| 可选引擎 hook | 用户批准实验的 general plugin publisher 适配；默认关闭、固定版本/源文件守卫，不替换 Ascend platform plugin | 见 [ADR](decisions/2026-10-11-optional-hust-publisher.md)；功能、关闭回退、开销与目标配置分别验收，实验入口不是 Manager 激活 |
 | 责任与证据 | WMASTER123 个人私有仓库、顾问 unknown、无性能声明 | 正式组内准入另行审查 |
 
 host.version_range >=0 仅允许惰性描述被解析，不是“兼容所有 vLLM”的声明；激活被明确阻止。未来启用前必须改成经过验证的守卫。components/protocols 为空，不伪装 KV connector 获取准入。
 
 模板中组织归档要求与当前私人建仓是两回事：本仓库是个人开发仓库，未申请组内目录/网站收录，也不宣称完整 MOD 发布认证。
+
+新增 `vllm.general_plugins` entry point 只允许在明确 opt-in 的实验中绑定内部 zmq 工厂。静态 MOD 描述与 package import 不触发它；默认插件加载亦无引擎导入或绑定副作用。关闭开关并移除 allowlist 后重启测试进程即可回到原生 publisher，不支持进程内热切换。该入口、内部依赖、验证范围和回退须在审查中单独检查，不能借此跳过模板/Manager 最终启用合同。
