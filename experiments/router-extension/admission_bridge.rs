@@ -17,6 +17,7 @@ pub struct AdmissionClient {
     address: SocketAddr,
     token: String,
     active: Arc<AtomicUsize>,
+    clock_id: String,
 }
 
 struct Slot(Arc<AtomicUsize>);
@@ -28,12 +29,23 @@ impl Drop for Slot {
 
 impl AdmissionClient {
     pub fn new(address: SocketAddr, token: String) -> Result<Self, &'static str> {
+        Self::with_clock(address, token, "fixture-router-session".into())
+    }
+
+    pub fn with_clock(
+        address: SocketAddr,
+        token: String,
+        clock_id: String,
+    ) -> Result<Self, &'static str> {
         if address.ip() != std::net::Ipv4Addr::LOCALHOST
             || address.port() == 0
             || token.len() != 64
             || !token
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            || clock_id.is_empty()
+            || clock_id.len() > 128
+            || !clock_id.bytes().all(|b| b.is_ascii_graphic())
         {
             return Err("invalid_admission_endpoint");
         }
@@ -41,6 +53,7 @@ impl AdmissionClient {
             address,
             token,
             active: Arc::new(AtomicUsize::new(0)),
+            clock_id,
         })
     }
 
@@ -69,7 +82,7 @@ impl AdmissionClient {
         let address = self.address;
         let message = json!({"schema":"admission-cpu-v1", "token": self.token,
             "request_id":request_id, "attempt_id":attempt_id,
-            "clock_id":"fixture-router-session", "at_ns":at_ns});
+            "clock_id":self.clock_id, "at_ns":at_ns});
         // Cancellation does not kill this finite job. A commit without receipt
         // remains charged. Never retry a reservation or dispatch from this job.
         tokio::task::spawn_blocking(move || {

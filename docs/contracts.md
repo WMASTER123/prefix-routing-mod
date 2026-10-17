@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-13 进程恢复补充：工具账本的排他打开覆盖创建/重放/事务/关闭，锁文件不删除；规范化本地路径限定单 owner，不声明多主机或别名隔离。CPU supervisor 另行验证旧 Router 进程组结束后才开启下一次交接；账本锁本身不提供发送 fencing。新 clock/请求命名空间不复用，旧尝试保留原身份和负债；旧观察可对账但不能授予新许可。真实服务状态尚由 fixture 提供，component-v0.1 及生产 ABI 不变。
+
 2026-10-13 入口/恢复增量：一个 HTTP attempt 关联全部 rendered prompt × sampling child；实际 external/internal ID 从调用处捕获，全部组成功提交才封口。参考账本保留每 attempt 的原时钟；旧传输观察仍按旧时钟验证，可靠 ENDED 的新接收确认可使用当前 runtime 时钟，不跨时钟比较数值。新 runtime 必须是从未用过的时钟、同实例的新鲜观测和进位控制版本，计数必须保留旧负债；旧 dispatcher 停止证明目前是 CPU 调用方前置条件，不是自动完成的生产 fencing。异步 reserve 仅提交成功返回新许可，重复申请不重新许可；普通拒绝不关闭旧工作的观察通道。见[ADR](decisions/2026-10-13-entry-recovery.md)。基础公开 schema 未变，这些仍为 tools/experiments 接缝。
 
 2026-10-13 实验通道 transport-observer-cpu-v1：源回调序号与账本生命周期序号分开；只接收 SEND_STARTED/NOT_SENT/OUTCOME_UNKNOWN，拒绝从该通道注入 backend ENDED。每个源观察的完整载荷和账本转换在同一事务持久化，重复冲突拒绝；终态先结清后的迟到关闭只记录观察。接收历史发送不等于许可新发送，重启后的 admission_ready 不自动打开。此协议是有界 loopback CPU 实验，未冻结生产 ABI；见[ADR](decisions/2026-10-13-online-transport.md)。

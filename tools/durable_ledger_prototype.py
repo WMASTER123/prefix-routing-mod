@@ -30,6 +30,7 @@ from prefix_routing_mod.contracts import (
     WorkerState,
 )
 from tests.fixtures.component_ledger import ReferenceLedger
+from tools.ledger_ownership import LedgerOwnership
 from tools.terminal_observer_prototype import Binding, Ended
 
 MAX_RECORD_BYTES = 8192
@@ -134,16 +135,18 @@ class DurableLedger:
             )
             decode(metadata)
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("xb"):
-                pass
         elif not self.path.is_file():
             raise FileNotFoundError("receipt log missing; cannot assume no prior work")
-        if self.path.stat().st_size > 2 * MAX_PAYLOAD_BYTES:
-            raise ValueError("receipt file exceeds open budget")
-        self.connection = sqlite3.connect(
-            self.path.as_uri() + "?mode=rw", uri=True, isolation_level=None
-        )
+        self.ownership = LedgerOwnership(self.path)
         try:
+            if create:
+                with self.path.open("xb"):
+                    pass
+            if self.path.stat().st_size > 2 * MAX_PAYLOAD_BYTES:
+                raise ValueError("receipt file exceeds open budget")
+            self.connection = sqlite3.connect(
+                self.path.as_uri() + "?mode=rw", uri=True, isolation_level=None
+            )
             self.connection.execute("PRAGMA synchronous=FULL")
             self.connection.execute("PRAGMA journal_mode=DELETE")
             if create:
@@ -163,7 +166,9 @@ class DurableLedger:
             self._reload()
             self.admission_ready = create
         except BaseException:
-            self.connection.close()
+            if hasattr(self, "connection"):
+                self.connection.close()
+            self.ownership.close()
             raise
 
     def _reload(self):
@@ -579,7 +584,10 @@ class DurableLedger:
     def close(self):
         self.failed = True
         self.admission_ready = False
-        self.connection.close()
+        try:
+            self.connection.close()
+        finally:
+            self.ownership.close()
 
     def __enter__(self):
         return self

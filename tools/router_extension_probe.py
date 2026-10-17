@@ -62,6 +62,12 @@ def run(
     disabled_environment.pop("PREFIX_PROBE_TOKEN", None)
     disabled_environment.pop("PREFIX_PROBE_FAULT_DROP_ACK", None)
     disabled_environment.pop("PREFIX_PROBE_DYNAMIC", None)
+    for key in (
+        "PREFIX_PROBE_CLOCK",
+        "PREFIX_PROBE_NAMESPACE",
+        "PREFIX_PROBE_SCENARIO",
+    ):
+        disabled_environment.pop(key, None)
 
     class ProbeHandler(Handler):
         def before_reply(self, request):

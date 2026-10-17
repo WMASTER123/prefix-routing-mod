@@ -74,6 +74,17 @@ struct FixtureProvider {
     clock: Arc<RouterClock>,
     outbox: Option<Arc<Outbox>>,
     admission: Option<admission_bridge::AdmissionClient>,
+    namespace: String,
+}
+
+impl FixtureProvider {
+    fn identity(&self, kind: &str, id: usize) -> String {
+        if self.namespace.is_empty() {
+            format!("{kind}-{id}")
+        } else {
+            format!("{kind}-{}-{id}", self.namespace)
+        }
+    }
 }
 
 impl Default for RouterClock {
@@ -144,8 +155,8 @@ impl HttpExtension for FixtureProvider {
                     .request_id;
                 admission
                     .reserve(
-                        format!("request-{id}"),
-                        format!("attempt-{id}"),
+                        self.identity("request", id),
+                        self.identity("attempt", id),
                         self.clock.now_ns(),
                     )
                     .await?;
@@ -222,8 +233,8 @@ impl HttpExtension for FixtureProvider {
             state.control += 1;
         }
         let trace = Arc::new(Mutex::new(LifecycleTrace::new(
-            format!("request-{}", features.request_id),
-            format!("attempt-{}", features.request_id),
+            self.identity("request", features.request_id),
+            self.identity("attempt", features.request_id),
             "fixture-target".into(),
             "fixture-instance-1".into(),
             self.clock.clone(),
@@ -242,7 +253,7 @@ impl HttpExtension for FixtureProvider {
                 carrier: self
                     .admission
                     .as_ref()
-                    .map(|_| format!("attempt-{}", features.request_id)),
+                    .map(|_| self.identity("attempt", features.request_id)),
             }),
             trace,
         };
@@ -338,8 +349,23 @@ async fn main() {
 
     let online = std::env::var("PREFIX_PROBE_PORT").ok();
     let dynamic = std::env::var("PREFIX_PROBE_DYNAMIC").as_deref() == Ok("1");
+    let clock_id =
+        std::env::var("PREFIX_PROBE_CLOCK").unwrap_or_else(|_| "fixture-router-session".into());
+    let namespace = std::env::var("PREFIX_PROBE_NAMESPACE").unwrap_or_default();
+    assert!(
+        namespace.len() <= 64
+            && namespace
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    );
+    let scenario = std::env::var("PREFIX_PROBE_SCENARIO").unwrap_or_default();
+    assert!(matches!(
+        scenario.as_str(),
+        "" | "admission-lost" | "admission-cancel" | "recover-quota"
+    ));
+    assert!(scenario.is_empty() || dynamic);
     let admission = dynamic.then(|| {
-        admission_bridge::AdmissionClient::new(
+        admission_bridge::AdmissionClient::with_clock(
             format!(
                 "127.0.0.1:{}",
                 online.as_ref().expect("dynamic requires online")
@@ -347,6 +373,7 @@ async fn main() {
             .parse()
             .unwrap(),
             std::env::var("PREFIX_PROBE_TOKEN").expect("explicit capability"),
+            clock_id.clone(),
         )
         .unwrap()
     });
@@ -362,6 +389,8 @@ async fn main() {
     let provider = Arc::new(FixtureProvider {
         outbox,
         admission,
+        namespace,
+        clock: Arc::new(RouterClock::new(clock_id).unwrap()),
         ..FixtureProvider::default()
     });
     let ctx = Arc::new(AppContext::new(config, client, 16, None, vec![]).unwrap());
@@ -373,6 +402,51 @@ async fn main() {
         .install_http_extension(provider.clone())
         .is_err());
     let router = Router::new(workers, &ctx).await.unwrap();
+    if !scenario.is_empty() {
+        if scenario == "admission-cancel" {
+            let signal =
+                std::env::var("PREFIX_PROBE_COMMIT_SIGNAL").expect("explicit commit barrier");
+            let mut pending = Box::pin(route(&router, "fixture", false));
+            let committed = async {
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while !tokio::fs::try_exists(&signal).await.unwrap() {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                })
+                .await
+                .expect("commit barrier deadline");
+            };
+            tokio::select! {
+                _ = &mut pending => panic!("route completed before post-commit cancellation"),
+                _ = committed => {}
+            }
+            drop(pending);
+            tokio::fs::write(format!("{signal}.cancelled"), b"cancelled\n")
+                .await
+                .unwrap();
+            // Let the finite RPC finish, but no caller receives its permit.
+            tokio::time::sleep(Duration::from_millis(750)).await;
+        } else {
+            consume(route(&router, "fixture", false).await, 503, false).await;
+        }
+        consume(route(&router, "fixture", false).await, 503, false).await;
+        controller
+            .as_ref()
+            .unwrap()
+            .drain(Duration::from_secs(10))
+            .unwrap();
+        let state = provider.state.lock().unwrap();
+        assert_eq!(
+            (state.reserve, state.sent, state.closed, state.outstanding),
+            (0, 0, 0, 0)
+        );
+        println!(
+            "{}",
+            serde_json::json!({"status":"pass", "scenario":scenario,
+            "extension_sends":state.sent, "checks":["no_unconfirmed_permit", "no_backend_resend"]})
+        );
+        return;
+    }
     if dynamic || std::env::var("PREFIX_PROBE_FAULT_DROP_ACK").as_deref() == Ok("1") {
         let controller = controller.as_ref().expect("fault requires online mode");
         consume(route(&router, "fixture", false).await, 200, false).await;

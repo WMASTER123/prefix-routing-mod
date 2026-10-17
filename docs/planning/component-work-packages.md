@@ -1,5 +1,7 @@
 # 组件联调与三人工作包：component-v0.1
 
+2026-10-13 恢复收尾：B/C 包增加实际 Router/独立接收进程的准入故障与两次重启组合验证，工具日志单 owner 排他；没有改变 M1–M8 或增加生产服务。真实 HUST 接线、长期资源管理、MOD 安装仍待验收，不提前分派人员；本轮先审查，下一次 1 张 NPU 联调按[清单](hust-first-real-chain.md)执行。
+
 2026-10-13 入口/准入/恢复：完整 HTTP family 和新 runtime 语义已补 CPU 接缝，Router 增加可等待准入和自有 carrier；不是三人生产接口冻结。真实 HUST 安装、启动排他/观测、终态业务结果组合及 KV 订阅仍是整体门槛；暂不分配人员。具体测试层级与剩余工作见[本轮记录](../../evidence/entry-admission-recovery-2026-10-13.md)。
 
 2026-10-13 B/C 包增量：原生 M5 传输观察增加有限在线接收/事务确认；保持统一 ledger owner，不建立第二状态机。动态 HTTP 准入、实际终态关联、重启派发及长期 GC 仍是生产冻结门槛，暂不分派人员。见[本轮证据](../../evidence/online-transport-2026-10-13.md)。
