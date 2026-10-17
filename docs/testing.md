@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-12 审查收尾：新增 `Native HTTP extension helper checks`，锁定小型 checks crate 并直接编译宿主共用的 `prefix_extension.rs` / `lifecycle_bridge.rs`；包含空块让出/超时、慢消费者、响应限制、关闭恰一次及有限标准事件。该 CI 不编译完整 Router 或测试真实后端终态。完整 aarch64 example 人工测试另输出原生传输记录，由 `tools.lifecycle_trace_probe` 重放到现有账本 oracle；实验结束后的重放不算可靠在线投递。Windows 大响应 fixture 先消费请求体再关闭连接，避免 TCP reset 隐藏大小限制断言。
+
 2026-10-12 原生增量：新增 `Native index adapter checks`，固定 Rust 1.99.0 和两个原索引源文件 hash，执行 Rust 格式、原生语义与短更替 smoke。它不构建完整 Router 或占用 NPU。完整 aarch64 Router 的 release 与 `tools.router_extension_probe` / `tools.router_stream_probe` 仍由项目私有构建环境手动运行；[本轮记录](../evidence/bounded-router-adapters-2026-10-12.md)单独区分这些成绩。Python CPU 的 probe 守卫测试不能替代真正执行 Rust。
 
 当前真机工作遵循[四道顺序门槛](planning/runtime-event-gates.md)。只读 `tools/audit_runtime.py --output artifacts/runtime-audit-new.json` 检查实际调用解释器的包元数据和 `pip check`；未含必需核心包也失败。退出 0 仅表示 Python 依赖审计通过，不是 NPU/ABI/环境锁通过；详见[运行环境](runtime.md)。CPU 回归覆盖缺包、失败、超时、保留旧证据、来源 URL 脱敏和“依赖通过不冒充环境验收”。

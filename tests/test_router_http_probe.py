@@ -20,6 +20,9 @@ def test_probe_preserves_backend_error_response():
 def test_probe_bounds_backend_response_memory():
     class OversizedHandler(Handler):
         def do_POST(self):
+            # Consume this fixture request before closing the connection. An
+            # unread body can cause a TCP reset and hide the size-limit check.
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
             self.close_connection = True
             self.reply(200, b"x" * (MAX_RESPONSE_BYTES + 1))
 

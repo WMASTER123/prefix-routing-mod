@@ -6,6 +6,7 @@ dist/
 build/
 *.egg-info/
 artifacts/
+experiments/**/target/
 configs/local.*
 .env
 .env.*

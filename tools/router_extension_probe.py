@@ -15,6 +15,7 @@ from pathlib import Path
 from threading import Lock
 
 from tests.fixtures.mock_backend import Handler, mock_backend
+from tools.lifecycle_trace_probe import validate_log
 from tools.smoke_backend import stop_owned_group
 
 MAX_LOG_BYTES = 1_048_576
@@ -81,6 +82,7 @@ def run(binary: Path, output: Path) -> dict:
             if process.returncode:
                 raise RuntimeError(f"prototype exited {process.returncode}")
             result = prototype_result(output / "prototype.log")
+            report["lifecycle_replay"] = validate_log(output / "prototype.log")
             with lock:
                 report["backend_attempts"] = dict(counts)
             if report["backend_attempts"] != {

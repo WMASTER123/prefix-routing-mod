@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-12 审查收尾：`experiments/router-extension/lifecycle_bridge.rs` 将真实 Lease 回调转换成 component-v0.1 的有限传输事件。每尝试最多两个事件，使用同一 Router 单调时钟；状态码不认定后端接受，EOF/error/drop 不认定结束。`tools/lifecycle_trace_probe.py` 在实验结束后将记录重放到现有账本 oracle；可靠在线投递、正常/取消终态、进程重启恢复仍未实现。终态来源与接线门槛见[固定 HUST 审计](planning/backend-terminal-evidence.md)。生产 ID 分配和内部请求关联尚未冻结，CPU 记录只支持有界 ASCII ID 子集。
+
 2026-10-12 增量实验见[目录/流式适配 ADR](decisions/2026-10-12-bounded-router-adapters.md)。Rust 目录实验使用 `Binding`、不可复用的恢复 `Ticket`、规范化 `Block/Batch` 与排他快照/重放水位；这些是实验输入，不替代 component-v0.1，也不是已冻结的 HUST wire 或生产 ABI。一个分区只支持 worker 实例/publisher/完整身份/block_size、group 0/device/DP 0。`lookup=None` 表示未可信或身份不符，`Some(0)` 才是已观测未命中。
 
 目录事件在 owner 写锁内处理，查询仅持读锁，不暴露索引 Arc；失败撤销整个精确视图，不能开放半批结果。普通增量不复制整个目录；资源到限额时完整重建必要父链。父链缺失、同位置哈希别名、序号缺口及超预算均退出可信模式。M7 仍负责解码前 payload 上限、完整身份核验、控制面新鲜度及连接代次；没有这些证据，不能把本实验接口直接接生产。
