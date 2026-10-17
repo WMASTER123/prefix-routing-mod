@@ -1,5 +1,7 @@
 # 固定 HUST 请求终态来源审计与接入门槛
 
+2026-10-12 请求关联补验：`tools/audit_request_capture.py` 扩为七文件 guard，执行实际 assign_request_id、ParentRequest、AsyncLLM 提交和 OutputProcessor 关联增删方法，10 项 n=1/3、提前结束/部分失败/任务取消检查通过。协作者仍为 CPU 替身，普通 renderer/HTTP 多组入口与真实 IPC 未运行；当前退出条件见[接线范围](capture-recovery-wire-boundaries.md)。
+
 2026-10-12 可执行增量：`tools/audit_backend_terminal.py` 先验证四个源文件完整 SHA256，再执行抽取的完整方法（合成 CPU 协作者）。现有方法与未安装 observer 的独立对象接线共 25 项检查通过；这不是启动完整引擎。用户已批准小范围 CPU 原型；实际范围、费用和未过门槛见[终态适配评估](terminal-observer-scope.md)。
 
 补充源码事实：`EngineCore.abort_requests`（core.py:493–499）忽略 `finish_requests` 返回的 ID；管理性暂停使用的 `_send_abort_outputs`（1826 起）另有显式输出，不代表普通取消也有。scheduler.py:2522 起延迟 blocks 释放；`finished_req_ids` 是逻辑结束，不是物理空闲证明。output_processor.py:694 起删除映射，随后同 ID 输出会被忽略；真实关联必须提前保留。完整正常 stop 检测/生成循环、真实 detokenizer、shutdown loop 及设备 fence 仍未执行，CPU 替身不覆盖这些范围。

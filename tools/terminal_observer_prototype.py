@@ -48,6 +48,9 @@ class Ended:
 @dataclass
 class Family:
     children: frozenset[str]
+    expected: int
+    sealed: bool = False
+    abandoned: bool = False
     ended: set[str] = field(default_factory=set)
     record: Ended | None = None
 
@@ -77,6 +80,7 @@ class TerminalJournal:
         self.next_sequence = 1
         self.acknowledged = 0
         self.failed = False
+        self.reserved_children = 0
 
     def register(self, attempt_id, children):
         """Require an explicit, complete tuple, never a lazy/unbounded iterable."""
@@ -90,19 +94,57 @@ class TerminalJournal:
         child_set = frozenset(children)
         if len(child_set) != len(children):
             raise ValueError("duplicate child")
+        if any(child in self.owners for child in children):
+            raise ValueError("mapping already retained; IDs must not be reused")
+        self.begin(attempt_id, len(children))
+        for child in children:
+            self.bind_child(attempt_id, child)
+        self.seal(attempt_id)
+
+    def begin(self, attempt_id, expected):
+        """Reserve the COMPLETE child budget before any simulated submission."""
+        _identifier(attempt_id)
+        if type(expected) is not int or not 0 < expected <= self.max_children:
+            raise ValueError("bounded positive expected child count required")
         if self.failed:
             raise RuntimeError("observer unavailable; do not dispatch")
-        if attempt_id in self.families or any(
-            child in self.owners for child in children
-        ):
+        if attempt_id in self.families:
             raise ValueError("mapping already retained; IDs must not be reused")
         if (
             len(self.families) >= self.max_families
-            or len(self.owners) + len(children) > self.max_children
+            or self.reserved_children + expected > self.max_children
         ):
             raise RuntimeError("retention full; do not dispatch")
-        self.families[attempt_id] = Family(child_set)
-        self.owners.update((child, attempt_id) for child in children)
+        self.families[attempt_id] = Family(frozenset(), expected)
+        self.reserved_children += expected
+
+    def bind_child(self, attempt_id, child):
+        _identifier(child)
+        family = self.families[attempt_id]
+        if self.failed or family.sealed or family.abandoned:
+            raise RuntimeError("capture unavailable or already closed")
+        if child in self.owners or len(family.children) >= family.expected:
+            raise ValueError("duplicate child or expected count exceeded")
+        family.children = family.children | {child}
+        self.owners[child] = attempt_id
+
+    def seal(self, attempt_id):
+        family = self.families[attempt_id]
+        if self.failed or family.abandoned:
+            raise RuntimeError("capture unavailable or abandoned")
+        if len(family.children) != family.expected:
+            raise ValueError("incomplete family; do not seal")
+        family.sealed = True
+        if len(family.ended) == family.expected and family.record is None:
+            return self._emit(attempt_id, family)
+        return True
+
+    def abandon(self, attempt_id):
+        """Partial submission failure is unresolved, even if known children end."""
+        family = self.families[attempt_id]
+        if family.sealed:
+            raise ValueError("already sealed")
+        family.abandoned = True
 
     def observe_core_end(self, child):
         """Called AFTER successful core cleanup in the experiment.
@@ -119,16 +161,27 @@ class TerminalJournal:
         family = self.families[self.owners[child]]
         if child in family.ended:
             return True
-        completes = len(family.ended) + 1 == len(family.children)
+        completes = (
+            family.sealed
+            and not family.abandoned
+            and len(family.ended) + 1 == family.expected
+        )
         if completes and len(self.events) >= self.max_events:
             self.failed = True
             return False
         family.ended.add(child)
         if completes:
-            record = Ended(self.binding, self.next_sequence, self.owners[child])
-            family.record = record
-            self.events.append(record)
-            self.next_sequence += 1
+            return self._emit(self.owners[child], family)
+        return True
+
+    def _emit(self, attempt_id, family):
+        if len(self.events) >= self.max_events:
+            self.failed = True
+            return False
+        record = Ended(self.binding, self.next_sequence, attempt_id)
+        family.record = record
+        self.events.append(record)
+        self.next_sequence += 1
         return True
 
     def replay(self, binding, after):

@@ -38,3 +38,21 @@ jobs:
           cargo +1.99.0 test --locked --release --manifest-path experiments/router-index/Cargo.toml
       - name: Bounded synthetic churn smoke
         run: cargo +1.99.0 run --locked --release --manifest-path experiments/router-index/Cargo.toml -- adapter 20000 512
+      - name: Normalized wire to original index
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          result = subprocess.run([
+              "cargo", "+1.99.0", "run", "--locked", "--release",
+              "--manifest-path", "experiments/router-index/Cargo.toml", "--", "wire",
+              "experiments/router-index/fixtures/wire-v1.json",
+          ], check=True, capture_output=True, text=True)
+          report = json.loads(result.stdout)
+          assert report["matched_blocks"] == [2, 1, 0]
+          assert all(report[key] is None for key in (
+              "before_control_confirmation", "after_lease_expiry", "after_disconnect"
+          ))
+          assert report["npu_validated"] is False
+          print(result.stdout)
+          PY

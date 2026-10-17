@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-12 关联/恢复/wire 增量：有界 journal 支持 begin/bind/seal/abandon，原生 AsyncLLM 顺序 fanout 不能按暂时已知 child 推断完成。事务接收侧仍以同一参考账本为状态机，重建后派发暂停。KV 规范化不另建树，Rust pool 调用原目录/索引并保留任务 ticket、控制 lease 和注册额度。当前 CPU 实验保存在 tools/experiments，不改变在线进程数或冻结 Python/SQLite/JSON 为生产实现；[接线边界](planning/capture-recovery-wire-boundaries.md)记录真实服务门槛。
+
 2026-10-12 终态增量：先区分前端结束、核心逻辑结束与资源释放。新增仅在 tools 的有界 observer/在线消费者 CPU 原型，不增加生产服务、不修改 HUST 或 MOD 入口；真实关联、跨进程可靠投递和持久化仍未实现。见[范围评估](planning/terminal-observer-scope.md)。
 
 2026-10-12 审查收尾：流式空块让出/idle 回归和有限标准生命周期记录在独立 CPU 实验中补齐，源文件与宿主 helper 共用；原生 helper CI 与完整 Router 人工验证分别记录。可靠终态和在线投递仍是 M3/M5/M7 接线门槛，见[终态来源审计](planning/backend-terminal-evidence.md)，不凭 HTTP `[DONE]` 或前端 finish_reason 结算。

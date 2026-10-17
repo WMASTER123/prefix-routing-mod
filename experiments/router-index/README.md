@@ -1,5 +1,13 @@
 # 原索引持续更替审计
 
+2026-10-12 增加 `wire` CPU 模式，消费 M7 规范化的合成 snapshot/delta 到同一 Directory/KvBlockIndexer；fixtures/wire-v1.json 由固定 HUST Struct/msgspec 0.22.0 构造，不含 token 序列。Pool 保留原恢复 ticket，确认时间是控制请求发送时间；分区声明逻辑额度之和受全池注册预算限制。当前不包含真实订阅、完整多分区生命周期或 RSS 硬限制。
+
+```bash
+cargo run --offline --locked --release --manifest-path experiments/router-index/Cargo.toml -- wire experiments/router-index/fixtures/wire-v1.json
+```
+
+预期 matched_blocks=[2,1,0]；控制确认前/lease 过期/断连为 null。原索引 CI 校验同一 fixture；固定 HUST codec 的原始构造工具手动运行，不由此宣称 CI 启动了 HUST。
+
 2026-10-12 增加 `adapter` 模式及目录故障/并发测试，直接调用原 `KvBlockIndexer`。`src/directory.rs` 是受限 CPU 可行性 adapter：完整快照加连续增量、恢复任务/连接代次隔离、身份匹配、缺失父链/别名拒绝、clear 和预算降级。不是第二套匹配索引，也未接实际 HUST wire。
 
 ```bash

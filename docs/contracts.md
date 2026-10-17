@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-12 候选接线补充：关联 begin 预留全部 child 额度，bind 使用实际内部 ID，全部成功提交后 seal，abandon 保留未决；已知 child 全部结束不替代 seal。事务接收实验提交成功才返回 applied，单一 owner 分配生命周期序号，重复终态使用原已提交载荷。重建历史时钟只用于重放校验，新派发暂停，未实现生产时钟交接。KV pool 的恢复结果/增量/控制确认都携带当前 ticket；lease 从控制请求发送时点计算，实时帧不续期。M7 必须在解码前限额并提供完整必需元数据，不能将缺失 parent/LoRA 当 None。新增对象均为实验端口，component-v0.1 未变；见[范围](planning/capture-recovery-wire-boundaries.md)。
+
 2026-10-12 终态原型使用独立 `Binding(worker, instance, observer)` 与显式完整 family，所有子请求结束才产生一条正证据；不从缺失记录推断未接受，不从逻辑结束推断 KV/HBM free。M5 仍须统一生命周期序号和业务结果，observer 不能直接把通用 ended 伪装为 COMPLETED。进程内 journal/ACK/快照实验不改变生产协议，整进程恢复与 GC 未实现；见[候选边界](planning/terminal-observer-scope.md)。
 
 2026-10-12 审查收尾：`experiments/router-extension/lifecycle_bridge.rs` 将真实 Lease 回调转换成 component-v0.1 的有限传输事件。每尝试最多两个事件，使用同一 Router 单调时钟；状态码不认定后端接受，EOF/error/drop 不认定结束。`tools/lifecycle_trace_probe.py` 在实验结束后将记录重放到现有账本 oracle；可靠在线投递、正常/取消终态、进程重启恢复仍未实现。终态来源与接线门槛见[固定 HUST 审计](planning/backend-terminal-evidence.md)。生产 ID 分配和内部请求关联尚未冻结，CPU 记录只支持有界 ASCII ID 子集。

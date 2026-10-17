@@ -1,5 +1,7 @@
 # 可选终态观测：CPU 原型范围与生产接线门槛
 
+2026-10-12 后续增量：关联已增加 begin/bind/seal/abandon，固定源 ID/AsyncLLM 方法驱动提前结束/部分提交反例；接收侧增加实际进程退出后的事务重建，不再局限于保留原账本的 consumer 重建。仍未安装引擎或实现真实跨进程控制通道，历史时钟不能直接恢复新派发。详细[当前范围](capture-recovery-wire-boundaries.md)优先于下方 PR #13 初版状态。
+
 日期：2026-10-12。用户已同意先做小范围 CPU 原型和成本评估；**未安装到引擎，未修改 HUST 源码，不是第二个 KV publisher**。本轮工具只在显式调用时运行；包入口、MOD manifest 与 import_only 状态不变。
 
 ## 证据与必要性
@@ -11,7 +13,7 @@
 - 前端 stop string 会先结束前端请求并删除外部/内部 ID 映射，然后要求核心取消。接收晚到终态时再读取该映射已经太晚。
 - 核心 `_free_request` 之后可能还有 deferred block frees。因此逻辑请求结束不等于物理 KV 释放，更不等于设备全部空闲。不能靠逻辑结束增加可用 KV 计数。
 
-## 本轮实际原型
+## PR #13 初版原型（保留历史范围）
 
 `tools/terminal_observer_prototype.py` 是单 owner、有限预算、进程内实验，不属于生产包。复用现有参考账本，不实现第二套代理或缓存索引。
 

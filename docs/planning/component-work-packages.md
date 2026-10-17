@@ -1,5 +1,7 @@
 # 组件联调与三人工作包：component-v0.1
 
+2026-10-12 接线增量：B/C 包已有原生方法驱动关联封口、持久接收/统一序号及实际子进程退出恢复实验；A 包已有原生 KV codec 合成四帧→复用索引和控制 lease/全池额度实验。生产桥接、HTTP 总组数、时钟重建、GC 和真实服务仍未完成；暂不分工，见[接线边界](capture-recovery-wire-boundaries.md)。
+
 2026-10-12 终态 CPU 增量：B/C 包已有有界 journal 到现有参考账本的运行中投递实验，未新增生产账本；用户同意小范围 observer 评估，暂未安装引擎。接口冻结仍待真实请求关联、可靠跨进程恢复及 M7→M2 接线，见[边界与成本](terminal-observer-scope.md)。暂不分工。
 
 2026-10-12 审查收尾：B/C 包补有限标准传输事件与旧账本 oracle 的 CPU 接线验证。可靠在线投递、正常/取消终态和重启恢复仍待实现；下一项优先核查[固定 HUST 终态来源](backend-terminal-evidence.md)的实际覆盖，再决定小型 observer 是否必要。M7→M2 wire/新鲜度及多分区总预算随后补齐。暂不分配人员，CPU 阶段无需 NPU。
