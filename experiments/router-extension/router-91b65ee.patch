@@ -1,0 +1,267 @@
+diff --git a/src/policies/registry.rs b/src/policies/registry.rs
+index fb75901..8d864f9 100644
+--- a/src/policies/registry.rs
++++ b/src/policies/registry.rs
+@@ -10,12 +10,14 @@ use super::{
+ };
+ use crate::config::types::PolicyConfig;
+ use std::collections::HashMap;
+-use std::sync::{Arc, RwLock};
++use std::sync::{Arc, OnceLock, RwLock};
+ use tracing::{debug, info, warn};
+ 
+ /// Registry for managing model-to-policy mappings
+ #[derive(Clone)]
+ pub struct PolicyRegistry {
++    // CPU admission seam: install once before serving. None is the default.
++    http_extension: Arc<OnceLock<Arc<dyn crate::routers::http::prefix_extension::HttpExtension>>>,
+     /// Model ID -> Policy instance mapping
+     model_policies: Arc<RwLock<HashMap<String, Arc<dyn LoadBalancingPolicy>>>>,
+ 
+@@ -38,6 +40,7 @@ impl PolicyRegistry {
+         let default_policy = Self::create_policy_from_config(&default_policy_config);
+ 
+         Self {
++            http_extension: Arc::new(OnceLock::new()),
+             model_policies: Arc::new(RwLock::new(HashMap::new())),
+             model_worker_counts: Arc::new(RwLock::new(HashMap::new())),
+             default_policy,
+@@ -46,6 +49,21 @@ impl PolicyRegistry {
+         }
+     }
+ 
++    pub fn install_http_extension(
++        &self,
++        provider: Arc<dyn crate::routers::http::prefix_extension::HttpExtension>,
++    ) -> Result<(), &'static str> {
++        self.http_extension
++            .set(provider)
++            .map_err(|_| "extension_already_installed")
++    }
++
++    pub fn http_extension(
++        &self,
++    ) -> Option<&Arc<dyn crate::routers::http::prefix_extension::HttpExtension>> {
++        self.http_extension.get()
++    }
++
+     /// Called when a worker is added
+     /// Returns the policy that should be used for this worker's model
+     pub fn on_worker_added(
+diff --git a/src/routers/http/mod.rs b/src/routers/http/mod.rs
+index fa2acae..354d3b0 100644
+--- a/src/routers/http/mod.rs
++++ b/src/routers/http/mod.rs
+@@ -6,6 +6,7 @@ pub mod openai_router;
+ pub mod pd_router;
+ pub mod pd_types;
+ mod program_adapter;
++pub mod prefix_extension;
+ pub mod router;
+ pub mod vllm_pd_router;
+ pub mod vllm_service_discovery;
+diff --git a/src/routers/http/router.rs b/src/routers/http/router.rs
+index f7140ac..b63a0c6 100644
+--- a/src/routers/http/router.rs
++++ b/src/routers/http/router.rs
+@@ -133,6 +133,7 @@ fn hold_load_until_body_done(mut response: Response, worker: Arc<dyn Worker>) ->
+ }
+ 
+ struct TypedDispatch<'a> {
++    prefix_attempt: Option<super::prefix_extension::AttemptGuard>,
+     headers: Option<&'a HeaderMap>,
+     route: &'a str,
+     worker_url: &'a str,
+@@ -1083,10 +1084,91 @@ impl Router {
+ 
+         let text = typed_req.extract_text_for_routing();
+ 
++        let extension = self.policy_registry.http_extension();
++        let features = if let Some(extension) = extension {
++            if !matches!(pool, Some(crate::backend::WorkerPoolKind::Http))
++                || self.intra_node_data_parallel_size != 1
++                || self.program_scheduler.is_some()
++                || !matches!(route, "/v1/completions" | "/v1/chat/completions")
++            {
++                return (
++                    StatusCode::SERVICE_UNAVAILABLE,
++                    "unsupported_extension_scope",
++                )
++                    .into_response();
++            }
++            let request = match serde_json::to_value(typed_req) {
++                Ok(request) => request,
++                Err(_) => {
++                    return (StatusCode::BAD_REQUEST, "extension_request_encoding").into_response()
++                }
++            };
++            match extension.prepare(&request, route) {
++                Ok(features) => Some(features),
++                Err(error) => return (StatusCode::SERVICE_UNAVAILABLE, error).into_response(),
++            }
++        } else {
++            None
++        };
++        // No ambiguous resend when the extension owns an attempt ledger.
++        let mut retry_config = self.retry_config.clone();
++        if extension.is_some() {
++            retry_config.max_retries = 1;
++        }
++
+         let response = RetryExecutor::execute_response_with_retry(
+-            &self.retry_config,
++            &retry_config,
+             // operation per attempt
+             |_: u32| async {
++                let mut prefix_attempt = None;
++                let mut prefix_worker = None;
++                if let (Some(extension), Some(features)) = (extension, features.as_ref()) {
++                    let revision = self.worker_registry.revision();
++                    let workers = match model_id {
++                        Some(model) => self.worker_registry.get_by_model_fast(model),
++                        None => self.worker_registry.get_all(),
++                    };
++                    let available: Vec<String> = workers
++                        .iter()
++                        .filter(|w| w.is_available())
++                        .map(|w| w.url().to_owned())
++                        .collect();
++                    let proposal = match extension.select(features.as_ref(), &available, revision) {
++                        Ok(proposal) => proposal,
++                        Err(error) => {
++                            return (StatusCode::SERVICE_UNAVAILABLE, error).into_response()
++                        }
++                    };
++                    if let Some(proposal) = proposal {
++                        if proposal.registry_revision != revision
++                            || self.worker_registry.revision() != revision
++                            || !available.contains(&proposal.worker_url)
++                        {
++                            return (StatusCode::SERVICE_UNAVAILABLE, "stale_extension_target")
++                                .into_response();
++                        }
++                        let Some(worker) = self
++                            .worker_registry
++                            .get_by_url(&proposal.worker_url)
++                            .filter(|w| w.is_available())
++                        else {
++                            return (
++                                StatusCode::SERVICE_UNAVAILABLE,
++                                "extension_target_unavailable",
++                            )
++                                .into_response();
++                        };
++                        let lease = match extension.reserve(features.as_ref(), &proposal) {
++                            Ok(lease) => lease,
++                            Err(error) => {
++                                return (StatusCode::SERVICE_UNAVAILABLE, error).into_response()
++                            }
++                        };
++                        prefix_attempt =
++                            Some(super::prefix_extension::AttemptGuard::new(lease, proposal));
++                        prefix_worker = Some(worker);
++                    }
++                }
+                 // Each backend attempt is a fresh scheduling arrival. The
+                 // previous ProgramCompletion finishes exactly once before a
+                 // retry invokes this closure again.
+@@ -1100,7 +1182,9 @@ impl Router {
+                 let forced_worker_url = program_completion
+                     .as_ref()
+                     .map(|completion| completion.dispatch().target_id.as_str());
+-                let selected_worker = if let Some(target) = forced_worker_url {
++                let selected_worker = if prefix_worker.is_some() {
++                    prefix_worker
++                } else if let Some(target) = forced_worker_url {
+                     let worker = self
+                         .worker_registry
+                         .get_by_url(target)
+@@ -1151,6 +1235,7 @@ impl Router {
+                     .send_typed_request(
+                         typed_req,
+                         TypedDispatch {
++                            prefix_attempt,
+                             headers,
+                             route,
+                             worker_url: worker.url(),
+@@ -1335,12 +1420,30 @@ impl Router {
+     // Send typed request directly without conversion
+     #[allow(clippy::too_many_arguments)]
+     async fn send_typed_request<T: serde::Serialize>(
++        &self,
++        typed_req: &T,
++        mut dispatch: TypedDispatch<'_>,
++        program_completion: Option<ProgramCompletion>,
++    ) -> Response {
++        let mut attempt = dispatch.prefix_attempt.take();
++        let response = self
++            .send_typed_request_inner(typed_req, dispatch, program_completion, &mut attempt)
++            .await;
++        match attempt {
++            Some(guard) => super::prefix_extension::observe_body(response, guard),
++            None => response,
++        }
++    }
++
++    async fn send_typed_request_inner<T: serde::Serialize>(
+         &self,
+         typed_req: &T,
+         dispatch: TypedDispatch<'_>,
+         program_completion: Option<ProgramCompletion>,
++        prefix_attempt: &mut Option<super::prefix_extension::AttemptGuard>,
+     ) -> Response {
+         let TypedDispatch {
++            prefix_attempt: _,
+             headers,
+             route,
+             worker_url,
+@@ -1454,6 +1557,19 @@ impl Router {
+         let stages_on = crate::backend::stages_enabled();
+ 
+         let t_send = Instant::now();
++        if let Some(guard) = prefix_attempt.as_mut() {
++            if self.worker_registry.revision() != guard.proposal.registry_revision
++                || !self
++                    .worker_registry
++                    .get_by_url(worker_url)
++                    .is_some_and(|w| w.is_available())
++            {
++                return (StatusCode::SERVICE_UNAVAILABLE, "extension_send_fence").into_response();
++            }
++            if let Err(error) = guard.start() {
++                return (StatusCode::SERVICE_UNAVAILABLE, error).into_response();
++            }
++        }
+         let res = match otel_http::send_client_request(
+             request_builder,
+             headers,
+@@ -1468,6 +1584,9 @@ impl Router {
+         {
+             Ok(res) => res,
+             Err(e) => {
++                if let Some(guard) = prefix_attempt.as_mut() {
++                    guard.transport_failed();
++                }
+                 error!(
+                     "Failed to send typed request worker_url={} route={} error={}",
+                     worker_url, route, e
+@@ -1491,6 +1610,9 @@ impl Router {
+ 
+         let status = StatusCode::from_u16(res.status().as_u16())
+             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
++        if let Some(guard) = prefix_attempt.as_ref() {
++            guard.headers(status.as_u16());
++        }
+         let http_ttfb_ms = t_send.elapsed().as_secs_f64() * 1000.0;
+ 
+         if !is_stream {
+@@ -1514,6 +1636,9 @@ impl Router {
+                     response
+                 }
+                 Err(e) => {
++                    if let Some(guard) = prefix_attempt.as_mut() {
++                        guard.transport_failed();
++                    }
+                     // IMPORTANT: Decrement load on error before returning
+                     if load_incremented {
+                         if let Some(worker) = self.worker_registry.get_by_url(worker_url) {

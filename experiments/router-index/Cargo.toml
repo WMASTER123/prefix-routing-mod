@@ -1,0 +1,9 @@
+[package]
+name = "prefix-router-index-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dashmap = "=6.2.1"
+parking_lot = "=0.12.5"

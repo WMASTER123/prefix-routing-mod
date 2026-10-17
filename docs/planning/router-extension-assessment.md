@@ -1,6 +1,6 @@
 # R1：固定 Router 的窄幅扩展范围评估
 
-2026-10-11。用户已选择先评估窄幅 Router 扩展；不是授权大面积 fork，也不是修改 HUST 推理引擎。候选 `91b65ee4bdfbe98863a32a2205dced5dbb249ffe`，本轮未编辑候选源码，完整构建尚未通过。
+2026-10-12 更新。用户已选择先评估窄幅 Router 扩展；不是授权大面积 fork，也不是修改 HUST 推理引擎。候选 `91b65ee4bdfbe98863a32a2205dced5dbb249ffe` 的原提交完整构建及 CPU/mock 转发通过；另在独立实验副本评估接口接缝，不修改原版准入源码或 HUST。状态及局限见[最新证据](../../evidence/router-cpu-admission-2026-10-12.md)。
 
 ## 基本判断
 
@@ -27,11 +27,13 @@ HTTP 服务、worker registry、健康/熔断、客户端、协议序列化与�
 
 正常依赖树确认 native-tls 经 reqwest/hf-hub，以及 vLLM Rust chat/text 和 multimodal 引入 OpenSSL；顶层存在 rustls 并不会自动关闭这些 native-tls features。三个 Git 依赖已经按锁中原提交转送，网络失败已与此 SDK 缺口分开。Cargo.toml/lock hash 与本机原提交相同。
 
-下一构建步骤应先核对完整 SDK 前置清单，再在**项目隔离 build sysroot** 提供与发行包匹配的开发头/链接信息，留来源与 hash；不安装全局 RPM、不调整 CANN/Torch/HUST、不改 Cargo 依赖“让它能过”。当前 `make/perl/clang` 已找到，`protoc` 未找到，只是预检项、不是本次已证实失败原因。若必须引入系统级修改或改变候选，先讨论。
+上述是首次失败根因，现已通过完整前置核查和项目隔离 build sysroot 解决：开发 RPM 与运行库版本匹配，签名/hash 通过，头文件和开发链接仅在项目目录中。首次 release 链接又暴露开发链接的 `.so.3.0.12` 目标未复制，导致误用静态 archive 的 zlib 未解析符号；修正真实目标并显式动态链接后 release 通过，不补装其他系统库。原依赖锁、HUST/CANN/Torch 不改。proto 构建实际使用 Rust protox，未安装 protoc；它不构成本候选要求。若后续必须系统级修改或改变候选，先讨论。
 
-原始构建只过 check 也不足以准入：后续还需 release binary/link、冷启动 RSS/Host 开销、loopback API/SSE、关闭与版本回退；不能用 “aarch64 可以编 Rust” 代替这些。
+原提交 release、动态库解析、loopback API/SSE 及正常关闭已有 CPU 证据，健康时 RSS 约 24 MiB 是一次启动观测，不是 Host 开销或容量评测。生产制品、升级/禁用回退、慢客户端、可信索引恢复仍单独验收，不能把原版基本转发通过当全部准入。
 
 ## 下一轮评估退出条件
+
+2026-10-12 最小接缝结果：三处宿主逻辑 patch 为 147 新增/3 删除行；独立 release example 与真实 HTTP fixture 连续三次通过，default-off、条件准入、错误/drop/取消保留未知及并发限额有证据。启用扩展仅测 completion，token/实例身份与对账为合成 fixture；不是稳定 ABI。原索引 80 万次变动 RSS 约 412 MiB，完整重建实验约 7.7 MiB；E5/E6 和生产生命周期/制品仍开放，不能因为 patch 行数少就宣布窄幅维护已验收。
 
 1. 原提交完整可重复构建并检查默认关闭路径；如果有其他真实根因，保存首个失败，不按出错顺序无目的升级库。
 2. 只做一个普通 HTTP/单池 extension seam CPU 原型，不实现优化算法，不引入 P/D/program 全套。用 component-v0.1 等价行为测试证明 E1–E4 接线，而不是另造代理。
