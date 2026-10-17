@@ -1,234 +1,42 @@
-# 进度与下一步
+# 当前进展与执行顺序
 
-2026-10-14 评测口径补充确认：用户暂无固定业务SLO，先做多阈值容量曲线与输入/输出长度分组；数值/分组待基础校准后统一冻结，适用于全部对照策略，不影响当前接线顺序。此确认不是性能测试已执行或通过。
+更新：2026-10-14。本页是当前完成情况的唯一入口；[历史进度](progress-history.md)按各次提交保留，旧段落的“当前/下一步”不再作为现行任务。
 
-## 当前：实际Router库与真实HUST终态组合（2026-10-14）
+## 已通过与交付边界
 
-功能代码cc2478b：复用原Router三文件补丁/准入/生命周期/账本，在32068的1张910B2上通过普通n2、流式首个非空输出后drop、确认前额度拒绝/确认后准入、提交后丢许可ACK无额外受管family、重开保债。2个family/3个真实child；正常核心LENGTH_CAPPED×2，取消ABORTED×1。另1笔未获许可的预留故意保留，重开暂停，不是NPU仍有请求。模型进程和Router均正常退出，两张卡无进程。
+- 固定 HUST Core ced6857 / Ascend b47795c，Qwen2.5-14B-Instruct、FP16/eager/TP1/DP1。32054新分配的物理0/7均为910B2，各65536MiB；8核CPU配额、64GiB内存。依赖 `pip check` 通过，没有更换引擎或全局设备栈。
+- 上阶段功能cc2478b的真实 Router→HUST→同一账本有限闭环，已在新分配两张卡顺序复验通过。最终文档050b7bd已同步，上一阶段新wheel的aarch64干净安装补过。050b7bd的CPU/源码与helper CI五个检查全部success；独立人工审查/合并未完成。
+- M7原生事件→常驻原M2索引新增在线接线；原Directory/Pool和91b65ee原索引继续复用。两张卡的首轮在线目录+真实Router终态组合均通过：3个完整前缀块匹配，订阅关闭后unknown。后续审查修改和双副本结果以[本阶段证据](../evidence/online-kv-directory-2026-10-14.md)为准，不能自动继承首轮硬件资格。
+- 最终功能24d78d3的双TP1实机`r2`通过：同一原索引owner、单边驻留隔离、两端实际cached_tokens0→384、一侧订阅退出而另一侧继续服务。两卡均已用于真实模型实验且自有进程清理，证据本地/服务器SHA一致。Windows CPU562、aarch64566，integration各3，原生62/进程5组、新wheel两端干净安装通过。b35ffef的5个CI检查全部success；[草稿PR22](https://github.com/WMASTER123/prefix-routing-mod/pull/22)待独立人工审查，后续纯记录head另查。
 
-Windows CPU545+7 skips、aarch64549+3 skips、integration各3；3.11/3.12 CPU/源码CI及共享helper CI通过。原宿主三个文件逐字节一致，aarch64完整release与原Cargo锁通过，无HUST源码/设备栈修改。新case、失败构建与完整边界见[本轮证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，[草稿PR21](https://github.com/WMASTER123/prefix-routing-mod/pull/21)基于PR20，独立人工审查/合并待完成；后续记录head另验CI。
+本阶段只支持受控空起点的已发布事件观测。原生流没有publisher epoch和完整共同水位token快照；本地连接绑定不冒充后端epoch。模型请求历史、计划和预留不能产生驻留事实。
 
-当前仅是实际typed Router库的有限控制程序，不是生产外部HTTP宿主或完整前缀路由产品。M1精确token、在线M2、生产M3/IPC、双副本性能、长期GC/图/完整恢复/MOD启停均未验收；MOD import_only、生产ABI不冻结。下一步接M7→原M2受控空起点/连续流/身份与新鲜度/全池限额，之后现有两卡做强基线和开销，不增加新算法。具体[组合范围与后续计划](planning/router-hust-terminal-chain.md)。
+## 各组件的当前状态
 
-收尾：0ea2615的CPU/源码与helper CI全部success，后续记录head另查。实机archive已先拷回且SHA一致；随后32068两次SSH被拒，原因未确认。服务器最后确认head为已通过实机的cc2478b；**最后活文档同步与新wheel的aarch64干净安装未执行**，不能称三端全同步。本地/GitHub与workspace规划已更新，独立人工审查仍待完成。CPU接线可继续，下一次实机前需有效分配并补同步；卡数量仍2张足够。
+| 组件 | 已有实现/验证 | 首版剩余工作 |
+|---|---|---|
+| M1特征 | 本地真实tokenizer/template与完整块对应通过；诊断查询消费实际token | 绑定公开Router请求入口，避免重复分词，明确定义不支持参数的降级 |
+| M2目录 | 原索引+Directory/Pool、连续性/父链/限额/租约；在线订阅实机子集 | 同进程请求查询、真实故障与长期增长/并发成本，已热/超窗恢复另评估 |
+| M3状态账本 | 预留、在线传输、真实核心终态、幂等和有限持久恢复 | 生产存储/IPC与长期回收、健康/配置发布与恢复装配 |
+| M4选点 | 基础策略和只读端口、条件预记账接缝 | 消费真实M1/M2/M3的双副本基础决策；优化方法后置 |
+| M5执行 | 原Router完整构建、真实普通/流式/取消链路通过 | 公开HTTP入口与全部接缝统一装配、排空/关闭/背压验收 |
+| M6评测 | CPU/integration/源码/制品/手动NPU入口与原始证据 | 两副本强基线、Host配对开销、到达负载/多阈值容量 |
+| M7适配/MOD | 固定版本能力映射、真实入口与终态可选包装、原生KV解码 | 完整启动/停止/恢复和实际Manager激活；新版本逐项认证 |
+| M8后台亲和 | 责任与软计划契约 | 尚未实现，基础性能证据前不加入 |
 
-## 上一阶段：单后端真实入口/核心终态闭环（2026-10-14）
+MOD保持import_only，生产ABI尚未冻结，仍无端到端容量提升结论。原生事件的逻辑驻留不等于即时设备强一致状态或省去同量计算；后端cached_tokens和性能需独立对照。
 
-新分配 32068 两张 910B2，继续固定 HUST ced6857/b47795c 与原隔离环境；排除 SDK PYTHONPATH 后 189 包兼容，没有换引擎或改全局环境。最终功能代码 92cc06c、两卡顺序单实例复验：真实 completion/chat、2 prompts×n2、stop string 和 stream 断连，4 family/8 child 接回同一账本。HTTP 结束/断连不清债，完整封口与实际核心正终态确认后结清；stop string 和断连的核心 FINISHED_ABORTED 均实际断言。重放、重复投递、账本重开及自有包装恢复通过。
+## 近期顺序
 
-复用已有 HUST endpoint plugin/utility，不改引擎文件，不另造代理或索引；8 处可逆方法包装、默认关闭及版本/callable 守卫。journal/capture 移包内单一实现，旧 tools 为兼容导出。Windows CPU534+7 skips、Linux538+3 skips，integration各3，显式固定源码3及26/26 checks、新wheel两端干净安装通过；失败的贪心多采样探针已修正并保留证据。
+1. 在线目录收尾：最终代码CPU/原生进程反例、两卡与双TP1子集、制品/证据同步、独立审查待办。
+2. 最小公开HTTP请求链：M1→M2/M3→基础M4→M3准入→原M5→真实终态；缓存失效回基础策略，健康/账本失效拒绝增强派发。避免将实验逐帧stdio/TCP/SQLite FULL直接定为生产热路径。
+3. 按[首版装配清单](planning/first-runtime-assembly.md)收敛公开HTTP接线和最小回收/去重，再冻结可分工的实现边界、目录、配置、错误语义与替身。当前64family/256child等累计留存不能直接用于可持续容量；这项最小回收不能推迟到性能之后。跨节点等完整加固仍有独立放行限制，无需等待所有优化算法完成。
+4. 同底座强基线与配对开销：直连、原Router基础策略、同宿主加接线，再比较策略；低复用、热点变化和混合长度必测。基础闭环成立即测，不被可选功能拖延。
 
-**仍未完成**：原生成熟 Router→真实后端的组合、在线 M7→M2、已热/超窗恢复、长期 GC、图/完整启停和 SLO 容量。当前 observer 有限留存64 family/256 child，不是长期生产方案；MOD import_only、生产 ABI 未冻结。主动停服后的 HUST EngineDeadError 仍保留，未用 exit0 掩盖 G3。独立人工审查待完成，代码/现场与交付状态见[本轮证据](../evidence/cedb477-live-terminal-2026-10-14.md)。
+用户确认暂无固定业务SLO。先统一校准并预冻结多组TTFT/生成停顿阈值和输入/预设输出预算分组，报告达标容量、完成/拒绝/超时及分组P95/P99；失败保留在到达分母。chunk间隔不能冒称逐token间隔。具体数值尚未选择，性能测试尚未完成。
 
-下一步先将已有 Router 自有 attempt、动态准入/传输生命周期与本次终态消费组合到同一 owner，再接真实 KV 订阅到原索引；受控完整链路成立即做两副本强基线和 Host 开销，不继续堆算法。现在2张卡足够：单后端1张、双TP1共2张，无需额外卡。详见[新执行清单](planning/cedb477-live-terminal.md)。下方同日 CPU 段落及旧机器描述是历史过程，不是当前待申请状态。
+## 团队与审查
 
-交付[草稿PR20](https://github.com/WMASTER123/prefix-routing-mod/pull/20)，基于未合并PR19；7c3bd4b的[CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38508875672)四个job全部success，3.11/3.12各CPU538+3 skips、integration3和新制品通过，专用源码各3项及26/26 checks通过。源码/文档已同步新服务器和GitHub，原始证据双端校验一致；后续记录提交按对应head另查。独立人工审查与合并仍待完成。
+可独立准备：版本/协议fixture、M1一致性、评测负载/统计和测试工具；公开HTTP宿主/M3热路径/资源回收尚不可按完全冻结组件各自开发。共享契约由集成负责人维护，生产分工以[工作包](planning/component-work-packages.md)的冻结清单为门槛。
 
-## 当前执行：新版入口/终态到同一账本的 CPU 接线（2026-10-14）
-
-基于8997ae8，在codex/cedb477-terminal-boundaries推进；代码e9f3a5b复用原审计、EntryCapture/TerminalJournal/OnlineConsumer/DurableLedger。新版终态26 checks、入口账本26 checks通过；旧源码25/25 checks回归。完整关联后核心清理成功才结清，部分提交/准入拒绝/清理失败保债，stop string早删映射与提交后丢ACK恢复均覆盖。固定输出接收方法的取消→EngineDeadError路径已CPU复现，与旧停服日志相符；完整现场因果待验。
-
-Windows CPU499+7 skips、显式固定源码反例3、integration3、格式/静态/新制品及干净安装通过。新增独立Python3.11/3.12源码CI job，下载固定十文件后执行；其结果按实际head另验。7 skips含原4项与专用gate显式运行的3项源码测试。本机urllib下载TLS失败保留，未降低hash或TLS检查；见[本轮证据](../evidence/cedb477-terminal-boundaries-2026-10-14.md)。
-
-交付[草稿PR19](https://github.com/WMASTER123/prefix-routing-mod/pull/19)，基于PR18。3517c74的[CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38503332456)四个job均success；Linux x86_64 3.11/3.12各CPU503+3 skips、integration3，专用源码各3测试及26/26 checks通过。后续记录提交按其head另验。代码文档已推GitHub，服务器本轮未同步，独立人工审查待完成。
-
-服务器32099两次握手前拒绝连接，本轮没有服务器同步或新NPU运行。下一步等可用分配，用1张卡验证新版实际安装方法和跨进程关联/终态，随后接在线KV；受控闭环通过即开展2×TP1强基线/Host开销测量，不等待所有长期交付项完成才测性能。完整安装、生产ABI/GC/MOD启停尚未验收；MOD仍import_only，独立人工审查待完成。具体范围见[现场接线计划](planning/cedb477-terminal-boundaries.md)。
-
-## 上一轮：HUST 版本映射与新版实机子集（2026-10-14）
-
-用户选定 Core ced6857 / Ascend b47795c，在 codex/hust-cedb477-adapter 基于41117eb推进。M7已有集中版本/能力映射、安装接口检查与共用原生KV规范化；旧publisher常量和旧工具复用同一映射/实现。新协议无权威epoch/token snapshot，旧hook不在新版启用，未新增Router或索引。
-
-审查代码28b81a1：Windows490+4 skips、Linux494、两端integration各3、干净wheel/default-off/profile资源通过。188包新隔离环境与全新脚本重建通过；两张910B2顺序逐卡Qwen14B/FP16/eager、0→384后端缓存复用、2 live/2 replay batches和6块规范化通过。捕获事件离线送入原索引得到[0,3,3]，不是在线目录。首次nullable usage探针失败及主动停服后的EngineDeadError日志均保留，见[本轮证据](../evidence/hust-version-adapters-2026-10-14.md)。
-
-三份中文规划和架构/接口/兼容/恢复入口同步新目标。当前8核配额/64GiB/两张NPU，模型已清理；两张足够后续双TP1。下一步先核验新版真实入口和可靠终态接同一账本，再补共同水位publisher与在线目录。图/并发取消/长期GC/MOD启停、双副本和SLO容量未过；MOD仍import_only，生产ABI未冻结，独立人工审查/合并待完成，新CI按实际head另验。
-
-下方旧固定源码、当时机器和下一步仅适用于各段日期；当前优先本段和[迁移入口](planning/hust-version-adapters.md)。
-
-交付：[草稿PR18](https://github.com/WMASTER123/prefix-routing-mod/pull/18)，基于未合并PR17。本机/GitHub/服务器代码文档同步，原报告/日志双端归档SHA一致。1761f57的Python3.11/3.12 CPU、integration、build/wheel CI已核验success；后续记录提交以对应head另查。独立人工审查/合并待完成。
-
-## 当前执行：实际 Router 进程恢复与审查收尾（2026-10-13）
-
-在 codex/router-recovery-faults 基于 2177297 推进。同一工具账本增加 OS 排他 owner 锁，新 Router 使用新的 clock/请求命名空间。实际 Router 与独立接收进程的六阶段组合通过：提交后丢准入 ACK/取消等待均零扩展发送，恢复保留 1 笔旧债并允许剩余额度，再重启保留 2 笔占用且不额外发送；旧观察重复幂等。恢复前实际确认旧 Router 及其进程组退出，取消组另覆盖接收器异常终止；这不是任意并发 kill 或真实后端自动恢复。
-
-最终执行代码 71f0c95：Windows 448+4 skips、Linux 452、integration 两端各 3、helper 21、实际 default-off/online/dynamic/观察 ACK 丢失/stream 与新屏障恢复回归、两端新制品/干净安装均通过。自审修复额外 transcript 的读取上限，并将固定时间取消改成提交后双向通知屏障，补 2 项反例；该提交 CPU/helper CI success。最终结果见[本轮记录](../evidence/router-process-recovery-2026-10-13.md)，后续记录提交按其 head 另核验。独立人工审查与合并仍待完成。
-
-用户要求本轮先审查，真实 HUST/NPU 联调待下一次提供服务器；届时先 1 张 NPU/公共 Qwen14B。下一项按[单后端接入清单](planning/hust-first-real-chain.md)推进实际关联/终态和恢复，再接 publisher/目录。真实 HUST 适配未安装，KV 订阅/GC/MOD 启停与 SLO 容量未验收，不冻结生产 ABI。下方为历史阶段。
-
-## 当前执行：完整入口、动态准入与显式恢复（2026-10-13）
-
-在 codex/entry-admission-recovery 基于 054ae0a 推进，[草稿 PR #16](https://github.com/WMASTER123/prefix-routing-mod/pull/16) 基于 PR #15。固定 HUST 的真实 serving→AsyncLLM 方法已验证多 prompt × sampling child 总关联、stream、部分失败/取消；不是安装到引擎的真实 hook。Router 增加异步准入及可选自有 X-Request-Id 载体，复用原转发/回调/账本；实际宿主从空账本按请求预留后转发、重复客户端 header 覆盖、额度拒绝均通过。显式恢复保存新 runtime，旧债不清、旧许可拒绝、旧事件仍可对账；真实健康/身份获取和旧 dispatcher 停止依然是待接入前置条件。
-
-代码 8b66f91 最终 Windows 437+4 skips、Linux 441、integration 两端各 3、原生 helper 21、新制品/干净安装两端通过。完整 aarch64 release、动态实际 HTTP、旧在线、关闭和 stream 回归通过；该代码的 Python 3.11/3.12 与 helper CI 已按 head 核验 success，后续提交另查。自审修正正常准入拒绝误停接收、跨时钟时间比较和补丁缺少上下文；详细最终状态见[本轮证据](../evidence/entry-admission-recovery-2026-10-13.md)。
-
-尚未接真实 HUST 前后端绑定/终态 observer、生产自动恢复或真实 KV 订阅；没有 NPU/吞吐收益结论，不冻结生产 ABI。下一步先补这些控制边界的真实适配，再接已有 publisher/目录，不扩算法。当前 CPU 足够，单后端现场需要时提前通知 1 张 NPU；MOD 仍 import_only，人工独立审查与合并待团队完成。
-
-下方保留上一阶段过程，优先以上述当前状态及新证据为准。
-
-## 当前执行：原生回调在线接收与故障回归（2026-10-13）
-
-[草稿 PR #15](https://github.com/WMASTER123/prefix-routing-mod/pull/15) 基于 PR #14。原生 Router Lease 的有限 trace 由显式控制线程在线投递至同一参考账本；提交后确认，源观察序号与账本转换序号分离。实际 Router 存活期间 46 条观察全部接收，22 个发送后未决请求保留负债、2 个明确未发送释放；这是跨进程传输观察闭环，动态 HTTP 准入仍未联通。
-
-最终代码 ce36e48 的 Python 3.11/3.12 与原生 helper CI 均已按 headSha 核验 success，本地/GitHub/服务器同步。后续文档提交的检查另以对应 head 为准。
-
-实际宿主提交后丢 ACK 的故障测试通过：原载荷重投，2 个唯一观察/3 次确认尝试；新请求被拒绝，后端没有重复发送。关闭在线选项和既有 stream 回归均通过。401/405 的初始 Python 成绩已由最终 Windows 402+4 skips、Linux 406、两端 integration 各 3 替代；原生 helper 17，两端新制品/干净安装通过。自审修复期限、停止派发和验证失败误报 pass 等边界；另一成员独立审查待完成。详细范围、失败与代码/制品证据见[本轮记录](../evidence/online-transport-2026-10-13.md)。
-
-设计不增加生产账本服务：Python/loopback/SQLite 和 64 条预持久化合成预留仅用于 CPU 接线。40 个未使用预留仍被保留，没有因“未见发送”清账。异步投递不代表持久化性能已解决；生产语义、语言和恢复方案仍需收敛。
-
-下一步优先完成真实入口总关联、动态准入与新 Router 时钟/服务观测交接，明确可靠终态和业务结果的组合，再接真实 KV 订阅与全池生命周期；不继续扩充无消费者的功能。长期 GC、引擎观测安装/启停、NPU 与 SLO 容量未验收，暂不冻结生产 ABI/分工。当前 CPU 可继续；实际单后端需要时提前通知 1 张 NPU，双 TP=1 后续 2 张。
-
-下方按日期保留历史过程，历史段落中的“未实现/下一步”只对应当时阶段；当前以上段和本轮证据为准。
-
-## 当前执行：关联封口、事务恢复与 KV wire CPU 接线（2026-10-12）
-
-交付位于[草稿 PR #14](https://github.com/WMASTER123/prefix-routing-mod/pull/14)，基于 PR #13；自审完成，另一成员独立审查待完成，不自动合并。
-
-f676fe1 的 Python 3.11/3.12 和原生索引 CI 已核验 success；两端在该 head 的最终检查通过，记录不自动覆盖后续提交。源码与 workspace 三份最新说明一致。
-
-本轮验证：Python（b4caf71）Windows 376+4 skips、Linux 380、mock 各 3；两端新制品/干净安装通过。Rust（7cef70c 内容）58 项通过，codec→原索引结果 [2,1,0]。失败、审查修正、开销和未过项见[本轮证据](../evidence/capture-recovery-wire-2026-10-12.md)；新提交 CI 以确切 head 验证，不继承旧成绩。
-
-固定 HUST 真实 ID/parent/AsyncLLM 方法新增 10 项检查，旧终态 25 项仍通过；关联须完整封口，提前 child 结束或中途失败不能结清。接收侧复用 ReferenceLedger，加有限事务日志、统一序号、丢 ACK 幂等、独立子进程提交前/后退出恢复；恢复后不直接新派发。规范化 HUST 原生 codec 合成四帧已进入原 KvBlockIndexer，命中结果 2→1→0，控制确认缺失/过期/断连返回 unknown；分区逻辑额度之和受全池约束。具体结果与阶段限制见[接线边界](planning/capture-recovery-wire-boundaries.md)。
-
-开销诊断发现逐请求三次 FULL SQLite 事务的中位约 11.3 ms；三次批量事务处理 20 个合成 family 共约 28.85 ms，只是并发摊销，不能当个体请求延迟或 NPU 收益。生产持久化方案未选择，不能照搬实验存储进入热路径。真实 HTTP 多 prompt 关联、原生 M5 跨进程接收、服务时钟交接/重新观测、长期 GC、真实 M7→M2 订阅和 MOD 启停仍未完成；不冻结生产 ABI，暂不分派人员。下一项将这些候选接缝收敛为可逆适配与受控控制通道，真实后端时提前通知 1 张 NPU。
-
-## 当前执行：终态来源验证与进程内在线原型（2026-10-12）
-
-交付位于[草稿 PR #13](https://github.com/WMASTER123/prefix-routing-mod/pull/13)，基于 PR #12；待另一成员独立审查，不自动合并。正文证据代码及后续文档格式修复分别记录，CI 以确切 head 为准。
-
-固定 HUST 四文件完整 hash 守卫后，25 项源码方法检查在 Windows/Linux aarch64 CPU 通过；11 项工具守卫与 24 项 journal/在线参考账本回归新增。普通取消没有逐请求确认，stop string 删除映射早于核心取消，核心清理不等于 blocks/设备全部释放。已获用户同意做小范围 CPU observer 评估，但本轮没有安装引擎 hook。代码 801b628：Windows 全量 CPU 317+4 skips、Linux 321、mock 各 3、两端新制品及干净安装通过；开销初测、首次构建下载失败及局限见[本轮证据](../evidence/terminal-observer-cpu-2026-10-12.md)。
-
-在线原型不再仅做事后 transcript 重放，但只在单进程连接旧参考账本；consumer 重建保留账本，不代表 Router 整进程恢复。真实关联封口、跨进程投递和长期留存仍未完成，M7→M2 wire/新鲜度/总预算尚未新增实现。[范围与成本](planning/terminal-observer-scope.md)明确接入与否决线。接下来先收敛这些接线，之后冻结首版生产接口。CPU 够用，需 1 张 NPU 时提前通知；MOD import_only 保持。
-
-## 当前执行：审查修复与标准生命周期记录（2026-10-12）
-
-在 `codex/stream-review-lifecycle` 修复持续空块绕过 idle 的遗漏、Windows 大响应 fixture 的连接 reset 不稳定，并统一流式 ADR 与直接拉取实现。新原生反例在旧代码失败，新共享 helper 的 10 项测试通过，进入独立 CI。代码 d51be7a：Windows CPU 282+4 skips、Linux aarch64 CPU 286、mock 各 3、两端新制品/干净安装通过。完整宿主最终 example 构建及真实 HTTP 流式/default-off/准入回归通过；24 尝试/46 条有限标准事件在旧账本重放后保留 22 个未知、释放 2 个未发送，未认定后端结束。记录提交 2f2b737 的 Python 3.11/3.12 与原生 helper CI success；后续提交不自动继承成绩。结果与局限见[本轮证据](../evidence/stream-lifecycle-review-2026-10-12.md)；[草稿 PR #12](https://github.com/WMASTER123/prefix-routing-mod/pull/12) 待另一成员审查，不自动合并。
-
-M5 回调已有有限 component-v0.1 记录与旧账本 oracle 的重放接线；它不是生产可靠在线投递。固定 HUST 源码审计确认 `[DONE]`、前端 finished 和 abort send 不够证明核心结束，finished ID 的导出依赖内部 DP balancing。下一项先核实正常/取消可靠终态和投递/恢复接缝，再补 M7→M2 wire/新鲜度及多分区总预算，随后冻结生产接口与交付。详见[终态审计](planning/backend-terminal-evidence.md)。目前 CPU 够用，真实 G2/G3 到需要时通知 1 张 NPU；双 TP=1 后续 2 张。MOD import_only，无性能收益声明，暂不分派人员。
-
-## 当前执行：有界目录与流式适配（2026-10-12）
-
-新 CPU 分配已同步基础提交，继续独立 `codex/bounded-directory-stream` 分支。一个目录分区继续复用原索引，新增完整恢复/任务 fencing、身份与父链验证、逻辑预算、历史重建和无旧 Arc 留存的读写锁接法；49 项原生测试通过，20 万/80 万次更替保持有效查询，内存不再随累计历史同幅增长。具体数值与限制见[本轮证据](../evidence/bounded-router-adapters-2026-10-12.md)。这是规范化 CPU 原型，M7 wire/控制面新鲜度、多分区总预算和大工作集延迟仍待补齐。
-
-新增可选流式 pull 接缝，三个宿主文件 patch 增量 202 新增/3 删除行；不创建中间队列或 detached producer，drop/error 仍属于传输证据，不清除 M3 未知负债。最终 aarch64 release、实际 HTTP 流式两种负载分支和新构建 default-off/准入回归通过，patch 从干净归档复放与编译输入一致。MOD 仍 import_only，暂不冻结 ABI 或分配人员，也无 NPU/性能收益声明。
-
-下一项集中补标准 LifecycleEvent 桥、可靠终态来源/未知对账及重启恢复的具体接线，再明确生产目录、宿主固定制品及 MOD 启停接口；M7→M2 wire/新鲜度、多分区总预算与大工作集/混合查询开销一起收尾。CPU 可继续合同/集成工作，真实 publisher 压力和后端终态/图模式验证需 1 张 NPU，到需要时通知；两个 TP=1 后续需 2 张。目录和流式的局部 CPU 可行性不代表所有生产门槛通过。
-
-代码 ab42d61 两端同步且工作区干净，Linux CPU 274、Windows CPU 270+4 skips、mock 各 3、两端新制品/干净安装通过；原生索引 CI 及 Python 3.11/3.12 CI success。CRLF/LF 守卫和共享目录 preflight 的首次失败、根因及复验已保存。[草稿 PR #11](https://github.com/WMASTER123/prefix-routing-mod/pull/11) 已附到任务，基于 PR #10，待另一成员审查；本段的成绩只属于注明的代码，不自动覆盖后续 head。
-
-## 当前执行：账本修正与 Router CPU 准入（2026-10-12）
-
-用户批准按“参考账本/文档 → 原版构建与转发 → 最小接口原型 → 条件满足后冻结”推进，暂不分配人员。当前 CPU-only 16 核配额、64 GiB RAM、0 NPU。参考账本重复不确定通知的收尾漏洞已修，四项反例通过；活规划及运维/兼容文档中的旧机器描述已明确为历史。
-
-原锁 Router check/release、启动、completion/chat JSON/SSE 与单次 503 转发通过；OpenSSL SDK/开发链接仅在项目私有前缀解决，系统/HUST 不改。三文件窄幅接缝的独立 release example 与真实 HTTP fixture 回归通过，覆盖条件准入、发送前后区别、并发额度、未知保留及 default-off/fallback；不是生产 M1–M5。原索引 80 万次变动 RSS 约 412 MiB，合成完整快照重建约 7.7 MiB，生产完整恢复/总预算仍未过。代码 2e37376 本机 CPU 269+2 skips、远端 271、mock 各 3、两端制品/干净安装通过，见[本轮证据](../evidence/router-cpu-admission-2026-10-12.md)。
-
-下一门槛：E5 完整共同水位/父链/域与代次/预算/并发旧视图证明；E6 慢客户端与 producer/响应预算故障实验，之后实际 LifecycleEvent/可靠对账与 MOD 制品退出清单。先评估可维护范围，再冻结生产 ABI、代码目录和交付；不为了分工提前选定。现阶段 CPU 够用，不申请卡或分派人员；真实 G2/G3 到需要时再通知 1 张 NPU。MOD 仍 import_only，无性能收益声明。
-
-## 此前 CPU 架构与接口工作（2026-10-11）
-
-用户新申请为 CPU-only aarch64、16 核配额、64 GiB RAM、16 GiB shm，0 NPU。本轮只操作项目目录；不连接旧分配、不运行推理、不重新认定旧 NPU 环境兼容。
-
-新增 component-v0.1 可执行参考类型、五个组件端口、版本化生命周期样例、静态目录/有界账本组合及并发故障测试。服务实例代次与 publisher 代次分离；原子准入检查控制/配置版本与额度，负载变动不强制所有请求重选；发送后未知保留对账负债。代码与状态所有权见[合同](contracts.md)，部署与三人独立工作包见[联调计划](planning/component-work-packages.md)。这些是接口底座和测试参考，**不是 M1–M5 已有生产实现**。
-
-固定 Router 源码在项目隔离 Rust 工具链中做 aarch64 构建准入。网络 Git 依赖超时与原提交构建问题分开记录；不升级 HUST、不改原 Cargo 依赖掩盖失败。生产策略注入/生命周期/事件索引接缝与 ABI 仍未冻结，需要准入结果后再给生产实现分工。测试与审查证据见[本轮记录](../evidence/component-contracts-2026-10-11.md)。
-
-原锁编译的具体缺口已定位：openEuler 有 OpenSSL runtime，缺 openssl-devel SDK；exit 101，不是 HUST NumPy/NPU 问题。用户已选择先评估窄幅扩展，[六个接缝/维护风险/否决线](planning/router-extension-assessment.md)已记录，宿主源码未修改。当前代码本机 CPU 256+2 skips、远端 258、mock 各 3、两端 sdist/wheel/干净安装通过；另一成员审查仍待完成。
-
-[草稿 PR #9](https://github.com/WMASTER123/prefix-routing-mod/pull/9) 已建立并附到当前任务，基于未合并 PR #8；9e17ad3 的 Actions Python 3.11/3.12 success。新文档提交不自动继承前个 head 的 CI，按 PR 的确切提交检查；不自动合并。本机与服务器代码/文档同步在独立 codex/component-contracts-cpu 分支，不覆盖旧分支或环境。
-
-近期：人工审查契约与工作包 → R1 宿主构建/适配范围决策；CPU 语义与测试可并行。真实 G2/G3 仍需 1 张 NPU，G4 两个 TP=1 副本需 2 张，到需要时提前反馈。M8、成本档案和新算法后置；MOD import_only 保持，G2 开放、G3/G4 未通过，没有性能提升声明。
-
-## 此前 NPU 分配的状态（不是当前 CPU 机器的通过记录）
-
-新分配服务器物理枚举为 0/1/2/7；本轮只用逻辑 0 做真实 Qwen14B 身份/publisher 主回归，未重验当前其余三卡。持久 HUST 环境依赖审计与固定来源核查通过，不受早期上游 NumPy 冲突阻塞。
-
-纯文本 completion 分词、chat template 和真实完整块对应通过。用户批准的可选 publisher hook 在隔离服务 venv 完成已热接入、超窗 token 快照、快照加增量、真实清空、同地址重启及新旧 wire epoch 验证。初次重启测试因旧 IPC SUB 无新事件而失败，重建订阅与撤销旧暂存后完整复测通过；失败保留。见[本轮证据](../evidence/g2-identity-publisher-2026-10-11.md)。默认关闭、固定版本/源文件守卫、原生引擎源码不改，MOD 仍 import_only。
-
-| 职责 | 当前实现状态 |
-|---|---|
-| M1 请求特征 | 纯文本身份/token 对应回归通过；生产特征链未接入 |
-| M2 缓存目录 | 协议/共同水位/暂存恢复测试基础；生产索引与 trust 状态机未实现 |
-| M3 状态与账本 | 合同规划；生产账本未实现 |
-| M4 即时选点 | 未实现；候选 KV 索引尚未接在线策略 |
-| M5 转发生命周期 | 候选源码评估；生产 Router 未接入 |
-| M6 校准评测 | CPU/mock、环境/事件真机子集和制品工具；尚无收益基准 |
-| M7 MOD/后端适配 | 惰性描述、环境恢复、原生事件回归与可选 publisher 实验；完整启停未完成 |
-| M8 后台亲和 | 规划，未实现 |
-
-仍无完整验收完成的组件，不能把诊断工具等同功能完成。G1 本机技术证据齐备、正式冻结待人工复核；G2 保持开放；G3/G4 未启动。下一轮先完成 hook 压力/自然淘汰、恢复竞态、限额故障及开销对照，再目标图/并发/取消/持续运行，最后成熟 Router 两副本。候选 Router 的索引/协议/接线缺口已写入复用评估，不另造代理或索引。
-
-本轮主回归通常需要 1 张卡，G4 用 2 张，当前 4 张足够。性能独占时段及 SLO 尚未冻结，暂不做性能声明。55ad9ac 本地 CPU 183+2 skipped、远端 185、mock 各 3、sdist/wheel/两端干净安装、最终依赖审计及 NPU 关闭回退通过；该 head 的 Actions 3.11/3.12 success。后续文档补记的 CI 不继承该成绩。已做代码自检，[草稿 PR #8](https://github.com/WMASTER123/prefix-routing-mod/pull/8) 待另一成员独立审查，不自动合并。
-
-## 历史记录（下列“本轮/最新”仅适用当时提交与分配）
-
-本轮新分配服务器已核验并同步代码：持久环境继续可用，物理 1/2/3/4 对应逻辑 0/1/2/3；依赖/覆盖/导入及原生命周期复测通过。新增三批重放、实际缓冲去重、SUB 断连、控制面超时和同地址真实重启回归 pass，见[最新恢复证据](../evidence/g2-recovery-regression-2026-10-11.md)。旧连接拒收包含明确的本地合成注入；快照共同水位、精确身份和完整 G2 仍开放。后续以本段与证据为准，下方旧未测列表属于当时状态。
-
-本轮四卡逐卡复验均已有 pass，失败保留：逻辑 2 首次端口预检冲突，独立端口复测成功；逻辑 3 首次冷 bytecode 导入超过 HUST 20 秒期限，分段诊断后加入显式项目私有 bytecode 复用选项，完整模型复测成功。预检期限未改。最新代码 Windows CPU 129+2 skipped、Linux aarch64 131、mock 各 3、代码 Actions 3.11/3.12 通过；[PR #7](https://github.com/WMASTER123/prefix-routing-mod/pull/7) 待人工审查。最终四卡无残留进程，G3/G4 和生产 MOD 尚未启用。
-
-最新执行：W1 统一环境恢复入口在新目录通过，13 个步骤及 Qwen14B 基础推理/IPC 事件复现成功。本机研发 G1 技术证据齐备，正式冻结待人工复核，可继续 G2 测试。四张卡均已逐卡完成真实模型检查；[恢复、四卡、测试和审查证据](../evidence/w1-runtime-restore-2026-10-11.md)已记录。完整事件恢复、图/并发、Router 和性能仍未通过。下方早期 NumPy 冲突不适用于当前 HUST 候选。
-
-上一轮运行验证代码已同步服务器；当时两端各 CPU 79、mock 3、构建及干净 wheel 检查通过，代码提交 74ca2cf 的 Actions success。[PR #4](https://github.com/WMASTER123/prefix-routing-mod/pull/4) 为待人工审查草稿，未合并，未启动生产 Router。下一工作包是把隔离恢复/制品证据收尾后进入完整原生事件回归，不重启版本试错或提前加算法。
-
-更新：2026-10-11。状态：P0 骨架已建立，P1b 的 HUST 单卡 eager、基础 IPC 存储和重建复验已有证据；尚无真实 Router 或性能提升结论。近期工作以[下一阶段执行计划](planning/next-execution-plan.md)为准。
-
-当前进入 W2 原生事件回归；W1 技术验证完成、正式冻结待人工复核。随后 W3 单后端目标执行配置与稳定性 → W4 成熟 Router 和两副本。HUST 快照/发布水位存在需验证的一致性边界，见[事件合同](kv-event-contract.md)；不能收到快照就恢复可信目录。主回归单卡，G4 两卡；用户追加四卡检查已真实完成，现有四卡足够。
-
-W2 新进展：真实存储、自然淘汰、清空、窗口内结构化重放及超窗快照子集复测通过；17 存储、40 移除、1 清空，服务正常退出。首次 reset 404 已按 HUST 源码定位并在临时 loopback 测试进程修正，失败保留。合成源码审计复现快照先更新、序号未推进的问题；完整 G2 不关闭。见[本次事件证据](../evidence/g2-native-events-subset-2026-10-11.md)。下一步多批缺口、断连/重启、精确身份与一致恢复，之后才 G3/G4。
-
-## 本次计划整理（文档变更）
-
-新增 W1–W4 执行计划，统一三份活规划及工作区副本，纠正旧 NumPy 阻塞、预装优先、旧物理卡映射及 P1a/P1b 并行等过期安排。更新事件可信性、目标性能配置、用卡和审查条件；未增加组件或算法。本次本地文档链接/围栏 2 项通过，差异检查通过；未运行新 NPU 实验，旧 CPU 79/mock 3 不计作本次复测。
-
-## 已完成的工程基础
-
-- 已创建 WMASTER123/prefix-routing-mod 私有仓库。
-- 已用固定 MOD 生成器建立包并修正规范版本、责任信息、惰性描述和不可启用边界。
-- 已建立静态配置预检、统一测试入口、CPU mock、CI 配置与干净 wheel 检查工具。
-- 文档目录覆盖架构、契约、复用、实施、规范、测试、运维、兼容、决策、实验与协作。
-- 本地、GitHub Actions 与远端基础验证均已执行，结果见下方；功能里程碑仍按实际能力推进。
-
-## 仍未完成的阶段门槛
-
-| 阶段 | 下一任务与通过条件 |
-|---|---|
-| P0 | 基础闭环所需对象代码化样例与契约测试、外部 Router contract 核查、第二成员审查；ExecutionProfile 随消费它的增强功能后置 |
-| P1a | R1 源码、aarch64 构建和 CPU 接口原型可先进行；核查接线、依赖、资源边界与维护成本，通过 ADR 决定底座。真实后端接线须等 G1–G3 通过 |
-| P1b | G1 自动恢复技术验证通过；继续 G2 真实淘汰/清空/重放/断连/重启及可信恢复；G3 验证目标图/构建配置、聊天接口、并发取消、启停和持续运行 |
-| P2/P3 | 两个 TP=1 副本基础闭环、可信状态和账本；N1–N4 按优化与诊断需要开展，不全部设为接线前置；推进 N5/N6 |
-| P4/P5 | 强基线和负对照后选择方法；后台软计划单独消融，净收益成立才启用 |
-| P6/P7 | 持续运行、跨节点、官方组合、发布制品和第二成员复现 |
-
-实施边界：不修改全局环境、公共模型或旧 prefix-router，不启动对公网服务；没有证据不扩展兼容或性能声明。当前 PR 待另一成员审查，不自动合并。下方为分阶段历史记录，旧版本选择和旧机器状态不作为当前执行指令。
-
-## 2026-10-11 早期规划修订（真机执行前）
-
-- 读取新增 NPU 知识资料后，保留 M1–M8 与通用组件复用；加入构建/语义/性能三道验收门槛。
-- 增补 BackendCapability/ExecutionProfile 设计合同及语义、缓存布局/协议、执行性能三类身份；未改变当前 config schema 或实现能力。
-- 明确图/KV 分开预热、实际 KV blocks、异步观测语义、Host CPU 配额竞争与 N0–N6 最小实验；不新增算子、分层或 P/D 范围。
-- docs/planning 保存三份当前详细规划；docs/reference 原始快照不变。变更理由见 [ADR](decisions/2026-10-11-ascend-first.md)，知识应用见 [Ascend 设计约束](ascend-design.md)。
-- 本次不连接服务器、不运行知识库脚本；没有新增 NPU 或性能结果。七对象与两类档案的可执行 schema/样例仍是 P0 待办，不能把文档测试等同合同实现。
-
-## 已执行结果
-
-2026-10-11 文档修订：本地 CPU 29 项、合成集成 3 项、sdist/wheel 构建及干净 wheel 验证通过。新增测试只校验文档，没有新增真实推理覆盖；见 [本次记录](../evidence/ascend-planning-2026-10-11.md)。以下服务器和首轮 CI 结果属于此前提交，不覆盖本次修订。
-
-本地 Windows / Python 3.12.13：配置/CLI/MOD/工具单元测试通过，CPU mock 三项通过，sdist 和 wheel 构建成功，源码目录外干净 venv 安装/entry point/manifest/doctor 检查通过。
-
-真实 Manager inspect 返回 activation_ready=false；enable 被 descriptor-only 拒绝且没有写入状态。NPU/性能/发布入口返回 not-run，未运行真实推理。
-
-初始实现提交 8e9e559c5a9f16f77dbad9558890bc00f1107ee2：本地和服务器各通过 28 项单元/规范检查及 3 项模拟检查；两端均构建 sdist/wheel，并通过干净安装验证。
-
-[首轮 GitHub Actions](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/38054039836) 的 Linux / Python 3.11 与 3.12 两组均 success，含 CPU、mock、构建和干净 wheel 检查。
-
-远端已克隆到 /root/work/prefix-routing-mod，独立 .venv 不继承系统推理包。服务器访问 GitHub 超时，测试依赖通过固定提交的完整 Git bundle 导入；临时进程级 Git URL 映射未修改全局配置、锁文件或依赖版本。参见 [验证摘要](../evidence/bootstrap-2026-10-10.md)。
-
-早期系统只读清单：CANN 9.1.0、torch 2.10.0+cpu、torch-npu 2.10.0.post4、vllm 0.23.0+empty、vllm-ascend 0.23.0。当时仅为元数据；后续用户确认优先使用验证通过的预装组合，当前局部实测范围见下。
-
-GitHub 分支保护/强制审查尚未配置；协作规范已写入 CONTRIBUTING.md，不能把文档约定当作平台强制规则。
-
-## 2026-10-11 P1b 实施
-
-- 新机器 4×910B2/16 核配额/128 GiB RAM，已同步已有规划开发提交；先使用逻辑卡 0 单副本，不占满四卡。
-- 新增显式触发、有限超时、仅清理自有进程组的探测工具及 CPU 回归测试；未安装全局依赖，未修改引擎和公共模型。
-- 公共 Qwen2.5-14B TP=1 BF16 eager 已完成非流式、重复和 SSE 请求；APC 计数器有命中。ZMQ 接线与关闭问题的诊断、修正和复测逐次保留证据，不覆盖失败记录。
-- 三份当前详细规划和根目录工作稿同步修订；docs/reference 不变。新增[基线决策](decisions/2026-10-11-qwen14b-first.md)。
-- 原先安排的“P1a Router 审计同时补 P1b”已由页首 G1–G4 顺序替代。当前先消除环境阻塞，再补事件、单后端兼容，之后才接成熟 Router；暂不堆叠预测档案或新算法。
-- 当前为自检与待人工审查分支；不自动合并，不称为独立审查通过。完整 npu-smoke/npu-routing/performance/release 仍 not-run。
+每项交付需区分自审、自动CI、实机子集及独立人工审查。草稿PR不自动合并；不把测试数量当组件完成比例。当前服务器只用于本项目目录；真实模型实验结束后清理自有进程，不运行保活负载。

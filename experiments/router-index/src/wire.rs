@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, fs::File, io::Read, sync::Arc};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawBinding {
+pub(super) struct RawBinding {
     worker: String,
     instance: u64,
     publisher: String,
@@ -17,7 +17,7 @@ struct RawBinding {
     block_size: u32,
 }
 impl RawBinding {
-    fn into_binding(self) -> Binding {
+    pub(super) fn into_binding(self) -> Binding {
         Binding {
             worker: Arc::from(self.worker),
             instance: self.instance,
@@ -29,7 +29,7 @@ impl RawBinding {
 }
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum RawOp {
+pub(super) enum RawOp {
     Store {
         id: String,
         #[serde(deserialize_with = "required_parent")]
@@ -45,7 +45,7 @@ fn required_parent<'de, D: serde::Deserializer<'de>>(input: D) -> Result<Option<
     Option::<String>::deserialize(input)
 }
 impl RawOp {
-    fn into_op(self) -> Op {
+    pub(super) fn into_op(self) -> Op {
         match self {
             Self::Store { id, parent, local } => Op::Store(Block {
                 id: Arc::from(id),
@@ -60,9 +60,9 @@ impl RawOp {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawBatch {
-    sequence: u64,
-    ops: Vec<RawOp>,
+pub(super) struct RawBatch {
+    pub sequence: u64,
+    pub ops: Vec<RawOp>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -60,6 +60,38 @@ def cached_tokens(usage):
     return value
 
 
+def service_environment(
+    device, output, acl, *, pycache_root=None, token=None, worker="replica-a"
+):
+    """Same explicit native qualification configuration for one or two replicas."""
+    env = build_environment(device, output, pycache_root=pycache_root)
+    for name in (
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "VIRTUAL_ENV",
+        "PREFIX_ROUTING_HUST_PUBLISHER",
+        "PREFIX_ROUTING_HUST_TERMINAL",
+        "PREFIX_ROUTING_TERMINAL_TOKEN",
+    ):
+        env.pop(name, None)
+    env.update(
+        PYTHONPATH=str(acl),
+        PYTHONHASHSEED="0",
+        VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES="0",
+        VLLM_USE_FASTOKENS="0",
+        VLLM_USE_RUST_FRONTEND="0",
+    )
+    if token is not None:
+        env.update(
+            PREFIX_ROUTING_HUST_TERMINAL="1",
+            PREFIX_ROUTING_TERMINAL_TOKEN=token,
+            PREFIX_ROUTING_TERMINAL_PREFIX="prm-",
+            PREFIX_ROUTING_TERMINAL_WORKER=worker,
+        )
+        env["VLLM_PLUGINS"] += ",prefix_routing_terminal"
+    return env
+
+
 def run(args, output, report):
     report["interface"] = inspect_backend(PROFILE)
     report["model_assets_sha256"] = {
@@ -97,35 +129,16 @@ def run(args, output, report):
         messages, tokenize=True, add_generation_prompt=True, return_dict=False
     )
     report["input_tokens"] = {"completion": len(tokens), "chat": len(chat_tokens)}
-    env = build_environment(
-        args.device, output, pycache_root=getattr(args, "pycache_root", None)
-    )
-    for name in (
-        "PYTHONPATH",
-        "PYTHONHOME",
-        "VIRTUAL_ENV",
-        "PREFIX_ROUTING_HUST_PUBLISHER",
-        "PREFIX_ROUTING_HUST_TERMINAL",
-        "PREFIX_ROUTING_TERMINAL_TOKEN",
-    ):
-        env.pop(name, None)
-    env.update(
-        PYTHONPATH=str(acl),
-        PYTHONHASHSEED="0",
-        VLLM_KV_EVENTS_USE_INT_BLOCK_HASHES="0",
-        VLLM_USE_FASTOKENS="0",
-        VLLM_USE_RUST_FRONTEND="0",
-    )
     terminal_token = None
     if getattr(args, "terminal_observer", False):
         terminal_token = secrets.token_hex(32)
-        env.update(
-            PREFIX_ROUTING_HUST_TERMINAL="1",
-            PREFIX_ROUTING_TERMINAL_TOKEN=terminal_token,
-            PREFIX_ROUTING_TERMINAL_PREFIX="prm-",
-            PREFIX_ROUTING_TERMINAL_WORKER="replica-a",
-        )
-        env["VLLM_PLUGINS"] += ",prefix_routing_terminal"
+    env = service_environment(
+        args.device,
+        output,
+        acl,
+        pycache_root=getattr(args, "pycache_root", None),
+        token=terminal_token,
+    )
     origin = f"http://127.0.0.1:{args.port}"
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     context = zmq.Context()
@@ -143,8 +156,29 @@ def run(args, output, report):
     )
     backend = OwnedBackend(argv, env, output / "backend", opener, origin)
     report["command"] = argv
+    online = index = None
     try:
         backend.start()
+        if getattr(args, "index_binary", None) is not None:
+            from tools.online_kv_directory import IndexOwner, OnlineDirectory
+
+            identity = hashlib.sha256(
+                json.dumps(
+                    {
+                        "assets": report["model_assets_sha256"],
+                        "profile": PROFILE,
+                        "layout": "fp16-full-attention-tp1-dp1-group0-block128-sha256",
+                    },
+                    sort_keys=True,
+                ).encode()
+            ).hexdigest()
+            index = IndexOwner(args.index_binary)
+            online = OnlineDirectory(
+                index, backend, opener, origin, output, terminal_token, identity
+            )
+            online.start()
+            if online.lookup([]) != 0:
+                raise ValueError("Controlled empty directory is not a trusted miss")
         results = []
         for route, body, expected in (
             ("/v1/completions", {"prompt": prompt}, len(tokens)),
@@ -221,6 +255,25 @@ def run(args, output, report):
         }
         # Only transient normalized keys feed the existing index experiment.
         (output / "normalized.json").write_text(json.dumps(live), "utf-8")
+        if online is not None:
+            from prefix_routing_mod.adapters.kv import local_block_digest
+
+            keys = [
+                local_block_digest(tokens[i : i + 128]).hex()
+                for i in range(0, len(tokens) - 127, 128)
+            ]
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                matched = online.lookup(keys)
+                if matched == len(keys):
+                    break
+                time.sleep(0.05)
+            else:
+                raise ValueError("Live original index did not match complete blocks")
+            report["online_directory"] = {
+                "matched_blocks": matched,
+                "complete_input_blocks": len(keys),
+            }
         if terminal_token is not None:
             if getattr(args, "router_binary", None) is not None:
                 from tools.router_terminal_chain import run as router_chain
@@ -241,12 +294,34 @@ def run(args, output, report):
         report["status"] = "pass"
     finally:
         try:
-            backend.stop()
-            report["cleanup"] = backend.cleanup
+            if online is not None:
+                online.close()
+                report["online_directory"] = {
+                    **report.get("online_directory", {}),
+                    **online.summary(),
+                }
+                online.check()
+                if (
+                    index.call(
+                        {"kind": "lookup", "binding": online.binding, "hashes": []}
+                    )["matched_blocks"]
+                    is not None
+                ):
+                    raise ValueError("Closing subscriber retained precise trust")
+                report["online_directory"]["disconnect_withdraws_trust"] = True
+                report["online_kv_directory_verified"] = report["status"] == "pass"
         finally:
-            sub.close()
-            replay.close()
-            context.term()
+            try:
+                if index is not None:
+                    index.close()
+            finally:
+                try:
+                    backend.stop()
+                    report["cleanup"] = backend.cleanup
+                finally:
+                    sub.close()
+                    replay.close()
+                    context.term()
 
 
 def main(argv=None):
@@ -259,12 +334,17 @@ def main(argv=None):
     parser.add_argument("--terminal-observer", action="store_true")
     parser.add_argument("--pycache-root", type=Path)
     parser.add_argument("--router-binary", type=Path)
+    parser.add_argument("--index-binary", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.router_binary is not None:
             if not args.terminal_observer:
                 raise ValueError("Router chain requires explicit terminal observer")
             args.router_binary = private_path(args.router_binary).resolve(strict=True)
+        if args.index_binary is not None:
+            if not args.terminal_observer:
+                raise ValueError("Online native directory requires instance observer")
+            args.index_binary = private_path(args.index_binary).resolve(strict=True)
         output = private_path(args.output)
         args.model = args.model.resolve(strict=True)
         if (
