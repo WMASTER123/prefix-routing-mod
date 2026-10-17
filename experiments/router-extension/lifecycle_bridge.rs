@@ -22,7 +22,7 @@ impl RouterClock {
             origin: Instant::now(),
         })
     }
-    fn now_ns(&self) -> u64 {
+    pub fn now_ns(&self) -> u64 {
         // No backend timestamp is compared with this process-local clock.
         self.origin.elapsed().as_nanos().min(i64::MAX as u128) as u64
     }
@@ -189,6 +189,9 @@ pub struct TracedLease {
 }
 
 impl Lease for TracedLease {
+    fn request_id_header(&self) -> Option<&str> {
+        self.inner.request_id_header()
+    }
     fn before_send(&self) -> Result<(), &'static str> {
         self.inner.before_send()
     }

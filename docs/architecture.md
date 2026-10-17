@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-13 入口/准入/恢复增量：复用固定 HUST 的 serving→AsyncLLM 方法验证完整总关联；Router 窄幅接缝增加可等待的 reserve，原同步 provider 有默认适配。CPU 实验接收器同时处理按请求预留与既有传输事件，没有增加生产服务。恢复通过显式新 runtime/同实例观测交接保留旧债，拒绝旧发送许可；真实观测器安装、完整启动编排与 KV 订阅仍待接通。范围及后续门槛见[ADR](decisions/2026-10-13-entry-recovery.md)。
+
 2026-10-13 在线传输接线：复用 LifecycleTrace 的有限记录，显式控制线程投递观察；账本 owner 独立分配生命周期序号并在提交后确认。loopback Python 接收器仅用于跨进程 CPU 实验，生产仍按一个 Router owner 设计。动态准入、终态适配安装、恢复后派发和长期 GC 未完成，见[ADR](decisions/2026-10-13-online-transport.md)。下方按日期保留各阶段的历史范围。
 
 2026-10-12 关联/恢复/wire 增量：有界 journal 支持 begin/bind/seal/abandon，原生 AsyncLLM 顺序 fanout 不能按暂时已知 child 推断完成。事务接收侧仍以同一参考账本为状态机，重建后派发暂停。KV 规范化不另建树，Rust pool 调用原目录/索引并保留任务 ticket、控制 lease 和注册额度。当前 CPU 实验保存在 tools/experiments，不改变在线进程数或冻结 Python/SQLite/JSON 为生产实现；[接线边界](planning/capture-recovery-wire-boundaries.md)记录真实服务门槛。

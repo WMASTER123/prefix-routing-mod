@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import socket
+import sqlite3
 import subprocess
 import time
 from contextlib import nullcontext, suppress
@@ -37,7 +38,11 @@ def prototype_result(path: Path) -> dict:
     return records[0]
 
 
-def run(binary: Path, output: Path, *, online=False, lose_first_ack=False) -> dict:
+def run(
+    binary: Path, output: Path, *, online=False, lose_first_ack=False, dynamic=False
+) -> dict:
+    if dynamic and (not online or lose_first_ack):
+        raise ValueError("dynamic requires online without observation ACK injection")
     if lose_first_ack and not online:
         raise ValueError("fault injection requires explicit online experiment")
     if os.name != "posix":
@@ -56,12 +61,27 @@ def run(binary: Path, output: Path, *, online=False, lose_first_ack=False) -> di
     disabled_environment.pop("PREFIX_PROBE_PORT", None)
     disabled_environment.pop("PREFIX_PROBE_TOKEN", None)
     disabled_environment.pop("PREFIX_PROBE_FAULT_DROP_ACK", None)
+    disabled_environment.pop("PREFIX_PROBE_DYNAMIC", None)
 
     class ProbeHandler(Handler):
         def before_reply(self, request):
             model = request["model"]
             with lock:
                 counts[model] = counts.get(model, 0) + 1
+                if dynamic and model == "fixture" and counts[model] == 3:
+                    report["owned_carrier_replaced_client_headers"] = (
+                        self.headers.get_all("X-Request-Id") == ["attempt-1"]
+                    )
+                    with sqlite3.connect(output / "receipts.sqlite") as reader:
+                        operations = [
+                            json.loads(row[0])
+                            for row in reader.execute(
+                                "SELECT payload FROM receipts ORDER BY seq"
+                            )
+                        ]
+                    report["reservation_committed_before_backend"] = (
+                        sum(op["kind"] == "reserve" for op in operations) == 1
+                    )
             if model == "fixture-stall":
                 time.sleep(3)
             elif model == "fixture-disconnect":
@@ -79,6 +99,7 @@ def run(binary: Path, output: Path, *, online=False, lose_first_ack=False) -> di
                 output / "receipts.sqlite",
                 lambda: process is not None and process.poll() is None,
                 lose_first_ack=lose_first_ack,
+                dynamic=dynamic,
             )
             if online
             else nullcontext(None) as channel,
@@ -102,7 +123,7 @@ def run(binary: Path, output: Path, *, online=False, lose_first_ack=False) -> di
                 report["backend_attempts"] = dict(counts)
             expected_attempts = (
                 {"fixture": 3, "fixture-error": 1}
-                if lose_first_ack
+                if lose_first_ack or dynamic
                 else {
                     "fixture": 21,
                     "fixture-error": 2,
@@ -117,7 +138,22 @@ def run(binary: Path, output: Path, *, online=False, lose_first_ack=False) -> di
         if online:
             report["online_transport"] = channel[1]
             observed = report["online_transport"]
-            if not (
+            if dynamic:
+                if not (
+                    observed["reservations"] == 1
+                    and observed["receipts"] == 2
+                    and observed["unused_fixture_reservations"] == 0
+                    and observed["transport_unknown"] == 1
+                    and observed["outstanding_including_unused"] == 1
+                    and observed["rejected_connections"] == 0
+                    and observed["ack_attempts_while_producer_alive"] == 2
+                    and observed["not_sent"] == 0
+                    and observed["admission_ready"] is True
+                    and report.get("reservation_committed_before_backend") is True
+                    and report.get("owned_carrier_replaced_client_headers") is True
+                ):
+                    raise ValueError("dynamic admission/receipt mismatch")
+            elif not (
                 observed["receipts"] == (2 if lose_first_ack else 46)
                 and observed["ack_attempts_while_producer_alive"]
                 == (3 if lose_first_ack else 46)
@@ -154,9 +190,14 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--online", action="store_true")
     parser.add_argument("--lose-first-ack", action="store_true")
+    parser.add_argument("--dynamic", action="store_true")
     args = parser.parse_args()
     report = run(
-        args.binary, args.output, online=args.online, lose_first_ack=args.lose_first_ack
+        args.binary,
+        args.output,
+        online=args.online,
+        lose_first_ack=args.lose_first_ack,
+        dynamic=args.dynamic,
     )
     print(json.dumps(report))
     return 0 if report["status"] == "pass" else 1

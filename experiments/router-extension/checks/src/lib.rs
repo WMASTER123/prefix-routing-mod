@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests the shared helper, not the host patch, HTTP stack or a real backend.
+#[path = "../../admission_bridge.rs"]
+pub mod admission_bridge;
 #[path = "../../lifecycle_bridge.rs"]
 pub mod lifecycle_bridge;
 #[path = "../../online_bridge.rs"]

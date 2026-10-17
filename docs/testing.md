@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-13 入口/恢复新增：自动 CPU 测试覆盖总组数/提前结束、普通额度拒绝后的继续对账、旧许可 fencing、时钟不复用、交接提交前/后独立进程退出；原 helper CI 直接编译 admission_bridge.rs，覆盖精确回执、丢回执、取消等待及八个 RPC 槽位上限。固定 HUST 入口方法审计手动执行 `python -m tools.audit_http_entry --source-directory <原七文件目录> --entry-directory <三个 serving 文件目录> --output <新报告>`，须通过全部 hash 守卫，renderer/IPC/core 仍是替身。完整 Router 新增 `--online --dynamic` 验证零预填预留、提交早于后端到达和第二请求额度拒绝；旧 `--online` 及默认关闭路径保留。不是 NPU/真实 hook 或性能验收。
+
 2026-10-13 新增真实 socket/独立接收进程回归和原生控制线程测试。原 helper CI 直接包含 online_bridge.rs，覆盖断连后原载荷重发、错误/超大确认、期限、留存上限和关闭派发；Python CPU CI 包含进程终止与重建。完整 Router 通过 tools.router_extension_probe 的显式 --online 手动验收，仍用合成 HTTP 后端与预先持久化的有限 fixture，不代表真实 HUST 终态或动态准入通过。结果见[证据](../evidence/online-transport-2026-10-13.md)。
 
 2026-10-12 新增独立子进程在 SQLite commit 前/后强制退出的回归、原生 family fanout 的方法审计，以及 wire 解码限额/必需字段测试。原生索引 CI 新增规范化 fixture→原索引的断言；fixture 来自固定 HUST codec 合成数据，CI 不启动 HUST。方法审计在目标 CPU 手动运行；msgspec 0.22.0 仅从既有隔离服务 venv 显式调用，不加入 Router 的运行依赖。逐条与有界批量提交都覆盖原子性/幂等/崩溃；没有生产 IPC、真实 NPU、持久化时钟交接或 GC 验收。

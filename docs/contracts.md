@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-13 入口/恢复增量：一个 HTTP attempt 关联全部 rendered prompt × sampling child；实际 external/internal ID 从调用处捕获，全部组成功提交才封口。参考账本保留每 attempt 的原时钟；旧传输观察仍按旧时钟验证，可靠 ENDED 的新接收确认可使用当前 runtime 时钟，不跨时钟比较数值。新 runtime 必须是从未用过的时钟、同实例的新鲜观测和进位控制版本，计数必须保留旧负债；旧 dispatcher 停止证明目前是 CPU 调用方前置条件，不是自动完成的生产 fencing。异步 reserve 仅提交成功返回新许可，重复申请不重新许可；普通拒绝不关闭旧工作的观察通道。见[ADR](decisions/2026-10-13-entry-recovery.md)。基础公开 schema 未变，这些仍为 tools/experiments 接缝。
+
 2026-10-13 实验通道 transport-observer-cpu-v1：源回调序号与账本生命周期序号分开；只接收 SEND_STARTED/NOT_SENT/OUTCOME_UNKNOWN，拒绝从该通道注入 backend ENDED。每个源观察的完整载荷和账本转换在同一事务持久化，重复冲突拒绝；终态先结清后的迟到关闭只记录观察。接收历史发送不等于许可新发送，重启后的 admission_ready 不自动打开。此协议是有界 loopback CPU 实验，未冻结生产 ABI；见[ADR](decisions/2026-10-13-online-transport.md)。
 
 2026-10-12 候选接线补充：关联 begin 预留全部 child 额度，bind 使用实际内部 ID，全部成功提交后 seal，abandon 保留未决；已知 child 全部结束不替代 seal。事务接收实验提交成功才返回 applied，单一 owner 分配生命周期序号，重复终态使用原已提交载荷。重建历史时钟只用于重放校验，新派发暂停，未实现生产时钟交接。KV pool 的恢复结果/增量/控制确认都携带当前 ticket；lease 从控制请求发送时点计算，实时帧不续期。M7 必须在解码前限额并提供完整必需元数据，不能将缺失 parent/LoRA 当 None。新增对象均为实验端口，component-v0.1 未变；见[范围](planning/capture-recovery-wire-boundaries.md)。
