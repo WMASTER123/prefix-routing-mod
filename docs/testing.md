@@ -1,6 +1,6 @@
 # 测试与 CI
 
-2026-10-18 终态退役更新：Python 全量 587 passed/7 skipped，Ruff 与格式通过；累计 600 family、observe-only 拒绝、重复退役、旧 cursor、丢准入许可和 stage-driver 误用均有 CPU 覆盖。head `4d59bc0` 的 GitHub 三个 workflow/七个 job 全部 success；新两卡 910B2 实例上 ARM 示例级四项 source-control 测试、单副本 commit→ACK→retire 和双副本 A/A/B 真实公开链均通过，脱敏归档已复制回本地并核对 SHA。这些仍不代替超过 512 family/1024 child 长测、强制退出接管、图模式或性能，详见[终态退役记录](../evidence/terminal-retirement-2026-10-17.md)。
+2026-10-18 终态退役更新：Python 全量 587 passed/7 skipped，Ruff 与格式通过；累计 600 family、observe-only 拒绝、重复退役、旧 cursor、丢准入许可和 stage-driver 误用均有 CPU 覆盖。head `d06cca7` 的 GitHub 三个 workflow/六个 job 全部 success；新两卡 910B2 实例上 ARM 示例级四项 source-control 测试、单副本 commit→ACK→retire 和双副本 A/A/B 真实公开链均通过，脱敏归档已复制回本地并核对 SHA。这些仍不代替超过 512 family/1024 child 长测、强制退出接管、图模式或性能，详见[终态退役记录](../evidence/terminal-retirement-2026-10-17.md)。
 
 2026-10-17 较早持久化增量：最终最小 SQLite feature 下 helper 57 项、Clippy 和 Python CPU 576/7 skipped、integration 3 项通过；代码 `3264050` 对应 5 项 GitHub 检查通过。新增真正子进程未提交退出、变化行回滚、行身份错配和整批损坏反例；固定 ARM 宿主新增显式 durable feature，真实接线与存储对照见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。以下按日期段落只描述当时范围；索引/完整宿主/真实 NPU 与 helper CI 不互相替代。
 

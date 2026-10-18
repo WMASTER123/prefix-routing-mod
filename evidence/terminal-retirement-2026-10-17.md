@@ -15,7 +15,7 @@
 - Windows 本地完整 Python：最终 587 passed、7 skipped（新增 stage-driver 协议与调用顺序反例后）；Ruff check/format 均通过。
 - CPU 状态机覆盖：累计 600 个 family 的小窗口运行、重复退役幂等、旧 cursor 失败、observe-only 拒绝、binding/水位不符、未决负债保留。
 - wheel 构建、干净安装和新 API 导入在此前步骤通过。当前平台服务 venv 的全量 `pip check` 报告预装工具的可选依赖缺失；未修改全局环境，也未将其误报为本 MOD 引入或已解决。
-- GitHub head `3594171` 的 CPU 3.11/3.12、HUST source-methods 3.11/3.12、Native helper 与 Native index 三个 workflow/七个 job 均 success；Native index job 已格式化、编译并执行包含 `HustSourceControl` 新字段/反例的 Linux x86_64 回归。该结果不替代 aarch64 完整宿主构建。
+- GitHub head `3594171` 的 CPU 3.11/3.12、HUST source-methods 3.11/3.12、Native helper 与 Native index 三个 workflow/六个 job 均 success；Native index job 已格式化、编译并执行包含 `HustSourceControl` 新字段/反例的 Linux x86_64 回归。该结果不替代 aarch64 完整宿主构建。
 
 ## 实机经过
 
