@@ -87,6 +87,37 @@ def test_native_probe_rejects_existing_evidence(tmp_path, monkeypatch):
         )
 
 
+def test_native_probe_rejects_wrong_router_protocol_before_backend(
+    tmp_path, monkeypatch, capsys
+):
+    model = tmp_path / "model"
+    model.mkdir()
+    wrong = tmp_path / "wrong-router-example"
+    wrong.write_bytes(b"not the live terminal stage driver")
+    monkeypatch.setattr(hust_native_probe, "private_path", lambda path: path)
+    monkeypatch.setattr(
+        hust_native_probe,
+        "run",
+        lambda *args: pytest.fail("wrong binary must fail before backend launch"),
+    )
+    with pytest.raises(SystemExit):
+        hust_native_probe.main(
+            [
+                "--execute",
+                "--model",
+                str(model),
+                "--output",
+                str(tmp_path / "output"),
+                "--device",
+                "0",
+                "--terminal-observer",
+                "--router-binary",
+                str(wrong),
+            ]
+        )
+    assert "stage-driver protocol" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("details", [None, {}, {"cached_tokens": None}])
 def test_absent_cache_details_remain_unknown(details):
     assert hust_native_probe.cached_tokens({"prompt_tokens_details": details}) is None

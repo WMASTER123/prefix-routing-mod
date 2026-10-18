@@ -45,11 +45,51 @@ pub struct DurableRuntime {
     admission_ready: AtomicBool,
 }
 
+/// A durable transition mutates the in-memory owner before an awaited store
+/// commit. Dropping that future must therefore retire this runtime instance:
+/// the blocking store operation may still finish after task cancellation.
+struct MutationFence<'a> {
+    runtime: &'a DurableRuntime,
+    armed: bool,
+}
+
+impl<'a> MutationFence<'a> {
+    fn armed(runtime: &'a DurableRuntime) -> Self {
+        Self {
+            runtime,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for MutationFence<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.runtime.fail_closed();
+        }
+    }
+}
+
 impl DurableRuntime {
     pub fn create(
         owner: Arc<RuntimeOwner>,
         store: Arc<dyn RuntimeStore>,
     ) -> Result<Self, StoreError> {
+        Self::create_with_cursors(owner, store, Vec::new())
+    }
+
+    pub fn create_with_cursors(
+        owner: Arc<RuntimeOwner>,
+        store: Arc<dyn RuntimeStore>,
+        terminal_cursors: Vec<TerminalCursor>,
+    ) -> Result<Self, StoreError> {
+        if terminal_cursors.iter().any(|cursor| cursor.through != 0) {
+            return Err(StoreError::Invalid("initial_terminal_cursor_nonzero"));
+        }
         let checkpoint = owner
             .checkpoint()
             .map_err(|_| StoreError::Invalid("owner_checkpoint_failed"))?;
@@ -58,9 +98,16 @@ impl DurableRuntime {
             owner_epoch: checkpoint.process_epoch.clone(),
             generation: 1,
             checkpoint,
-            terminal_cursors: vec![],
+            terminal_cursors,
         };
+        initial.validate()?;
         store.initialize(&initial)?;
+        let cursors = initial
+            .terminal_cursors
+            .iter()
+            .cloned()
+            .map(|cursor| (cursor.source_id.clone(), cursor))
+            .collect();
         Ok(Self {
             owner,
             store,
@@ -68,7 +115,7 @@ impl DurableRuntime {
             meta: Mutex::new(DurableMeta {
                 stored_owner: initial.owner_epoch,
                 generation: 1,
-                cursors: BTreeMap::new(),
+                cursors,
             }),
             commit_gate: tokio::sync::Mutex::new(()),
             commit_slots: Arc::new(tokio::sync::Semaphore::new(MAX_COMMIT_WAITERS)),
@@ -196,6 +243,7 @@ impl DurableRuntime {
         self.owner
             .publish(config_version, workers)
             .map_err(|_| "runtime_takeover_control")?;
+        let mut mutation = MutationFence::armed(self);
         let (stored_owner, generation, cursors) = match self.meta.lock() {
             Ok(meta) => (
                 meta.stored_owner.clone(),
@@ -233,6 +281,7 @@ impl DurableRuntime {
         meta.stored_owner = self.local_epoch.clone();
         meta.generation = next.generation;
         self.admission_ready.store(true, Ordering::Release);
+        mutation.disarm();
         Ok(())
     }
 
@@ -264,12 +313,33 @@ impl DurableRuntime {
                 meta.cursors.clone(),
             )
         };
-        let through = cursors
-            .get(&cursor.source_id)
-            .map_or(0, |value| value.through);
+        let through = match cursors.get(&cursor.source_id) {
+            Some(current)
+                if current.worker_url == cursor.worker_url
+                    && current.instance_epoch == cursor.instance_epoch
+                    && current.observer_epoch == cursor.observer_epoch =>
+            {
+                current.through
+            }
+            Some(_) => {
+                self.fail_closed();
+                return Err("terminal_source_conflict");
+            }
+            None if cursors.values().any(|current| {
+                current.worker_url == cursor.worker_url
+                    && current.instance_epoch == cursor.instance_epoch
+            }) =>
+            {
+                self.fail_closed();
+                return Err("terminal_source_conflict");
+            }
+            None => 0,
+        };
         if cursor.through != through {
             return Err("terminal_cursor_conflict");
         }
+        // Validate the complete batch before changing any in-memory debt. This
+        // keeps malformed later records from partially settling earlier ones.
         for (offset, record) in records.iter().enumerate() {
             let expected = through
                 .checked_add(offset as u64 + 1)
@@ -281,6 +351,26 @@ impl DurableRuntime {
                 self.fail_closed();
                 return Err("invalid_terminal_sequence");
             }
+        }
+        let checkpoint = self.owner.checkpoint().map_err(|_| "owner_unavailable")?;
+        for record in records {
+            match checkpoint
+                .active
+                .iter()
+                .find(|attempt| attempt.attempt_id == record.attempt_id)
+            {
+                Some(attempt)
+                    if attempt.worker_url == record.worker_url
+                        && attempt.instance_epoch == record.instance_epoch => {}
+                None if checkpoint.retired.contains(&record.attempt_id) => {}
+                _ => {
+                    self.fail_closed();
+                    return Err("unknown_or_conflicting_terminal_attempt");
+                }
+            }
+        }
+        let mut mutation = MutationFence::armed(self);
+        for record in records {
             match self.owner.apply_terminal(
                 &record.attempt_id,
                 &record.worker_url,
@@ -325,6 +415,7 @@ impl DurableRuntime {
         };
         meta.generation = next.generation;
         meta.cursors = cursors;
+        mutation.disarm();
         Ok(next_cursor.through)
     }
 }
@@ -364,7 +455,14 @@ impl AdmissionPort for DurableRuntime {
             if !self.admission_ready() {
                 return Err("runtime_paused");
             }
-            let lease = self.owner.reserve_async(features, decision).await?;
+            let mut mutation = MutationFence::armed(self);
+            let lease = match self.owner.reserve_async(features, decision).await {
+                Ok(lease) => lease,
+                Err(error) => {
+                    mutation.disarm();
+                    return Err(error);
+                }
+            };
             let (stored_owner, generation, cursors) = match self.meta.lock() {
                 Ok(meta) => (
                     meta.stored_owner.clone(),
@@ -404,6 +502,7 @@ impl AdmissionPort for DurableRuntime {
                 return Err("owner_poisoned");
             };
             meta.generation = next.generation;
+            mutation.disarm();
             Ok(Box::new(DurableLease { inner: lease }) as Box<dyn Lease>)
         })
     }

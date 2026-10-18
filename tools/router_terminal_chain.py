@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import asdict
+from mmap import ACCESS_READ, mmap
 
 from prefix_routing_mod.contracts import (
     EventKind,
@@ -31,12 +32,33 @@ from tools.online_transport_probe import AdmissionReceiver
 from tools.smoke_backend import stop_owned_group
 from tools.transport_receiver_probe import read_frame, write_frame
 
+MAX_DRIVER_BYTES = 128 * 1024 * 1024
+DRIVER_MARKERS = (b"PREFIX_CHAIN_WORKER", b"chain_stage", b"arm_ack_loss")
+
+
+def validate_live_terminal_driver(binary):
+    """Reject the wrong example early; markers are not an authenticity proof."""
+    binary = binary.resolve(strict=True)
+    size = binary.stat().st_size
+    if not binary.is_file() or not 0 < size <= MAX_DRIVER_BYTES:
+        raise ValueError("Bounded live terminal stage-driver binary required")
+    with (
+        binary.open("rb") as stream,
+        mmap(stream.fileno(), 0, access=ACCESS_READ) as image,
+    ):
+        if any(image.find(marker) < 0 for marker in DRIVER_MARKERS):
+            raise ValueError(
+                "Router binary lacks the live terminal stage-driver protocol"
+            )
+    return binary
+
 
 class TerminalSource:
     """Validate a complete fixed-binding batch before mutating the same M3."""
 
-    def __init__(self, read):
+    def __init__(self, read, retire=None):
         self.read = read
+        self.retire = retire
         initial = read(None, 0, 0)
         self.binding = Binding(**initial["binding"])
         self.core_pid = initial["core_pid"]
@@ -45,6 +67,7 @@ class TerminalSource:
         self.failed = False
         self.outcomes = {}
         self.families = {}
+        self.retired = set()
         self.last_reply = None
         if (
             type(initial.get("schema_version")) is not int
@@ -59,6 +82,10 @@ class TerminalSource:
             or initial["boundary"] != 0
             or initial["records"]
             or initial["families"]
+            or (
+                retire is not None
+                and initial.get("ownership_mode") != "exclusive_router_v1"
+            )
             or initial.get("disabled") is not False
         ):
             raise ValueError("Fresh independent frontend/core observer required")
@@ -85,6 +112,10 @@ class TerminalSource:
                 or reply["boundary"] != self.cursor + len(records)
                 or not isinstance(reply["families"], list)
                 or len(reply["families"]) > 64
+                or (
+                    self.retire is not None
+                    and reply.get("ownership_mode") != "exclusive_router_v1"
+                )
             ):
                 raise ValueError("Terminal source binding or coverage changed")
             parsed = []
@@ -157,6 +188,22 @@ class TerminalSource:
                 raise ValueError("Terminal redelivery is not idempotent")
             self.families[item.attempt_id] = family
             self.cursor = item.sequence
+        if self.retire is not None and records and self.cursor == records[-1].sequence:
+            # M3 committed each terminal receipt before this source ACK.  Only
+            # the exact durable cursor can then reclaim the trusted family.
+            acknowledged = self.read(
+                self.binding.observer_epoch, self.cursor, self.cursor
+            )
+            if acknowledged["boundary"] < self.cursor:
+                raise ValueError("Terminal acknowledgement boundary regressed")
+            result = self.retire(self.binding.observer_epoch, self.cursor, self.cursor)
+            if (
+                result.get("retired_through") != self.cursor
+                or type(result.get("retired")) is not int
+                or result["retired"] < 0
+            ):
+                raise ValueError("Terminal family retirement was not confirmed")
+            self.retired.update(item.attempt_id for item in records)
 
 
 def run(binary, opener, origin, output, terminal_token):
@@ -182,7 +229,7 @@ def run(binary, opener, origin, output, terminal_token):
 def _run(binary, opener, origin, output, terminal_token, report):
     import hashlib
 
-    binary = binary.resolve(strict=True)
+    binary = validate_live_terminal_driver(binary)
     if os.name != "posix" or not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("Explicit Linux executable required")
     with binary.open("rb") as stream:
@@ -201,7 +248,24 @@ def _run(binary, opener, origin, output, terminal_token, report):
             timeout=2,
         )
 
-    source = TerminalSource(read)
+    def retire(epoch, through, checkpointed_through):
+        query = urllib.parse.urlencode(
+            {
+                "observer_epoch": epoch,
+                "through": through,
+                "checkpointed_through": checkpointed_through,
+            }
+        )
+        return request_json(
+            opener,
+            origin,
+            "/prefix-routing/terminal/retire?" + query,
+            body={},
+            headers=headers,
+            timeout=2,
+        )
+
+    source = TerminalSource(read, retire)
     ref = WorkerRef(source.binding.worker_id, source.binding.instance_epoch)
     clock = "router-live-" + uuid.uuid4().hex
     token = secrets.token_hex(32)
@@ -270,7 +334,7 @@ def _run(binary, opener, origin, output, terminal_token, report):
             PREFIX_PROBE_CLOCK=clock,
             PREFIX_CHAIN_WORKER=ref.worker_id,
             PREFIX_CHAIN_INSTANCE=ref.instance_epoch,
-            PREFIX_CHAIN_NAMESPACE=uuid.uuid4().hex[:12],
+            PREFIX_CHAIN_NAMESPACE=uuid.uuid4().hex,
         )
         # Do not pass backend control credentials into the Router process.
         env.pop("PREFIX_ROUTING_TERMINAL_TOKEN", None)
@@ -378,8 +442,8 @@ def _run(binary, opener, origin, output, terminal_token, report):
                 )
             source.check()
             observed = {f["attempt_id"] for f in source.last_reply["families"]}
-            if observed != set(source.families):
-                raise ValueError("An unpermitted managed request reached the backend")
+            if observed or source.retired != set(source.families):
+                raise ValueError("Managed backend family retirement set differs")
             if [s["chain_stage"] for s in stages] != [
                 "completion",
                 "cancel",
@@ -403,6 +467,7 @@ def _run(binary, opener, origin, output, terminal_token, report):
                 post_commit_lost_permit_retains_debt=True,
                 health_and_terminal_binding_checked=True,
                 no_unpermitted_managed_backend_family=True,
+                durable_terminal_retirement_verified=True,
             )
         finally:
             # Bounded generated diagnostics; never persist either capability.

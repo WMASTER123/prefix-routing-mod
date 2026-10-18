@@ -20,7 +20,11 @@ fn body() -> serde_json::Value {
         "schema_version": 1,
         "binding": {"worker_id": "replica-a", "instance_epoch": "core-a", "observer_epoch": "observer-a"},
         "frontend_pid": 101, "core_pid": 102, "core_boundary": 0,
-        "frontend_boundary": 0, "family_count": 0, "disabled": false
+        "frontend_boundary": 0, "family_count": 0, "reserved_children": 0,
+        "frontend_event_count": 0, "child_status_count": 0,
+        "core_retained_records": 0, "core_duplicate_guards": 0,
+        "acknowledged": 0, "retired_through": 0,
+        "ownership_mode": "observe_only", "disabled": false
     })
 }
 
@@ -173,4 +177,108 @@ fn warm_identity_or_wrong_owned_pid_cannot_initialize_control() {
             Err(OwnerFault::Source)
         ));
     }
+}
+
+#[test]
+fn existing_source_requires_exact_binding_and_non_regressed_durable_cursor() {
+    let mut warm = body();
+    warm["ownership_mode"] = serde_json::json!("exclusive_router_v1");
+    warm["core_boundary"] = serde_json::json!(6);
+    warm["frontend_boundary"] = serde_json::json!(5);
+    warm["acknowledged"] = serde_json::json!(3);
+    warm["retired_through"] = serde_json::json!(2);
+    warm["family_count"] = serde_json::json!(1);
+    warm["reserved_children"] = serde_json::json!(2);
+
+    let server = Server::new(vec![(200, warm.to_string())]);
+    let control = HustSourceControl::connect_existing(
+        &server.origin,
+        TOKEN.into(),
+        "replica-a",
+        101,
+        "core-a",
+        "observer-a",
+        "exclusive_router_v1",
+        3,
+    )
+    .unwrap();
+    assert_eq!(control.identity().frontend_boundary, 5);
+
+    for (instance, observer, mode, through) in [
+        ("core-b", "observer-a", "exclusive_router_v1", 3),
+        ("core-a", "observer-b", "exclusive_router_v1", 3),
+        ("core-a", "observer-a", "observe_only", 3),
+        ("core-a", "observer-a", "exclusive_router_v1", 1),
+        ("core-a", "observer-a", "exclusive_router_v1", 6),
+    ] {
+        let server = Server::new(vec![(200, warm.to_string())]);
+        assert!(matches!(
+            HustSourceControl::connect_existing(
+                &server.origin,
+                TOKEN.into(),
+                "replica-a",
+                101,
+                instance,
+                observer,
+                mode,
+                through,
+            ),
+            Err(OwnerFault::Source)
+        ));
+    }
+}
+
+#[test]
+fn retirement_identity_fields_are_bounded_monotonic_and_mode_stable() {
+    let invalid = [
+        ("reserved_children", serde_json::json!(257)),
+        ("acknowledged", serde_json::json!(1)),
+        ("retired_through", serde_json::json!(1)),
+        ("ownership_mode", serde_json::json!("trust_prefix")),
+        ("family_count", serde_json::json!(1)),
+        ("frontend_event_count", serde_json::json!(65)),
+        ("child_status_count", serde_json::json!(1)),
+        ("core_retained_records", serde_json::json!(257)),
+        ("core_duplicate_guards", serde_json::json!(1)),
+    ];
+    for (field, value) in invalid {
+        let mut initial = body();
+        initial[field] = value;
+        let server = Server::new(vec![(200, initial.to_string())]);
+        assert!(matches!(
+            HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101),
+            Err(OwnerFault::Source)
+        ));
+    }
+
+    let mut first = body();
+    first["ownership_mode"] = serde_json::json!("exclusive_router_v1");
+    let mut changed = first.clone();
+    changed["ownership_mode"] = serde_json::json!("observe_only");
+    let server = Server::new(vec![(200, first.to_string()), (200, changed.to_string())]);
+    let mut control =
+        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101).unwrap();
+    assert_eq!(
+        control.verify(&spec(&server.origin)),
+        Err(OwnerFault::Source)
+    );
+
+    let mut current = body();
+    current["family_count"] = serde_json::json!(1);
+    current["reserved_children"] = serde_json::json!(2);
+    let mut changed = current.clone();
+    changed["family_count"] = serde_json::json!(0);
+    changed["reserved_children"] = serde_json::json!(0);
+    let server = Server::new(vec![
+        (200, body().to_string()),
+        (200, current.to_string()),
+        (200, changed.to_string()),
+    ]);
+    let mut control =
+        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101).unwrap();
+    control.verify(&spec(&server.origin)).unwrap();
+    assert_eq!(
+        control.verify(&spec(&server.origin)),
+        Err(OwnerFault::Source)
+    );
 }

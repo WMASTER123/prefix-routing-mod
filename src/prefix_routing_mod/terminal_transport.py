@@ -97,6 +97,8 @@ class CoreEnds:
             "epoch": self.epoch,
             "pid": self.pid,
             "boundary": self.boundary,
+            "retained_records": len(self.records),
+            "duplicate_guards": len(self.seen),
             "records": [
                 dict(record) for record in self.records if record["sequence"] > after
             ],
@@ -121,6 +123,8 @@ class FrontendEnds:
         self.core_epoch = bootstrap["epoch"]
         self.core_pid = bootstrap["pid"]
         self.cursor = 0
+        self.core_retained_records = 0
+        self.core_duplicate_guards = 0
         self.child_statuses = {}
         self.journal = TerminalJournal(
             Binding(worker_id, self.core_epoch, uuid.uuid4().hex),
@@ -129,6 +133,7 @@ class FrontendEnds:
             max_events=64,
         )
         self.disabled = False
+        self.ownership_mode = "observe_only"
         self.lock = asyncio.Lock()
 
     async def poll_core(self):
@@ -147,6 +152,10 @@ class FrontendEnds:
                 or reply.get("pid") != self.core_pid
                 or reply.get("cleanup_observer_installed") is not (not self.disabled)
                 or type(reply.get("boundary")) is not int
+                or type(reply.get("retained_records")) is not int
+                or type(reply.get("duplicate_guards")) is not int
+                or not 0 <= reply["retained_records"] <= 256
+                or reply["retained_records"] != reply["duplicate_guards"]
                 or not isinstance(reply.get("records"), list)
                 or len(reply["records"]) > 256
                 or reply["boundary"] != self.cursor + len(reply["records"])
@@ -174,6 +183,8 @@ class FrontendEnds:
                         raise RuntimeError("Frontend terminal journal unavailable")
                     self.child_statuses[record["child"]] = record["status"]
             self.cursor = reply["boundary"]
+            self.core_retained_records = reply["retained_records"]
+            self.core_duplicate_guards = reply["duplicate_guards"]
         except (Exception, asyncio.CancelledError):
             self.journal.failed = True
             raise
@@ -192,7 +203,48 @@ class FrontendEnds:
                 "core_boundary": self.cursor,
                 "frontend_boundary": self.journal.next_sequence - 1,
                 "family_count": len(self.journal.families),
+                "reserved_children": self.journal.reserved_children,
+                "frontend_event_count": len(self.journal.events),
+                "child_status_count": len(self.child_statuses),
+                "core_retained_records": self.core_retained_records,
+                "core_duplicate_guards": self.core_duplicate_guards,
+                "acknowledged": self.journal.acknowledged,
+                "retired_through": self.journal.retired_through,
+                "ownership_mode": self.ownership_mode,
                 "disabled": self.disabled,
+            }
+
+    async def retire(self, observer_epoch, through, checkpointed_through):
+        """Reclaim a durably consumed prefix of trusted terminal families."""
+        async with self.lock:
+            if (
+                observer_epoch != self.journal.binding.observer_epoch
+                or type(through) is not int
+                or type(checkpointed_through) is not int
+            ):
+                raise ValueError("Frontend terminal retirement binding mismatch")
+            if self.ownership_mode != "exclusive_router_v1":
+                raise RuntimeError("Managed retirement requires exclusive Router mode")
+            retiring_children = {
+                child
+                for family in self.journal.families.values()
+                if family.record is not None and family.record.sequence <= through
+                for child in family.children
+            }
+            count = self.journal.retire(
+                self.journal.binding,
+                through,
+                checkpointed_through=checkpointed_through,
+            )
+            for child in retiring_children:
+                self.child_statuses.pop(child, None)
+            return {
+                "schema_version": 1,
+                "binding": asdict(self.journal.binding),
+                "retired": count,
+                "retired_through": self.journal.retired_through,
+                "family_count": len(self.journal.families),
+                "reserved_children": self.journal.reserved_children,
             }
 
     async def read(self, observer_epoch, after, acknowledge):
@@ -211,7 +263,7 @@ class FrontendEnds:
             await self.poll_core()
             if acknowledge:
                 self.journal.acknowledge(self.journal.binding, acknowledge)
-            boundary, records = self.journal.snapshot(self.journal.binding)
+            boundary, records = self.journal.snapshot_after(self.journal.binding, after)
             snapshot = after < self.journal.acknowledged
             return {
                 "schema_version": 1,
@@ -241,5 +293,6 @@ class FrontendEnds:
                     }
                     for name, family in self.journal.families.items()
                 ],
+                "ownership_mode": self.ownership_mode,
                 "disabled": self.disabled,
             }

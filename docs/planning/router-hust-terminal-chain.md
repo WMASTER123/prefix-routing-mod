@@ -32,7 +32,7 @@ Rust Router 的 admission 与传输观察使用同一显式源时钟 ID，源序
 
 ## 运行和 CI
 
-已核验的服务环境中，给既有 `tools.hust_native_probe` 增加 `--router-binary <本项目artifacts下可执行文件>`，并显式启用 `--terminal-observer`；它替换直接请求端终态case，保留原生请求/APC/KV采集先验及自有清理。binary须由当前固定宿主/锁和本项目example构建并记录SHA。目标仍是1张910B2与公共Qwen2.5-14B-Instruct，不改全局环境或公共模型。
+已核验的服务环境中，给既有 `tools.hust_native_probe` 增加 `--router-binary <.../live_terminal_chain>`，并显式启用 `--terminal-observer`；它替换直接请求端终态 case，保留原生请求/APC/KV 采集先验及自有清理。该参数只接受单副本 stage-driver 协议，工具会在加载模型前核验有界二进制中的协议标记；双副本、接受私有 JSON 配置的 `hust_runtime_probe` 必须交给 `tools.hust_runtime_chain`，不能在这个参数复用。binary 须由当前固定宿主/锁和本项目 example 构建并记录 SHA。目标仍是 1 张 910B2 与公共 Qwen2.5-14B-Instruct，不改全局环境或公共模型。
 
 Python3.11/3.12 CPU/integration/wheel、固定HUST源码CI照常执行；共享原生helper CI加本example格式检查。完整Router aarch64 release构建与真实后端链路手动执行并记录，不伪称helper job编译了整个Router。
 

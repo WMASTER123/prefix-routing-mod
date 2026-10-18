@@ -219,7 +219,10 @@ def attach_frontend(frontend, state, serving_types, *, guard=verify_callable):
                 if capture.entry is not None:
                     raise RuntimeError("Rendered family was already registered")
                 capture.entry = EntryCapture(
-                    state.journal, capture.attempt, (request.n or 1,) * len(inputs)
+                    state.journal,
+                    capture.attempt,
+                    (request.n or 1,) * len(inputs),
+                    managed=state.ownership_mode == "exclusive_router_v1",
                 )
             return result
 
@@ -333,9 +336,27 @@ class TerminalEndpoint:
                     raise
                 return {"restored": True, "binding": result["epoch"]}
 
+        async def retire(
+            request: Request,
+            observer_epoch: str,
+            through: int,
+            checkpointed_through: int,
+        ):
+            self.authorize(request)
+            try:
+                self.patches.check_current()
+                return await self.state.retire(
+                    observer_epoch, through, checkpointed_through
+                )
+            except ValueError as error:
+                raise HTTPException(409, str(error)) from error
+            except Exception as error:
+                raise HTTPException(503, "Terminal retirement unavailable") from error
+
         for path, handler, methods in (
             ("/prefix-routing/identity", identity, ["GET"]),
             ("/prefix-routing/terminal", read, ["GET"]),
+            ("/prefix-routing/terminal/retire", retire, ["POST"]),
             ("/prefix-routing/terminal/disable", disable, ["POST"]),
         ):
             if any(getattr(route, "path", None) == path for route in app.routes):
@@ -379,6 +400,14 @@ class TerminalEndpoint:
             or not 1 <= len(self.state.managed_prefix) <= 32
         ):
             raise ValueError("Bounded explicit managed prefix required")
+        self.state.ownership_mode = os.environ.get(
+            "PREFIX_ROUTING_TERMINAL_OWNERSHIP", "observe_only"
+        )
+        if self.state.ownership_mode not in (
+            "observe_only",
+            "exclusive_router_v1",
+        ):
+            raise ValueError("Unsupported terminal ownership mode")
         from vllm.entrypoints.openai.chat_completion.serving import OpenAIServingChat
         from vllm.entrypoints.openai.completion.serving import OpenAIServingCompletion
 

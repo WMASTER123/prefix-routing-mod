@@ -3,6 +3,7 @@
 use prefix_router_extension_checks::{
     runtime_owner::{ActiveAttempt, AttemptPhase, OwnerCheckpoint, WorkerControl},
     runtime_store::{RuntimeStore, StoredRuntime, RUNTIME_SCHEMA},
+    sqlite_row_runtime_store::SqliteRowRuntimeStore,
     sqlite_runtime_store::{SqliteRuntimeStore, DEFAULT_MAX_SNAPSHOT_BYTES},
 };
 use std::{env, fs, path::PathBuf, time::Instant};
@@ -49,7 +50,10 @@ fn file_size(path: PathBuf) -> u64 {
 
 fn main() {
     let arguments: Vec<String> = env::args().collect();
-    assert_eq!(arguments.len(), 4, "usage: probe PATH ITERATIONS ACTIVE");
+    assert!(
+        (4..=5).contains(&arguments.len()),
+        "usage: probe PATH ITERATIONS ACTIVE [snapshot|rows]"
+    );
     let path = PathBuf::from(&arguments[1]);
     let iterations: usize = arguments[2].parse().expect("valid iterations");
     let active: usize = arguments[3].parse().expect("valid active count");
@@ -58,7 +62,16 @@ fn main() {
     assert!(!path.exists(), "probe path must not exist");
     assert!(path.parent().is_some_and(|parent| parent.is_dir()));
 
-    let store = SqliteRuntimeStore::create(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap();
+    let layout = arguments.get(4).map_or("snapshot", String::as_str);
+    let store: Box<dyn RuntimeStore> = match layout {
+        "snapshot" => {
+            Box::new(SqliteRuntimeStore::create(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap())
+        }
+        "rows" => {
+            Box::new(SqliteRowRuntimeStore::create(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap())
+        }
+        _ => panic!("unknown storage layout"),
+    };
     let mut state = StoredRuntime {
         schema_version: RUNTIME_SCHEMA,
         owner_epoch: "probe-owner".into(),
@@ -68,19 +81,37 @@ fn main() {
     };
     store.initialize(&state).unwrap();
     let mut samples = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
+    let warmup = 50;
+    for index in 0..iterations + warmup {
         let expected = state.generation;
         state.generation += 1;
         state.checkpoint.next_attempt += 1;
+        // Change one existing record, rather than measuring a metadata-only
+        // commit while the active rows never change. This is a store probe,
+        // not an engine/request lifecycle simulation.
+        if active > 0 {
+            let record = &mut state.checkpoint.active[index % active];
+            record.phase = if record.phase == AttemptPhase::Uncertain {
+                AttemptPhase::Sent
+            } else {
+                AttemptPhase::Uncertain
+            };
+        }
         let started = Instant::now();
         store.commit("probe-owner", expected, &state).unwrap();
-        samples.push(started.elapsed().as_micros());
+        let elapsed = started.elapsed().as_micros();
+        if index >= warmup {
+            samples.push(elapsed);
+        }
     }
     assert_eq!(store.load().unwrap(), state);
     samples.sort_unstable();
     let report = serde_json::json!({
         "schema_version": 1,
-        "scope": "sqlite-full-wal-single-snapshot-commit",
+        "scope": "sqlite-full-wal-single-commit",
+        "layout": layout,
+        "workload": "metadata-and-one-active-row-update",
+        "warmup_commits": warmup,
         "architecture": env::consts::ARCH,
         "os": env::consts::OS,
         "iterations": iterations,

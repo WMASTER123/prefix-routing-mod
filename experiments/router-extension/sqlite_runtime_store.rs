@@ -12,15 +12,15 @@ use std::{
 
 pub const DEFAULT_MAX_SNAPSHOT_BYTES: usize = 8 * 1024 * 1024;
 
-fn storage(error: impl std::error::Error + Send + Sync + 'static) -> StoreError {
+pub(crate) fn storage(error: impl std::error::Error + Send + Sync + 'static) -> StoreError {
     StoreError::Storage(Box::new(error))
 }
 
-fn digest(payload: &[u8]) -> Vec<u8> {
+pub(crate) fn digest(payload: &[u8]) -> Vec<u8> {
     Sha256::digest(payload).to_vec()
 }
 
-fn sql_integer(value: u64) -> Result<i64, StoreError> {
+pub(crate) fn sql_integer(value: u64) -> Result<i64, StoreError> {
     value
         .try_into()
         .map_err(|_| StoreError::Invalid("runtime_generation_out_of_range"))
@@ -137,7 +137,7 @@ impl SqliteRuntimeStore {
         &self.path
     }
 
-    fn with_connection<T>(
+    pub(crate) fn with_connection<T>(
         &self,
         action: impl FnOnce(&mut Connection) -> Result<T, StoreError>,
     ) -> Result<T, StoreError> {
@@ -212,7 +212,7 @@ impl RuntimeStore for SqliteRuntimeStore {
         self.with_connection(|connection| {
             let exists: bool = connection
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='runtime')",
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table')",
                     [],
                     |row| row.get(0),
                 )

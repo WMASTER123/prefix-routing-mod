@@ -1,5 +1,7 @@
 # 决策索引
 
+- [2026-10-17：增量 SQLite 候选与真实持久接线](2026-10-17-incremental-runtime-store.md)；最小依赖、变化行写入、同事务游标和有限 commit→ACK 资格，不冻结生产恢复。
+
 - [2026-10-14：原Router准入/转发与HUST终态有限组合](2026-10-14-router-live-chain.md)；沿用原宿主/观察/账本，不冻结生产IPC或增加索引。
 
 - [2026-10-14：复用 HUST utility/endpoint 的有限终态实机接线](2026-10-14-live-terminal-utility.md)；默认关闭、8处可逆包装，不冻结生产ABI。

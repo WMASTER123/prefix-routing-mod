@@ -1061,16 +1061,17 @@ mod durable_owner {
         runtime_owner::{CachePort, RuntimeOwner, WorkerControl},
         runtime_provider::{AdmissionPort, Decision, RequestView, SnapshotPort},
         runtime_store::{RuntimeStore, StoreError, StoredRuntime, TerminalCursor},
+        sqlite_row_runtime_store::SqliteRowRuntimeStore,
         sqlite_runtime_store::{SqliteRuntimeStore, DEFAULT_MAX_SNAPSHOT_BYTES},
     };
     use std::{
         fs,
         path::{Path, PathBuf},
         sync::{
-            atomic::{AtomicU8, Ordering},
+            atomic::{AtomicBool, AtomicU8, Ordering},
             Arc, Mutex,
         },
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     #[derive(Debug)]
@@ -1142,11 +1143,26 @@ mod durable_owner {
         value: Mutex<Option<StoredRuntime>>,
         // 0 normal; 1 fail before commit; 2 commit then return uncertain error.
         fault: AtomicU8,
+        block_next: AtomicBool,
+        block_entered: AtomicBool,
+        block_release: AtomicBool,
+        block_finished: AtomicBool,
     }
 
     impl MemoryStore {
         fn fault(&self, mode: u8) {
             self.fault.store(mode, Ordering::Release);
+        }
+
+        fn block_next_commit(&self) {
+            self.block_entered.store(false, Ordering::Release);
+            self.block_release.store(false, Ordering::Release);
+            self.block_finished.store(false, Ordering::Release);
+            self.block_next.store(true, Ordering::Release);
+        }
+
+        fn release_commit(&self) {
+            self.block_release.store(true, Ordering::Release);
         }
 
         fn replace(
@@ -1157,6 +1173,12 @@ mod durable_owner {
             takeover: bool,
         ) -> Result<(), StoreError> {
             next.validate()?;
+            if self.block_next.swap(false, Ordering::AcqRel) {
+                self.block_entered.store(true, Ordering::Release);
+                while !self.block_release.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
             let mut value = self.value.lock().map_err(|_| StoreError::Busy)?;
             let current = value.as_ref().ok_or(StoreError::Missing)?;
             if current.owner_epoch != expected_owner
@@ -1173,6 +1195,7 @@ mod durable_owner {
                 ))));
             }
             *value = Some(next.clone());
+            self.block_finished.store(true, Ordering::Release);
             if self.fault.load(Ordering::Acquire) == 2 {
                 return Err(StoreError::Storage(Box::new(std::io::Error::other(
                     "injected after commit",
@@ -1224,6 +1247,16 @@ mod durable_owner {
         let request = request(id);
         let decision = decision(runtime, &request);
         runtime.reserve_async(&request, &decision).await.unwrap()
+    }
+
+    async fn wait_for(flag: &AtomicBool) {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !flag.load(Ordering::Acquire) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("blocking store transition did not reach the expected phase");
     }
 
     #[tokio::test]
@@ -1313,6 +1346,117 @@ mod durable_owner {
                 .unwrap();
         assert!(!recovered.admission_ready());
         assert_eq!(recovered.owner().active_len().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn terminal_source_binding_cannot_change_at_an_existing_cursor() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = DurableRuntime::create(owner("process-a"), store.clone()).unwrap();
+
+        let first = reserve(&runtime, "request-a").await;
+        let first_attempt = first.request_id_header().unwrap().to_owned();
+        first.before_send().unwrap();
+        first.sent();
+        runtime
+            .apply_terminal_batch(
+                cursor(0),
+                &[TerminalRecord {
+                    sequence: 1,
+                    attempt_id: first_attempt,
+                    worker_url: "http://worker-a".into(),
+                    instance_epoch: "instance-a".into(),
+                }],
+            )
+            .await
+            .unwrap();
+
+        let second = reserve(&runtime, "request-b").await;
+        let second_attempt = second.request_id_header().unwrap().to_owned();
+        second.before_send().unwrap();
+        second.sent();
+        let mut changed_source = cursor(1);
+        changed_source.observer_epoch = "observer-b".into();
+        assert_eq!(
+            runtime
+                .apply_terminal_batch(
+                    changed_source,
+                    &[TerminalRecord {
+                        sequence: 2,
+                        attempt_id: second_attempt,
+                        worker_url: "http://worker-a".into(),
+                        instance_epoch: "instance-a".into(),
+                    }],
+                )
+                .await,
+            Err("terminal_source_conflict")
+        );
+        assert!(!runtime.admission_ready());
+        assert_eq!(runtime.owner().active_len().unwrap(), 1);
+        let persisted = store.load().unwrap();
+        assert_eq!(persisted.checkpoint.active.len(), 1);
+        assert_eq!(persisted.terminal_cursors, vec![cursor(1)]);
+    }
+
+    #[tokio::test]
+    async fn cancelling_reservation_commit_retires_the_runtime_instance() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = Arc::new(DurableRuntime::create(owner("process-a"), store.clone()).unwrap());
+        let request = request("request-a");
+        let selected = decision(&runtime, &request);
+        store.block_next_commit();
+
+        let task = tokio::spawn({
+            let runtime = runtime.clone();
+            async move { runtime.reserve_async(&request, &selected).await }
+        });
+        wait_for(&store.block_entered).await;
+        task.abort();
+        let _ = task.await;
+        assert!(!runtime.admission_ready());
+        assert_eq!(runtime.allocate_attempt("request-b"), Err("runtime_paused"));
+
+        store.release_commit();
+        wait_for(&store.block_finished).await;
+        assert_eq!(store.load().unwrap().checkpoint.active.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelling_terminal_commit_retires_the_runtime_instance() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = Arc::new(DurableRuntime::create(owner("process-a"), store.clone()).unwrap());
+        let lease = reserve(&runtime, "request-a").await;
+        let attempt = lease.request_id_header().unwrap().to_owned();
+        lease.before_send().unwrap();
+        lease.sent();
+        store.block_next_commit();
+
+        let task = tokio::spawn({
+            let runtime = runtime.clone();
+            async move {
+                runtime
+                    .apply_terminal_batch(
+                        cursor(0),
+                        &[TerminalRecord {
+                            sequence: 1,
+                            attempt_id: attempt,
+                            worker_url: "http://worker-a".into(),
+                            instance_epoch: "instance-a".into(),
+                        }],
+                    )
+                    .await
+            }
+        });
+        wait_for(&store.block_entered).await;
+        task.abort();
+        let _ = task.await;
+        assert!(!runtime.admission_ready());
+        assert_eq!(runtime.allocate_attempt("request-b"), Err("runtime_paused"));
+
+        store.release_commit();
+        wait_for(&store.block_finished).await;
+        let persisted = store.load().unwrap();
+        assert!(persisted.checkpoint.active.is_empty());
+        assert_eq!(persisted.terminal_cursors, vec![cursor(1)]);
     }
 
     #[tokio::test]
@@ -1454,10 +1598,368 @@ mod durable_owner {
     }
 
     #[test]
+    fn stored_runtime_rejects_ambiguous_terminal_source_bindings() {
+        let mut stored = initial("process-a");
+        stored.terminal_cursors = vec![
+            cursor(1),
+            TerminalCursor {
+                source_id: "terminal-source-b".into(),
+                observer_epoch: "observer-b".into(),
+                ..cursor(2)
+            },
+        ];
+        assert!(matches!(
+            stored.validate(),
+            Err(StoreError::Invalid("invalid_terminal_cursor"))
+        ));
+    }
+
+    #[test]
     fn sqlite_missing_store_never_bootstraps_empty() {
         let directory = TempDirectory::new("sqlite-missing");
         assert!(matches!(
             SqliteRuntimeStore::open(directory.join("missing.sqlite"), DEFAULT_MAX_SNAPSHOT_BYTES),
+            Err(StoreError::Missing)
+        ));
+    }
+
+    fn row_store(path: &Path) -> SqliteRowRuntimeStore {
+        SqliteRowRuntimeStore::create(path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap()
+    }
+
+    #[test]
+    fn incremental_rows_roundtrip_mutations_deletions_and_owner_fencing() {
+        let directory = TempDirectory::new("row-roundtrip");
+        let path = directory.join("runtime.sqlite");
+        let store = row_store(&path);
+        let mut state = initial("process-a");
+        store.initialize(&state).unwrap();
+        let external = SqliteRowRuntimeStore::open(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap();
+        state.generation = 2;
+        state
+            .checkpoint
+            .active
+            .push(crate::runtime_owner::ActiveAttempt {
+                request_id: "request".into(),
+                attempt_id: "attempt".into(),
+                worker_url: worker().worker_url,
+                instance_epoch: worker().instance_epoch,
+                worker_version: 1,
+                config_version: 1,
+                phase: crate::runtime_owner::AttemptPhase::Sent,
+            });
+        store.commit("process-a", 1, &state).unwrap();
+        assert_eq!(store.load().unwrap(), state);
+        let mut stale = initial("process-a");
+        stale.generation = 2;
+        assert!(matches!(
+            external.commit("process-a", 1, &stale),
+            Err(StoreError::Fenced)
+        ));
+        let mut next = state.clone();
+        next.generation = 3;
+        next.checkpoint.active.clear();
+        next.checkpoint.retired.push("attempt".into());
+        next.terminal_cursors.push(cursor(1));
+        store.commit("process-a", 2, &next).unwrap();
+        drop(store);
+        let reopened = SqliteRowRuntimeStore::open(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap();
+        assert_eq!(reopened.load().unwrap(), next);
+        let mut takeover = next;
+        takeover.generation = 4;
+        takeover.owner_epoch = "process-b".into();
+        takeover.checkpoint.process_epoch = "process-b".into();
+        reopened.takeover("process-a", 3, &takeover).unwrap();
+        assert_eq!(reopened.load().unwrap(), takeover);
+    }
+
+    #[test]
+    fn incremental_transaction_rolls_back_head_and_rows_and_can_retry() {
+        let directory = TempDirectory::new("row-rollback");
+        let path = directory.join("runtime.sqlite");
+        let store = row_store(&path);
+        let initial = initial("process-a");
+        store.initialize(&initial).unwrap();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch("CREATE TRIGGER reject_write BEFORE UPDATE ON runtime_items BEGIN SELECT RAISE(ABORT, 'injected write error'); END;").unwrap();
+        let mut next = initial.clone();
+        next.generation = 2;
+        next.checkpoint.workers[0].capacity = 8;
+        assert!(store.commit("process-a", 1, &next).is_err());
+        assert_eq!(store.load().unwrap(), initial);
+        connection
+            .execute_batch("DROP TRIGGER reject_write;")
+            .unwrap();
+        store.commit("process-a", 1, &next).unwrap();
+        assert_eq!(store.load().unwrap(), next);
+    }
+
+    #[test]
+    fn incremental_rejects_overflow_corruption_and_wrong_layout() {
+        let directory = TempDirectory::new("row-invalid");
+        let path = directory.join("runtime.sqlite");
+        let store = row_store(&path);
+        store.initialize(&initial("process-a")).unwrap();
+        assert!(matches!(
+            sqlite(&directory.join("blob.sqlite")).initialize(&initial("process-a")),
+            Ok(())
+        ));
+        let blob = SqliteRuntimeStore::open(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap();
+        assert!(matches!(
+            blob.initialize(&initial("process-a")),
+            Err(StoreError::AlreadyExists)
+        ));
+        assert!(SqliteRowRuntimeStore::open(
+            directory.join("blob.sqlite"),
+            DEFAULT_MAX_SNAPSHOT_BYTES
+        )
+        .is_err());
+        let mut oversized = initial("process-a");
+        oversized.checkpoint.retired = (0..128).map(|i| format!("attempt-{i}")).collect();
+        let small = SqliteRowRuntimeStore::create(directory.join("small.sqlite"), 1024).unwrap();
+        assert!(matches!(
+            small.initialize(&oversized),
+            Err(StoreError::Invalid("runtime_snapshot_too_large"))
+        ));
+        drop(store);
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute("UPDATE runtime_items SET payload=x'00'", [])
+            .unwrap();
+        drop(connection);
+        assert!(matches!(
+            SqliteRowRuntimeStore::open(&path, DEFAULT_MAX_SNAPSHOT_BYTES),
+            Err(StoreError::Invalid("runtime_snapshot_digest_mismatch"))
+        ));
+    }
+
+    #[test]
+    fn incremental_keeps_unchanged_rows_and_rejects_duplicates() {
+        let directory = TempDirectory::new("row-delta");
+        let path = directory.join("runtime.sqlite");
+        let store = row_store(&path);
+        let mut state = initial("process-a");
+        store.initialize(&state).unwrap();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch("CREATE TRIGGER reject_all_updates BEFORE UPDATE ON runtime_items BEGIN SELECT RAISE(ABORT, 'unchanged row was written'); END;").unwrap();
+        state.generation = 2;
+        state.checkpoint.next_attempt += 1;
+        store.commit("process-a", 1, &state).unwrap();
+        assert_eq!(store.load().unwrap(), state);
+        state.generation = 3;
+        state
+            .checkpoint
+            .workers
+            .push(state.checkpoint.workers[0].clone());
+        assert!(matches!(
+            store.commit("process-a", 2, &state),
+            Err(StoreError::Invalid("duplicate_runtime_row"))
+        ));
+    }
+
+    #[tokio::test]
+    async fn incremental_runtime_commit_and_cursor_survive_reopen() {
+        let directory = TempDirectory::new("row-durable");
+        let path = directory.join("runtime.sqlite");
+        let store = Arc::new(row_store(&path));
+        let runtime = DurableRuntime::create(owner("process-a"), store.clone()).unwrap();
+        let request = request("real-attempt");
+        let decision = decision(&runtime, &request);
+        let lease = runtime.reserve_async(&request, &decision).await.unwrap();
+        lease.before_send().unwrap();
+        lease.sent();
+        lease.closed(true, CloseEvidence::TransportEof);
+        runtime
+            .apply_terminal_batch(
+                cursor(0),
+                &[TerminalRecord {
+                    sequence: 1,
+                    attempt_id: decision.attempt_id,
+                    worker_url: worker().worker_url,
+                    instance_epoch: worker().instance_epoch,
+                }],
+            )
+            .await
+            .unwrap();
+        drop(runtime);
+        drop(store);
+        let reopened =
+            Arc::new(SqliteRowRuntimeStore::open(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap());
+        let recovered =
+            DurableRuntime::recover(Arc::new(EmptyCache), "process-b".into(), reopened, 16, 16)
+                .unwrap();
+        assert!(!recovered.admission_ready());
+        assert_eq!(recovered.owner().active_len().unwrap(), 0);
+        assert_eq!(
+            recovered.terminal_cursor("terminal-source-a").unwrap(),
+            Some(cursor(1))
+        );
+    }
+
+    #[test]
+    fn durable_create_persists_zero_waterline_source_binding() {
+        let directory = TempDirectory::new("initial-source-binding");
+        let path = directory.join("runtime.sqlite");
+        let store = Arc::new(row_store(&path));
+        let zero = cursor(0);
+        let runtime = DurableRuntime::create_with_cursors(
+            owner("process-a"),
+            store.clone(),
+            vec![zero.clone()],
+        )
+        .unwrap();
+        assert_eq!(
+            runtime.terminal_cursor("terminal-source-a").unwrap(),
+            Some(zero.clone())
+        );
+        assert_eq!(store.load().unwrap().terminal_cursors, vec![zero.clone()]);
+        drop(runtime);
+        drop(store);
+
+        let duplicate = directory.join("duplicate.sqlite");
+        let duplicate_store = Arc::new(row_store(&duplicate));
+        assert!(matches!(
+            DurableRuntime::create_with_cursors(
+                owner("process-b"),
+                duplicate_store,
+                vec![zero.clone(), zero],
+            ),
+            Err(StoreError::Invalid("invalid_terminal_cursor"))
+        ));
+
+        let nonzero = directory.join("nonzero.sqlite");
+        let nonzero_store = Arc::new(row_store(&nonzero));
+        assert!(matches!(
+            DurableRuntime::create_with_cursors(
+                owner("process-c"),
+                nonzero_store.clone(),
+                vec![cursor(1)],
+            ),
+            Err(StoreError::Invalid("initial_terminal_cursor_nonzero"))
+        ));
+        assert!(nonzero_store.load().is_err());
+    }
+
+    #[test]
+    fn incremental_process_exit_helper() {
+        let Some(path) = std::env::var_os("PREFIX_ROUTING_CRASH_TEST_DB") else {
+            return;
+        };
+        // The parent has committed a coherent state. Exit with an uncommitted
+        // header/row mutation; no connection destructor or graceful shutdown.
+        let connection = rusqlite::Connection::open(PathBuf::from(path)).unwrap();
+        connection.execute_batch("BEGIN IMMEDIATE; UPDATE runtime_head SET generation=999; DELETE FROM runtime_items;").unwrap();
+        std::process::exit(19);
+    }
+
+    #[test]
+    fn incremental_abrupt_process_exit_keeps_last_committed_generation() {
+        let directory = TempDirectory::new("row-crash");
+        let path = directory.join("runtime.sqlite");
+        let store = row_store(&path);
+        let mut state = initial("process-a");
+        store.initialize(&state).unwrap();
+        state.generation = 2;
+        state.terminal_cursors.push(cursor(1));
+        state
+            .checkpoint
+            .active
+            .push(crate::runtime_owner::ActiveAttempt {
+                request_id: "pending-request".into(),
+                attempt_id: "pending-attempt".into(),
+                worker_url: worker().worker_url,
+                instance_epoch: worker().instance_epoch,
+                worker_version: 1,
+                config_version: 1,
+                phase: crate::runtime_owner::AttemptPhase::Sent,
+            });
+        store.commit("process-a", 1, &state).unwrap();
+        drop(store);
+        let result = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::durable_owner::incremental_process_exit_helper",
+                "--nocapture",
+            ])
+            .env("PREFIX_ROUTING_CRASH_TEST_DB", &path)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(19));
+        let reopened = SqliteRowRuntimeStore::open(&path, DEFAULT_MAX_SNAPSHOT_BYTES).unwrap();
+        assert_eq!(reopened.load().unwrap(), state);
+        let recovered = DurableRuntime::recover(
+            Arc::new(EmptyCache),
+            "process-b".into(),
+            Arc::new(reopened),
+            16,
+            16,
+        )
+        .unwrap();
+        assert!(!recovered.admission_ready());
+        let active = recovered.owner().checkpoint().unwrap().active;
+        assert_eq!(active.len(), 1);
+        assert_eq!(
+            active[0].phase,
+            crate::runtime_owner::AttemptPhase::Uncertain
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_batch_tail_does_not_settle_any_earlier_attempt() {
+        let store = Arc::new(MemoryStore::default());
+        let runtime = DurableRuntime::create(owner("process-a"), store.clone()).unwrap();
+        let request = request("batch-check");
+        let decision = decision(&runtime, &request);
+        let lease = runtime.reserve_async(&request, &decision).await.unwrap();
+        lease.before_send().unwrap();
+        lease.sent();
+        let record = TerminalRecord {
+            sequence: 1,
+            attempt_id: decision.attempt_id,
+            worker_url: worker().worker_url,
+            instance_epoch: worker().instance_epoch,
+        };
+        assert_eq!(
+            runtime
+                .apply_terminal_batch(
+                    cursor(0),
+                    &[
+                        record.clone(),
+                        TerminalRecord {
+                            sequence: 2,
+                            attempt_id: "unknown-attempt".into(),
+                            ..record
+                        }
+                    ]
+                )
+                .await,
+            Err("unknown_or_conflicting_terminal_attempt")
+        );
+        assert_eq!(runtime.owner().active_len().unwrap(), 1);
+        assert_eq!(store.load().unwrap().checkpoint.active.len(), 1);
+        assert!(!runtime.admission_ready());
+    }
+
+    #[test]
+    fn row_identity_swap_is_rejected_and_failed_load_invalidates_diff_cache() {
+        let directory = TempDirectory::new("row-key-swap");
+        let path = directory.join("runtime.sqlite");
+        let store = row_store(&path);
+        let mut state = initial("process-a");
+        let mut second = worker();
+        second.worker_url = "http://worker-b".into();
+        state.checkpoint.workers.push(second);
+        store.initialize(&state).unwrap();
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection.execute_batch("BEGIN IMMEDIATE; UPDATE runtime_items SET key='temporary:' || key;
+            UPDATE runtime_items SET key=CASE key WHEN 'temporary:w:http://worker-a' THEN 'w:http://worker-b' ELSE 'w:http://worker-a' END; COMMIT;").unwrap();
+        assert!(matches!(
+            store.load(),
+            Err(StoreError::Invalid("runtime_row_identity_mismatch"))
+        ));
+        state.generation = 2;
+        assert!(matches!(
+            store.commit("process-a", 1, &state),
             Err(StoreError::Missing)
         ));
     }

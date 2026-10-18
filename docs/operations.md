@@ -1,8 +1,8 @@
 # 新实验服务器操作基线
 
-2026-10-14 最新实机状态：新分配 32068 的 HUST ced6857/b47795c 已完成真实 HTTP→完整 family→核心逻辑终态→原账本的可选有限闭环。4 个 family/8 个 child 全部关联，stop string/断连核心 abort、重放、账本重开和自有包装恢复通过；不是原生 Router 已联通，也不是在线 KV 目录或性能验收。默认关闭、固定守卫、MOD import_only 不变。当前限制和下一步以[实机接线说明](planning/cedb477-live-terminal.md)及[证据](../evidence/cedb477-live-terminal-2026-10-14.md)为准，下方按日期保留历史。
+2026-10-17 当前操作入口：[接手指南](项目接手指南_2026-10-17.md)与[progress](progress.md)。本轮已核验 aarch64、两张910B2（本次物理4/5）、8核CPU配额/64GiB；使用项目隔离 HUST ced6857/b47795c 与 Qwen2.5-14B FP16/eager、双TP1。重分配后重新检查设备、路径与来源。已有公开HTTP全组件和真实持久commit→ACK有限资格，实验已正常清理；生产恢复/回收与完整MOD启停仍未通过。
 
-2026-10-11 当前分配为 CPU-only aarch64、16 核 CPU 配额、64 GiB RAM、16 GiB /dev/shm、0 NPU。项目目录仍为 /root/work/prefix-routing-mod；仅开展 CPU 契约、构建和模拟转发。需要真实 G2/G3 时申请 1 张 NPU，G4 申请 2 张，执行前重新盘点。
+历史分配（2026-10-11）：CPU-only aarch64、16核CPU配额、64GiB RAM、16GiB /dev/shm、0 NPU。该资源与下方旧版命令不描述本轮机器；项目目录仍为 /root/work/prefix-routing-mod。
 
 此前最近一次 NPU 分配为 4 张 Ascend 910B2，物理枚举 0/1/2/7、每张 HBM 65536 MiB、128 GiB RAM、32 GiB /dev/shm，身份/hook 主回归只使用逻辑 0。该分配及更早的卡映射、磁盘和四卡测试均为历史记录，不能用于当前操作。下面真实推理命令仅在新 NPU 分配核验通过后执行。
 
@@ -55,10 +55,12 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 1. 预约独占时段、核验设备可见性；本次首先使用 mask=0，物理映射重新核验，不能继承旧物理 1 的映射记录。
 2. 首先单卡单副本冒烟，再两个 TP=1 副本；TP=2 只有一个路由目的地。
-3. 按用户要求选择 `/data/shared_models/Qwen2.5-14B-Instruct`，BF16、TP=1、先 8k 上下文；不下载重复权重，不静默降为 7B，不依据目录名断言 revision。
+3. 按用户要求选择 `/data/shared_models/Qwen2.5-14B-Instruct`。当前已验组合为 FP16、TP=1、eager，1024 上下文仅用于功能资格；BF16/图/8k与性能调优另验。不下载重复权重，不静默降为7B，不依据目录名断言 revision。
 4. 采集驱动/CANN/torch_npu/引擎、模型/模板版本和 APC 配置；当前验证 HUST 隔离候选，预装局部 eager 成绩不继承。图、完整恢复及性能均须后验。
-5. CPU 为 16 核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。先单卡，再两个 TP=1 副本，最后四副本容量实验。压测端/Router/后端的竞争必须测量，不外推跨节点收益。
+5. 本轮 CPU 为8核时间配额，不等于 cpuset 或独占物理核；核验 cpu.max、cpuset、实际亲和与平台限制。单副本用1卡，双TP1联调/比较用2卡；扩展设备规模另行申请与测量。压测端/Router/后端竞争必须测量，不外推跨节点收益。
 6. 仅绑定明确的监听地址和端口；未经授权不对公网开放服务。
+
+新实例必须保留镜像组合好的完整 CANN `PYTHONPATH`（至少包含 `cann-9.1.0/python/site-packages` 与 TBE 路径）。禁止把它覆盖为单一 TBE 目录：这会使已存在的 `acl.so` 无法导入，且只会在昂贵的 EngineCore 启动阶段失败。下列命令只清理外层虚拟环境指针，不重写镜像的 CANN 搜索路径；运行前仍需用 `tools/inspect_runtime.py` 核验来源。
 
 ## 可选 publisher 实验与关闭回退
 
@@ -66,7 +68,7 @@ GIT_CONFIG_VALUE_0=https://github.com/vLLM-HUST/extension-manager.git \
 
 ```bash
 cd /root/work/prefix-routing-mod
-PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+env -u PYTHONHOME -u VIRTUAL_ENV \
 PYTHONPYCACHEPREFIX=/root/work/prefix-routing-mod/artifacts/g2-recovery-20261011/new-server/pyc \
 artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_identity.py \
   --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
@@ -86,12 +88,12 @@ artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_identity.
 本轮复现全新 Python 字节码缓存的 Torch 导入约 22.36 秒，超过 HUST CLI 20 秒预检；已生成缓存的诊断约 10.75 秒。它与模型 KV/图预热无关。连续运行同一已审计服务 venv 时，可显式指定项目私有 `--pycache-root`，复用准备阶段的 bytecode；默认仍为每次 probe 的独立缓存，报告记录模式与路径。先在该缓存下执行 tools/inspect_runtime.py 的显式导入及来源审计，再用于启动；软件/解释器变更重新审计，不能将该准备流程写成冷启动性能。
 
 ```bash
-PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+env -u PYTHONHOME -u VIRTUAL_ENV \
 PYTHONPYCACHEPREFIX=/root/work/prefix-routing-mod/artifacts/runtime-ready-next/pyc \
   artifacts/w1-restore-20261011/service-venv/bin/python tools/inspect_runtime.py \
   --execute --output artifacts/runtime-ready-next/imports.json
 
-PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+env -u PYTHONHOME -u VIRTUAL_ENV \
   artifacts/w1-restore-20261011/service-venv/bin/python tools/smoke_backend.py \
   --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
   --model /data/shared_models/Qwen2.5-14B-Instruct --device 3 --port 18247 \
@@ -104,7 +106,7 @@ PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
 恢复故障回归同样使用已审计的 HUST venv。输出为新的项目私有目录；其中两次服务启动共用本次 HTTP/IPC 地址，分别保存日志和缓存。该工具不接生产 Router：
 
 ```bash
-PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+env -u PYTHONHOME -u VIRTUAL_ENV \
   artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_recovery.py \
   --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
   --model /data/shared_models/Qwen2.5-14B-Instruct \
@@ -118,7 +120,7 @@ PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
 恢复环境下事件子集示例，运行前确认卡/端口可用及新输出目录：
 
 ```bash
-PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+env -u PYTHONHOME -u VIRTUAL_ENV \
   artifacts/w1-restore-20261011/service-venv/bin/python tools/regress_kv_events.py \
   --execute --executable artifacts/w1-restore-20261011/service-venv/bin/vllm \
   --model /data/shared_models/Qwen2.5-14B-Instruct \
@@ -131,7 +133,7 @@ PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
 
 ```bash
 cd /root/work/prefix-routing-mod
-PYTHONPATH=/usr/local/Ascend/cann-9.1.0/opp/built-in/op_impl/ai_core/tbe \
+env -u PYTHONHOME -u VIRTUAL_ENV \
   artifacts/hust-runtime-20261011/service-venv-rebuild/bin/python \
   tools/smoke_backend.py --execute \
   --executable artifacts/hust-runtime-20261011/service-venv-rebuild/bin/vllm \

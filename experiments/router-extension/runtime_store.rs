@@ -49,8 +49,12 @@ impl StoredRuntime {
             return Err(StoreError::Invalid("invalid_runtime_snapshot"));
         }
         let mut keys = std::collections::BTreeSet::new();
+        let mut bindings = std::collections::BTreeSet::new();
         for cursor in &self.terminal_cursors {
-            if !cursor.valid() || !keys.insert(cursor.source_id.as_str()) {
+            if !cursor.valid()
+                || !keys.insert(cursor.source_id.as_str())
+                || !bindings.insert((cursor.worker_url.as_str(), cursor.instance_epoch.as_str()))
+            {
                 return Err(StoreError::Invalid("invalid_terminal_cursor"));
             }
         }

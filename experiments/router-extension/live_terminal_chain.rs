@@ -208,7 +208,7 @@ async fn main() {
     let token = get("PREFIX_PROBE_TOKEN");
     let controller = Controller::start(outbox.clone(), address, token.clone()).unwrap();
     let namespace = get("PREFIX_CHAIN_NAMESPACE");
-    assert!(namespace.len() <= 16 && namespace.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert!(namespace.len() == 32 && namespace.bytes().all(|b| b.is_ascii_hexdigit()));
     let provider = Arc::new(Provider {
         admission: admission_bridge::AdmissionClient::with_clock(
             address,

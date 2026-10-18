@@ -29,9 +29,9 @@
 
 ## 需要修正的性能前置依赖
 
-早期实验账本、Outbox、前端family和core seen有“有界但不回收”的限制（如64 family/256 child），不能直接做可持续容量曲线。候选RuntimeOwner改为有界active与有限retired墓碑：可靠终态回收active，未决请求保留；恢复时所有旧active转为uncertain。该候选仍须配套生产checkpoint介质和超出墓碑窗口后的保守语义，不能仅凭CPU探针宣布长期可持续。
+早期实验账本、Outbox、前端family和core seen有“有界但不回收”的限制（如64 family/256 child），不能直接做可持续容量曲线。候选RuntimeOwner改为有界active与有限retired墓碑：可靠终态回收active，未决请求保留；恢复时所有旧active转为uncertain。2026-10-17 又增加首版独占入口下的 Frontend 精确 retire 候选：默认 `observe_only`，仅回环专属后端和 Router 覆盖 ID 同时成立时显式启用；M3 持久 cursor 后才能 ACK/退役。累计 600 family 的 CPU 小窗口已通过，但真实 HUST、回复丢失、强制退出和资源趋势仍须验收，不能仅凭 CPU 探针宣布长期可持续。
 
-因此在正式容量前须完成与实际运行时匹配的最小留存/回收协议。当前已经做到：完整ACK后回收outbox槽位；owner分配不可复用attempt；RuntimeOwner只由可靠终态回收active，重复终态不重复释放，checkpoint跨进程保留负债。仍缺实际持久游标、checkpoint/WAL选择、墓碑超窗处理和真实Router重启恢复。不能只增大常量或按TTL清除未知负债。长期跨节点/多版本加固仍可后置。
+因此在正式容量前须完成与实际运行时匹配的最小留存/回收协议。当前已经做到：完整ACK后回收outbox槽位；owner分配不可复用attempt；RuntimeOwner只由可靠终态回收active，重复终态不重复释放，checkpoint跨进程保留负债；Frontend 候选只按相同 durable cursor 退役完整受管 family，旧 cursor 失败关闭。仍缺真实 Router/HUST 的长期退役、回复不确定、checkpoint/WAL选择、墓碑超窗处理和强制退出恢复。不能只增大常量或按TTL清除未知负债。长期跨节点/多版本加固仍可后置。
 
 生产M3存储先以实际调用频率/持久化需求和配对开销决定。实验逐请求FULL事务已有毫秒级成本线索，优先评估本地owner/有界异步提交与必要批处理；未验证前不承诺热路径开销，也不牺牲发出前许可和重启保债语义。
 

@@ -58,7 +58,9 @@ pub trait FeaturePort: Debug + Send + Sync {
 }
 
 pub trait SnapshotPort: Debug + Send + Sync {
-    /// One atomic M2/M3 view. Implementations must not wait for recovery here.
+    /// Read consistent M3 control/debt; M2 observations may change independently.
+    /// These are not pinned residency or a global M2/M3 transaction. Admission
+    /// rechecks M3 fences. Never wait for directory recovery here.
     fn candidates(
         &self,
         features: &RequestView,
