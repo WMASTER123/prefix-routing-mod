@@ -42,7 +42,7 @@
 
 ## 测试与审查
 
-代码 `3264050` 的既有成绩仍按原证据保留。本轮修改后本地 CPU 为 585 通过/7 跳过/3 deselected、integration 3 通过，Ruff 检查与格式检查通过；aarch64 固定完整宿主 source-control 4 项通过、release 构建通过。head `d06cca7` 的既有 GitHub CPU 3.11/3.12、HUST source-methods 3.11/3.12、Native helper 和 Native index 共 6 个 job 只证明该旧 head；本轮新 head 的 CI 须另行取得。当前服务 venv 的全量 `pip check` 仍有平台预装工具依赖缺口，不能计为本轮通过。
+代码 `3264050` 的既有成绩仍按原证据保留。本轮修改后本地 CPU 为 585 通过/7 跳过/3 deselected、integration 3 通过，Ruff 检查与格式检查通过；aarch64 固定完整宿主 source-control 4 项通过、release 构建通过。head `09e1b8b` 的 GitHub CPU 3.11/3.12、HUST source-methods 3.11/3.12、Native helper 和 Native index 共 6 个 job 均已通过；该结果只覆盖对应 head。当前服务 venv 的全量 `pip check` 仍有平台预装工具依赖缺口，不能计为本轮通过。
 
 PR23 已合并到阶段分支 `codex/online-kv-directory`；后续为[草稿 PR24](https://github.com/WMASTER123/prefix-routing-mod/pull/24)，`main` 尚不包含全部研发进展。`3264050`/`artifacts/t9` 是较早持久链输入；32066 旧证据和 32081 新 Rust 双副本退役结果、二进制/归档 hash 见[退役证据](../evidence/terminal-retirement-2026-10-17.md)。本轮没有自动合并或正式发布。
 
