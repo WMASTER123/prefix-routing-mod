@@ -384,14 +384,22 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=18146)
     parser.add_argument("--terminal-observer", action="store_true")
     parser.add_argument("--pycache-root", type=Path)
-    parser.add_argument("--router-binary", type=Path)
+    parser.add_argument(
+        "--router-binary",
+        type=Path,
+        help="Explicit live_terminal_chain stage driver; checked before backend start",
+    )
     parser.add_argument("--index-binary", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.router_binary is not None:
             if not args.terminal_observer:
                 raise ValueError("Router chain requires explicit terminal observer")
-            args.router_binary = private_path(args.router_binary).resolve(strict=True)
+            from tools.router_terminal_chain import validate_live_terminal_driver
+
+            args.router_binary = validate_live_terminal_driver(
+                private_path(args.router_binary)
+            )
         if args.index_binary is not None:
             if not args.terminal_observer:
                 raise ValueError("Online native directory requires instance observer")

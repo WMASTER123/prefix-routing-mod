@@ -13,10 +13,22 @@ from prefix_routing_mod.contracts import (
     WorkerRef,
 )
 from tests.test_dynamic_admission import TOKEN, request
+from tools import router_terminal_chain
 from tools.durable_ledger_prototype import DurableLedger
 from tools.online_transport_probe import AdmissionReceiver, fixture_worker
 from tools.router_terminal_chain import TerminalSource
 from tools.transport_receiver_probe import SCHEMA
+
+
+def test_live_terminal_driver_protocol_is_checked_before_launch(tmp_path):
+    valid = tmp_path / "live-terminal-driver"
+    valid.write_bytes(b"\0".join(router_terminal_chain.DRIVER_MARKERS))
+    assert router_terminal_chain.validate_live_terminal_driver(valid) == valid
+
+    wrong = tmp_path / "another-router-example"
+    wrong.write_bytes(b"PREFIX_CHAIN_WORKER but no stage protocol")
+    with pytest.raises(ValueError, match="stage-driver protocol"):
+        router_terminal_chain.validate_live_terminal_driver(wrong)
 
 
 def fixture(tmp_path):

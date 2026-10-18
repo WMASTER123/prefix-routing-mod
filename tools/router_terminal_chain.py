@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import asdict
+from mmap import ACCESS_READ, mmap
 
 from prefix_routing_mod.contracts import (
     EventKind,
@@ -30,6 +31,26 @@ from tools.live_terminal_cases import request_json
 from tools.online_transport_probe import AdmissionReceiver
 from tools.smoke_backend import stop_owned_group
 from tools.transport_receiver_probe import read_frame, write_frame
+
+MAX_DRIVER_BYTES = 128 * 1024 * 1024
+DRIVER_MARKERS = (b"PREFIX_CHAIN_WORKER", b"chain_stage", b"arm_ack_loss")
+
+
+def validate_live_terminal_driver(binary):
+    """Reject the wrong example early; markers are not an authenticity proof."""
+    binary = binary.resolve(strict=True)
+    size = binary.stat().st_size
+    if not binary.is_file() or not 0 < size <= MAX_DRIVER_BYTES:
+        raise ValueError("Bounded live terminal stage-driver binary required")
+    with (
+        binary.open("rb") as stream,
+        mmap(stream.fileno(), 0, access=ACCESS_READ) as image,
+    ):
+        if any(image.find(marker) < 0 for marker in DRIVER_MARKERS):
+            raise ValueError(
+                "Router binary lacks the live terminal stage-driver protocol"
+            )
+    return binary
 
 
 class TerminalSource:
@@ -208,7 +229,7 @@ def run(binary, opener, origin, output, terminal_token):
 def _run(binary, opener, origin, output, terminal_token, report):
     import hashlib
 
-    binary = binary.resolve(strict=True)
+    binary = validate_live_terminal_driver(binary)
     if os.name != "posix" or not binary.is_file() or not os.access(binary, os.X_OK):
         raise ValueError("Explicit Linux executable required")
     with binary.open("rb") as stream:
