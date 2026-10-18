@@ -6,7 +6,7 @@
 
 Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存储结果不确定或等待提交的任务被取消时 fail closed；终态 cursor 绑定完整 source/worker/instance/observer 身份，整批先校验后结算。恢复默认暂停，相同实例和旧派发者停止声明通过后才 CAS takeover。固定宿主候选已接入，但 `previous_dispatcher_stopped` 仍是调用方证明，WorkerControl 也没有持续控制新鲜度到期机制，不能视为生产启动恢复完成。
 
-后端 CoreEnds 已改为只在未确认窗口保留记录和重复保护，Frontend ACK 同一序号后精确回收；固定源码审查和 CPU 反例回归已通过。FrontendEnds 的实际 family/opaque child 仍未接可持续回收：TerminalJournal.retire 只接受已证明归属的 managed ID，不能把仅有 `prm-` 前缀的真实 HUST 入口直接标成 managed。受信 Router 归属的方案与取舍见[终态源回收 ADR](../decisions/2026-10-16-terminal-source-retention.md)。20 分钟后端稳定性没有启用该 hook，因此不能替代 Frontend 长期留存验收。
+后端 CoreEnds 已改为只在未确认窗口保留记录和重复保护，Frontend ACK 同一序号后精确回收；固定源码审查和 CPU 反例回归已通过。2026-10-18，Frontend family/child 退役已从 Python 持久参考账本单副本原型接入双副本 Rust 持久公开链：只有显式受管模式且 durable store 存在时，在 commit 和 ACK 后 retire；默认仍 observe-only。有限双 NPU 已通过，但真正回复丢失、长期资源及崩溃恢复尚未验证。受信 Router 归属的方案与取舍见[终态源回收 ADR](../decisions/2026-10-16-terminal-source-retention.md)。20 分钟旧后端稳定性没有启用该 hook，因此不能替代 Frontend 长期留存验收。
 
 ## 必须保持的提交顺序
 
@@ -18,7 +18,7 @@ Rust RuntimeOwner 外已有候选持久包装：发送许可晚于 commit，存�
 
 ## 回收协议的设计约束
 
-固定 HUST 源码已确认：外部 ID 被保存，internal ID 默认增加 8 位随机片段，并行 child 使用 `index_internal-id`；清理 observer 位于删除请求的固定路径并受完整源码 hash 守卫。该证据足以让 Core ACK 后回收未确认窗口，但外部 `X-Request-Id` 可被客户端设置，`prm-` 前缀本身不是 Router 归属证明。下一步仍须明确受信 Router 会话、已持久消费水位、源端退役边界和迟到重复的拒绝规则。
+固定 HUST 源码已确认：外部 ID 被保存，internal ID 默认增加 8 位随机片段，并行 child 使用 `index_internal-id`；清理 observer 位于删除请求的固定路径并受完整源码 hash 守卫。该证据足以让 Core ACK 后回收未确认窗口，但外部 `X-Request-Id` 可被客户端设置，`prm-` 前缀本身不是 Router 归属证明。首版已选择专属池、可信本机进程、回环后端和 Router 覆盖 ID；只有显式 exclusive_router_v1 才允许退役。持久水位、同源 ACK/退役和重复调用已在同一 Rust 链实现；生产前仍须检验回复丢失、控制失效和崩溃恢复。
 
 已完成且已持久消费的记录可以回收；未决 family、未确认提交和旧实例负债不能按 TTL 删除。低于源退役边界的消费者不能从 0 重放或清空账本，必须恢复持久游标或进入可诊断的暂停状态。core seen、frontend children/statuses、发送队列、墓碑、存储和重建暂态都要有总预算。
 
@@ -33,8 +33,8 @@ Rust helper 与私有宿主候选锁定 `rusqlite 0.40.2` 的最小 bundled feat
 ## 冻结前验收
 
 - CPU：提交前/后异常、丢许可、完整批尾损坏、重复/冲突、磁盘错误、双 owner、配置竞争、强制退出与重启。已发请求在任意截断点不得无负债恢复。
-- 真实接线：超过早期 64 family/256 child 上限的连续服务；建议至少 512 family、1024 child，检查稳态资源趋势、ACK/退役与重复窗口。未知故障单独保留，不混入容量成绩。
-- 先补真实控制失联、健康过期和暂停恢复，再比较直连/原 Router/仅加接线的配对 Host 开销；分组提交不能以遗漏持久性换低延迟。
-- 上述通过后固定生产目录、类型/错误码、线程/时钟、配置、启动/排空/关闭和替身，交叉审查后正式 A/B/C 分工。最终容量曲线、M8 和高级策略不作为这一冻结前置。
+- 真实接线：同一 Rust 链的显式归属与 retire 已有限通过；下一步完成超过 512 family/1024 child 的有界连续服务，检查资源趋势、ACK/退役与重复窗口。未知故障单独保留，不混入容量成绩；该规模不等于多日运行资格。
+- 补真实控制失联、健康过期、退役回复丢失和暂停恢复。有界配对开销可并行测量，明确直连/原 Router/仅加接线的观测与持久性差异；分组提交不能以遗漏持久性换低延迟。
+- 上述通过后固定生产目录、类型/错误码、线程/时钟、配置、启动/排空/关闭和替身。A/B/C 现在即可按候选端口开展独立任务，共享合同统一审查；不把生产冻结作为分工前提。最终容量曲线、M8 和高级策略不作为冻结前置。
 
 存储/协议阶段主要用 Linux CPU；真实持续服务与最终恢复回归使用两个 TP1 NPU 副本。当前完成范围和 CI 以 [progress](../progress.md) 为准。

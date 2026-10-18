@@ -104,6 +104,12 @@ struct Config {
     model: String,
     #[serde(default)]
     durable_store: Option<PathBuf>,
+    #[serde(default = "default_terminal_ownership_mode")]
+    terminal_ownership_mode: String,
+}
+
+fn default_terminal_ownership_mode() -> String {
+    "observe_only".into()
 }
 
 struct LocalTokenizer(Tokenizer);
@@ -199,15 +205,16 @@ impl Session {
                 owner.shutdown()?;
                 Ok::<_, native_kv_owner::OwnerFault>(())
             })();
-            if result.is_err() {
+            if let Err(error) = result {
                 task_errors.lock().unwrap().push("native_session_failed");
-                let _ = ready_tx.send(Err("native_session_failed"));
+                eprintln!("native KV session failed closed: {error:?}");
+                let _ = ready_tx.send(Err(error));
             }
         });
         let (spec, identity) = ready_rx
             .recv_timeout(Duration::from_secs(15))
             .expect("KV startup timed out")
-            .expect("KV startup failed");
+            .unwrap_or_else(|error| panic!("KV startup failed: {error:?}"));
         Self {
             spec,
             identity,
@@ -260,6 +267,17 @@ struct TerminalReply {
     records: Vec<Ended>,
     families: Vec<Family>,
     disabled: bool,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct RetirementReply {
+    schema_version: u32,
+    binding: SourceBinding,
+    retired: usize,
+    retired_through: u64,
+    family_count: usize,
+    reserved_children: usize,
 }
 
 fn terminal_poll(
@@ -351,12 +369,48 @@ fn terminal_poll(
     (reply, statuses)
 }
 
+fn terminal_retire(worker: Worker, source: SourceIdentity, through: u64) -> RetirementReply {
+    assert_eq!(source.ownership_mode, "exclusive_router_v1");
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(2))
+        .build()
+        .unwrap();
+    let mut url =
+        reqwest::Url::parse(&format!("{}/prefix-routing/terminal/retire", worker.origin)).unwrap();
+    url.query_pairs_mut()
+        .append_pair("observer_epoch", &source.binding.observer_epoch)
+        .append_pair("through", &through.to_string())
+        .append_pair("checkpointed_through", &through.to_string());
+    let response = client
+        .post(url)
+        .header("X-Prefix-Routing-Control", worker.token)
+        .json(&serde_json::json!({}))
+        .send()
+        .expect("terminal retirement unavailable");
+    assert_eq!(response.status().as_u16(), 200);
+    let mut bytes = Vec::new();
+    response.take(4097).read_to_end(&mut bytes).unwrap();
+    assert!(bytes.len() <= 4096);
+    let reply: RetirementReply =
+        serde_json::from_slice(&bytes).expect("terminal retirement reply malformed");
+    assert_eq!(reply.schema_version, 1);
+    assert_eq!(reply.binding, source.binding);
+    assert_eq!(reply.retired_through, through);
+    assert!(reply.family_count <= 64);
+    assert!(reply.family_count <= reply.reserved_children);
+    assert!(reply.reserved_children <= 256);
+    reply
+}
+
 async fn reconcile(
     config: &Config,
     sessions: &[Session],
     cursors: &mut [u64],
     owner: &Arc<RuntimeOwner>,
     durable: &DurableOption,
+    retired_families: &mut usize,
 ) -> BTreeMap<String, usize> {
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut statuses = BTreeMap::new();
@@ -425,6 +479,36 @@ async fn reconcile(
                     .unwrap();
                     assert_eq!(ack.boundary, through);
                     assert!(ack.records.is_empty());
+                    if config.terminal_ownership_mode == "exclusive_router_v1" {
+                        let worker = config.workers[index].clone();
+                        let source = sessions[index].identity.clone();
+                        let retired = tokio::task::spawn_blocking(move || {
+                            terminal_retire(worker, source, through)
+                        })
+                        .await
+                        .unwrap();
+                        assert_eq!(retired.retired, reply.records.len());
+                        *retired_families = retired_families
+                            .checked_add(retired.retired)
+                            .expect("retirement count overflow");
+
+                        // A lost successful response is safe to retry at the same durable waterline.
+                        let worker = config.workers[index].clone();
+                        let source = sessions[index].identity.clone();
+                        let repeated = tokio::task::spawn_blocking(move || {
+                            terminal_retire(worker, source, through)
+                        })
+                        .await
+                        .unwrap();
+                        assert_eq!(repeated.retired, 0);
+                        assert_eq!(
+                            repeated,
+                            RetirementReply {
+                                retired: 0,
+                                ..retired
+                            }
+                        );
+                    }
                 }
             } else {
                 settle_volatile(
@@ -494,6 +578,14 @@ async fn main() {
     assert!(std::fs::metadata(&path).unwrap().len() <= 16384);
     let config: Config = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     assert_eq!(config.workers.len(), 2);
+    assert!(matches!(
+        config.terminal_ownership_mode.as_str(),
+        "observe_only" | "exclusive_router_v1"
+    ));
+    assert!(
+        config.terminal_ownership_mode == "observe_only" || config.durable_store.is_some(),
+        "managed retirement requires the durable candidate"
+    );
     assert_eq!(config.identity.len(), 64);
     assert!(std::fs::metadata(&config.tokenizer).unwrap().len() <= 256 * 1024 * 1024);
     let asset = std::fs::read(&config.tokenizer).unwrap();
@@ -537,6 +629,9 @@ async fn main() {
             .unwrap(),
         );
     }
+    assert!(sessions
+        .iter()
+        .all(|session| session.identity.ownership_mode == config.terminal_ownership_mode));
     let owner = Arc::new(
         RuntimeOwner::new(
             cache.clone(),
@@ -685,6 +780,7 @@ async fn main() {
     }
     assert_eq!(lookup(0, 1), Some(0));
     let mut cursors = vec![0; 2];
+    let mut retired_families = 0_usize;
     let mut results = Vec::new();
     for (prompt, expected_worker, expected_cached) in [(0, 0, 0), (0, 0, 384), (1, 1, 384)] {
         let response = client.post(format!("{origin}/v1/completions")).json(&serde_json::json!({"model": config.model, "prompt": prompts[prompt], "max_tokens": 16, "temperature": 0})).send().await.unwrap();
@@ -723,7 +819,15 @@ async fn main() {
         }
         results
             .push(serde_json::json!({"worker": expected_worker, "cached_tokens": expected_cached}));
-        reconcile(&config, &sessions, &mut cursors, &owner, &durable).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+        )
+        .await;
         assert_eq!(owner.active_len().unwrap(), 0);
     }
     let invalid = client.post(format!("{origin}/v1/completions"))
@@ -772,7 +876,15 @@ async fn main() {
     assert!(saw_text, "cancel must follow an actual generated output");
     drop(stream);
     assert_eq!(owner.active_len().unwrap(), 1);
-    let cancellation = reconcile(&config, &sessions, &mut cursors, &owner, &durable).await;
+    let cancellation = reconcile(
+        &config,
+        &sessions,
+        &mut cursors,
+        &owner,
+        &durable,
+        &mut retired_families,
+    )
+    .await;
     assert_eq!(cancellation.get("FINISHED_ABORTED"), Some(&1));
     // Graceful HTTP shutdown precedes source teardown; source stop invalidates M2.
     shutdown_tx.send(()).unwrap();
@@ -827,6 +939,6 @@ async fn main() {
     }
     println!(
         "{}",
-        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
+        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4, "retired_families": retired_families, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
     );
 }

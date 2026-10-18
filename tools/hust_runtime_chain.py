@@ -30,6 +30,9 @@ from tools.smoke_backend import ipc_endpoint, stop_owned_group
 
 
 def run(args, output, report):
+    managed_retirement = bool(getattr(args, "managed_terminal_retirement", False))
+    if managed_retirement and not getattr(args, "durable_store", False):
+        raise ValueError("Managed terminal retirement requires --durable-store")
     report["terminal_entry_points"] = require_terminal_plugins()
     if not hasattr(FrontendEnds, "identity"):
         raise RuntimeError("Installed MOD wheel lacks the independent identity port")
@@ -90,6 +93,9 @@ def run(args, output, report):
                     pycache_root=args.pycache_root,
                     token=token,
                     worker=worker_id,
+                    ownership_mode=(
+                        "exclusive_router_v1" if managed_retirement else "observe_only"
+                    ),
                 ),
                 root / "backend",
                 opener,
@@ -113,6 +119,9 @@ def run(args, output, report):
             "tokenizer_sha256": assets["tokenizer.json"],
             "identity": identity,
             "model": MODEL,
+            "terminal_ownership_mode": (
+                "exclusive_router_v1" if managed_retirement else "observe_only"
+            ),
         }
         if args.durable_store:
             config["durable_store"] = str(output / "runtime.sqlite")
@@ -148,6 +157,11 @@ def run(args, output, report):
             != args.durable_store
         ):
             raise ValueError("Durable qualification result differs from requested mode")
+        if (
+            bool(records[0].get("managed_terminal_retirement_verified"))
+            != managed_retirement
+        ):
+            raise ValueError("Managed retirement result differs from requested mode")
         report.update(status="pass", chain=records[0])
     finally:
         if process is not None:
@@ -178,12 +192,22 @@ def main():
         action="store_true",
         help="Require durable-candidate binary and a new private SQLite store",
     )
+    parser.add_argument(
+        "--managed-terminal-retirement",
+        action="store_true",
+        help=(
+            "Use the exclusive managed pool and require durable commit, terminal ACK "
+            "and idempotent family retirement"
+        ),
+    )
     parser.add_argument("--port", type=int, default=18170)
     args = parser.parse_args()
     if os.name != "posix" or not 0 < args.port < 65535:
         parser.error("Linux and two consecutive loopback ports required")
     args.model = args.model.resolve(strict=True)
     args.binary = private_path(args.binary).resolve(strict=True)
+    if args.managed_terminal_retirement and not args.durable_store:
+        parser.error("--managed-terminal-retirement requires --durable-store")
     output = private_path(args.output)
     for port in (args.port, args.port + 1):
         with socket.socket() as sock:

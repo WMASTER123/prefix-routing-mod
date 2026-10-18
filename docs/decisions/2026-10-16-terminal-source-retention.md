@@ -1,6 +1,6 @@
 # ADR：终态源回收与受信请求归属
 
-日期：2026-10-16，2026-10-17 更新。状态：首版部署边界已选择；Core ACK 回收已通过真实验证，Frontend family 退役候选已完成 CPU 回归，真实 Router/HUST 资格待补。
+日期：2026-10-16，2026-10-18 更新。状态：首版部署边界已选择；Core ACK 回收、Frontend family 退役的 CPU/单副本原型和双副本 Rust 有限真实组合已通过。长期资源与故障恢复资格待补。
 
 ## 问题与证据
 
@@ -46,4 +46,4 @@
 
 ## 尚未完成的资格
 
-真实资格仍须覆盖：Router 覆盖重复客户端 header、真实 completion/cancel、commit→ACK→retire、退役回复丢失重试、控制 token/实例替换、Router 强制退出、累计超过 512 family/1024 child 的稳态资源及旧 cursor 重启。真实通过前保持实验接口、MOD `import_only`，不写成生产 ABI 或性能能力。
+单副本原型和双副本 Rust 公开链的真实 completion/cancel、commit→ACK→retire 均已有限通过；双副本还验证相同水位重复 retire 返回 0。后续必须覆盖 Router 覆盖重复客户端 header、真正的退役回复丢失、控制 token/实例替换、Router 强制退出、累计超过 512 family/1024 child 的资源趋势及旧 cursor 重启。单副本 `ack_loss` 是发送许可丢失，双副本重复调用也不是网络层回复丢失。完整验收前保持实验接口、MOD `import_only`，不写成生产 ABI 或性能能力。
