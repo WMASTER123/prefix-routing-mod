@@ -79,6 +79,17 @@ impl DurableRuntime {
         owner: Arc<RuntimeOwner>,
         store: Arc<dyn RuntimeStore>,
     ) -> Result<Self, StoreError> {
+        Self::create_with_cursors(owner, store, Vec::new())
+    }
+
+    pub fn create_with_cursors(
+        owner: Arc<RuntimeOwner>,
+        store: Arc<dyn RuntimeStore>,
+        terminal_cursors: Vec<TerminalCursor>,
+    ) -> Result<Self, StoreError> {
+        if terminal_cursors.iter().any(|cursor| cursor.through != 0) {
+            return Err(StoreError::Invalid("initial_terminal_cursor_nonzero"));
+        }
         let checkpoint = owner
             .checkpoint()
             .map_err(|_| StoreError::Invalid("owner_checkpoint_failed"))?;
@@ -87,9 +98,16 @@ impl DurableRuntime {
             owner_epoch: checkpoint.process_epoch.clone(),
             generation: 1,
             checkpoint,
-            terminal_cursors: vec![],
+            terminal_cursors,
         };
+        initial.validate()?;
         store.initialize(&initial)?;
+        let cursors = initial
+            .terminal_cursors
+            .iter()
+            .cloned()
+            .map(|cursor| (cursor.source_id.clone(), cursor))
+            .collect();
         Ok(Self {
             owner,
             store,
@@ -97,7 +115,7 @@ impl DurableRuntime {
             meta: Mutex::new(DurableMeta {
                 stored_owner: initial.owner_epoch,
                 generation: 1,
-                cursors: BTreeMap::new(),
+                cursors,
             }),
             commit_gate: tokio::sync::Mutex::new(()),
             commit_slots: Arc::new(tokio::sync::Semaphore::new(MAX_COMMIT_WAITERS)),

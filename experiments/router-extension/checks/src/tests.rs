@@ -1797,6 +1797,50 @@ mod durable_owner {
     }
 
     #[test]
+    fn durable_create_persists_zero_waterline_source_binding() {
+        let directory = TempDirectory::new("initial-source-binding");
+        let path = directory.join("runtime.sqlite");
+        let store = Arc::new(row_store(&path));
+        let zero = cursor(0);
+        let runtime = DurableRuntime::create_with_cursors(
+            owner("process-a"),
+            store.clone(),
+            vec![zero.clone()],
+        )
+        .unwrap();
+        assert_eq!(
+            runtime.terminal_cursor("terminal-source-a").unwrap(),
+            Some(zero.clone())
+        );
+        assert_eq!(store.load().unwrap().terminal_cursors, vec![zero.clone()]);
+        drop(runtime);
+        drop(store);
+
+        let duplicate = directory.join("duplicate.sqlite");
+        let duplicate_store = Arc::new(row_store(&duplicate));
+        assert!(matches!(
+            DurableRuntime::create_with_cursors(
+                owner("process-b"),
+                duplicate_store,
+                vec![zero.clone(), zero],
+            ),
+            Err(StoreError::Invalid("invalid_terminal_cursor"))
+        ));
+
+        let nonzero = directory.join("nonzero.sqlite");
+        let nonzero_store = Arc::new(row_store(&nonzero));
+        assert!(matches!(
+            DurableRuntime::create_with_cursors(
+                owner("process-c"),
+                nonzero_store.clone(),
+                vec![cursor(1)],
+            ),
+            Err(StoreError::Invalid("initial_terminal_cursor_nonzero"))
+        ));
+        assert!(nonzero_store.load().is_err());
+    }
+
+    #[test]
     fn incremental_process_exit_helper() {
         let Some(path) = std::env::var_os("PREFIX_ROUTING_CRASH_TEST_DB") else {
             return;

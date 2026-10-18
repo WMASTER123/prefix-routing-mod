@@ -1,6 +1,6 @@
 # ADR：终态源回收与受信请求归属
 
-日期：2026-10-16，2026-10-18 更新。状态：首版部署边界已选择；Core ACK 回收、Frontend family 退役的 CPU/单副本原型和双副本 Rust 有限真实组合已通过。长期资源与故障恢复资格待补。
+日期：2026-10-16，2026-10-18 更新。状态：首版部署边界已选择；Core ACK 回收、Frontend family 退役、真正响应丢失、520 family/1040 child 资源资格及 Router 强退恢复/实例替换均已通过。`recovery-retirement-v1` 语义合同冻结；多日稳定性、Manager 和性能不在本 ADR 的通过范围。
 
 ## 问题与证据
 
@@ -44,6 +44,8 @@
 
 若以后要求同一 HUST 后端同时接受 Router 与旁路客户端，候选是每个控制会话派生独立密钥，并对不可复用的 attempt ID、worker/instance/observer 会话身份和固定协议域计算逐请求 MAC；Router 覆盖客户端的 request/proof 头，adapter 常量时间验证后才创建 managed family。它仍必须配合服务端重放状态或严格的会话/序号退役边界，不能只靠 MAC 宣称防重放；HTTP Message Signatures 的安全说明同样要求 nonce/timestamp 等重放缓解，而不是把签名本身当成防重放机制：[RFC 9421 §7.2.2](https://www.rfc-editor.org/rfc/rfc9421.html#section-7.2.2)。该扩展不是首版依赖，未实现。
 
-## 尚未完成的资格
+## 资格结论与仍未覆盖范围
 
-单副本原型和双副本 Rust 公开链的真实 completion/cancel、commit→ACK→retire 均已有限通过；双副本还验证相同水位重复 retire 返回 0。后续必须覆盖 Router 覆盖重复客户端 header、真正的退役回复丢失、控制 token/实例替换、Router 强制退出、累计超过 512 family/1024 child 的资源趋势及旧 cursor 重启。单副本 `ack_loss` 是发送许可丢失，双副本重复调用也不是网络层回复丢失。完整验收前保持实验接口、MOD `import_only`，不写成生产 ABI 或性能能力。
+双副本 Rust 公开链的真实 completion/cancel、commit→ACK→retire、真正退役回复丢失、520 family/1040 child、旧 cursor、Router 强退暂停恢复和实际控制实例替换均已通过，详见[资格记录](../../evidence/recovery-retirement-qualification-2026-10-18.md)。因此 `recovery-retirement-v1` 语义合同可以冻结。
+
+仍未覆盖持续控制 token 轮换/健康过期、跨主机旧 dispatcher 围栏、共享后端业务直连、任意已热/超窗 KV 恢复、多日稳定性和性能。MOD 继续 `import_only`；冻结本合同不等于发布整个生产 ABI 或宣称容量能力。

@@ -93,6 +93,8 @@ def test_identity_is_independent_of_retired_frontend_history_and_ack():
     first = asyncio.run(state.identity())
     assert first["core_boundary"] == first["frontend_boundary"] == 0
     assert first["family_count"] == 0
+    assert first["frontend_event_count"] == first["child_status_count"] == 0
+    assert first["core_retained_records"] == first["core_duplicate_guards"] == 0
     capture = state.journal.begin_owned(1)
     child = state.journal.allocate_child(capture)
     state.journal.bind_child(capture, child)
@@ -102,9 +104,12 @@ def test_identity_is_independent_of_retired_frontend_history_and_ack():
     assert observed["core_boundary"] == observed["frontend_boundary"] == 1
     assert state.journal.acknowledged == 0
     state.journal.acknowledge(state.journal.binding, 1)
-    state.journal.retire(state.journal.binding, 1, checkpointed_through=1)
+    state.ownership_mode = "exclusive_router_v1"
+    asyncio.run(state.retire(state.journal.binding.observer_epoch, 1, 1))
     retired = asyncio.run(state.identity())
     assert retired["family_count"] == 0
+    assert retired["frontend_event_count"] == retired["child_status_count"] == 0
+    assert retired["core_retained_records"] == retired["core_duplicate_guards"] == 0
     assert retired["binding"] == first["binding"]
     assert state.journal.acknowledged == 1
     assert "records" not in retired and "families" not in retired

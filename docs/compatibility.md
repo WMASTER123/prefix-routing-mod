@@ -1,6 +1,6 @@
 # 支持与候选矩阵
 
-2026-10-17 当前状态以[progress](progress.md)和[接手指南](项目接手指南_2026-10-17.md)为准：固定HUST与双TP1的原公开HTTP/M1/M2/M3/M4/M5/M7有限链已通过，生产恢复、长期回收、Manager激活和容量收益尚未验收。下方按日期的旧状态为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。
+2026-10-18 当前状态以[progress](progress.md)和[接手指南](项目接手指南_2026-10-17.md)为准：固定HUST与双TP1的原公开HTTP/M1/M2/M3/M4/M5/M7有限链已通过，`recovery-retirement-v1` 的强退保债、暂停恢复、退役幂等和累计回收已过资格；重启后 M2 固定降级 unknown。Manager激活、长时间全链、跨版本认证和容量收益尚未验收。下方按日期的旧状态为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。
 
 2026-10-14 后续：原typed Router库的异步准入/自有载体/转发/生命周期已和真实HUST终态组合到同一实验账本，2 family/3 child及丢许可保债通过。原三文件宿主patch与HUST包装不变；新接收器映射显式实例，新增完整终态批次校验。当前仍不是生产HTTP入口、在线KV或性能验收，component-v0.1/生产ABI和MOD import_only不变。范围与下一步见[组合计划](planning/router-hust-terminal-chain.md)和[证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，下面同日较早记录仅对应当时阶段。
 
@@ -24,7 +24,7 @@
 | vllm-hust-legacy-20260831 | 13f11da44455d2f85f00f810a04e1bd2eaf30ba6 / metadata 0.23.1rc0 | 与下行隔离构建；本机 TP=1 Qwen14B BF16 eager 局部验证及 venv 重建通过 |
 | vllm-ascend-hust-legacy-20260831 | 3a61053d8b4133eae7c468c1567648048750be21 / metadata 0.19.1rc1 | 发行包 vllm-ascend-hust；真实请求/IPC 存储事件通过，custom kernels 关闭，图/完整恢复/性能未验收 |
 | 官方 vLLM + Ascend | 待冻结版本 | 产品兼容目标，不由 HUST 结果外推 |
-| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 构建及HTTP/SSE通过；原公开HTTP、真实M1、在线M2、M3/M4/M5和HUST终态已在同一进程有限联通。生产恢复/启停/性能仍未验收，见[当前进度](progress.md) |
+| vLLM Router | 91b65ee4bdfbe98863a32a2205dced5dbb249ffe | 原提交 Linux aarch64 构建及HTTP/SSE通过；原公开HTTP、真实M1、在线M2、M3/M4/M5和HUST终态已在同一进程有限联通。首版恢复/回收语义已冻结，生产目录/Manager启停/性能仍未验收，见[当前进度](progress.md) |
 | 历史CPU研发分配 | aarch64 / Python 3.12.13 / 16 核配额 / 64 GiB RAM / 0 NPU | 当时用于CPU合同/隔离Rust构建/模拟，不代表当前分配 |
 | 历史 NPU 分配 | aarch64 / 4×910B2 / Python 3.12.13 / 16 核配额 / 128 GiB RAM | 当时物理枚举 0/1/2/7，身份/hook 主回归仅逻辑 0；更早四卡结果分别记录，不继承到当前分配 |
 | HUST 环境恢复入口 | 两个固定源码 + 186 包及 builder 锁 | 全新目录 13 步通过，本机研发证据齐备、正式冻结待人工复核；不等于可移植镜像 |

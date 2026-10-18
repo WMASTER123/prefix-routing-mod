@@ -34,6 +34,10 @@ pub struct SourceIdentity {
     pub frontend_boundary: u64,
     pub family_count: usize,
     pub reserved_children: usize,
+    pub frontend_event_count: usize,
+    pub child_status_count: usize,
+    pub core_retained_records: usize,
+    pub core_duplicate_guards: usize,
     pub acknowledged: u64,
     pub retired_through: u64,
     pub ownership_mode: String,
@@ -41,7 +45,7 @@ pub struct SourceIdentity {
 }
 
 impl SourceIdentity {
-    fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         self.schema_version == 1
             && !self.disabled
             && label(&self.binding.worker_id)
@@ -53,6 +57,10 @@ impl SourceIdentity {
             && self.family_count <= 64
             && self.family_count <= self.reserved_children
             && self.reserved_children <= 256
+            && self.frontend_event_count <= 64
+            && self.child_status_count <= self.reserved_children
+            && self.core_retained_records <= 256
+            && self.core_retained_records == self.core_duplicate_guards
             && self.acknowledged <= self.frontend_boundary
             && self.retired_through <= self.acknowledged
             && matches!(
@@ -80,12 +88,12 @@ impl fmt::Debug for HustSourceControl {
 }
 
 impl HustSourceControl {
-    pub fn connect_cold(
+    fn client(
         origin: &str,
-        token: String,
+        token: &str,
         worker_id: &str,
         owned_frontend_pid: u32,
-    ) -> Result<Self, OwnerFault> {
+    ) -> Result<Client, OwnerFault> {
         let url = Url::parse(origin).map_err(|_| OwnerFault::Source)?;
         if url.scheme() != "http"
             || url.host_str() != Some("127.0.0.1")
@@ -101,13 +109,22 @@ impl HustSourceControl {
         {
             return Err(OwnerFault::Source);
         }
-        let client = Client::builder()
+        Client::builder()
             .no_proxy()
             .redirect(Policy::none())
             .timeout(Duration::from_secs(2))
             .connect_timeout(Duration::from_secs(1))
             .build()
-            .map_err(|_| OwnerFault::Source)?;
+            .map_err(|_| OwnerFault::Source)
+    }
+
+    pub fn connect_cold(
+        origin: &str,
+        token: String,
+        worker_id: &str,
+        owned_frontend_pid: u32,
+    ) -> Result<Self, OwnerFault> {
+        let client = Self::client(origin, &token, worker_id, owned_frontend_pid)?;
         let identity = Self::read(&client, origin, &token)?;
         if !identity.valid()
             || identity.binding.worker_id != worker_id
@@ -116,8 +133,54 @@ impl HustSourceControl {
             || identity.frontend_boundary != 0
             || identity.family_count != 0
             || identity.reserved_children != 0
+            || identity.frontend_event_count != 0
+            || identity.child_status_count != 0
+            || identity.core_retained_records != 0
+            || identity.core_duplicate_guards != 0
             || identity.acknowledged != 0
             || identity.retired_through != 0
+        {
+            return Err(OwnerFault::Source);
+        }
+        Ok(Self {
+            client,
+            origin: origin.into(),
+            token,
+            identity,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn connect_existing(
+        origin: &str,
+        token: String,
+        worker_id: &str,
+        owned_frontend_pid: u32,
+        expected_instance_epoch: &str,
+        expected_observer_epoch: &str,
+        expected_ownership_mode: &str,
+        durable_through: u64,
+    ) -> Result<Self, OwnerFault> {
+        if !label(expected_instance_epoch)
+            || !label(expected_observer_epoch)
+            || !matches!(
+                expected_ownership_mode,
+                "observe_only" | "exclusive_router_v1"
+            )
+        {
+            return Err(OwnerFault::Source);
+        }
+        let client = Self::client(origin, &token, worker_id, owned_frontend_pid)?;
+        let identity = Self::read(&client, origin, &token)?;
+        if !identity.valid()
+            || identity.binding.worker_id != worker_id
+            || identity.binding.instance_epoch != expected_instance_epoch
+            || identity.binding.observer_epoch != expected_observer_epoch
+            || identity.frontend_pid != owned_frontend_pid
+            || identity.ownership_mode != expected_ownership_mode
+            || durable_through > identity.frontend_boundary
+            || identity.acknowledged > durable_through
+            || identity.retired_through > durable_through
         {
             return Err(OwnerFault::Source);
         }

@@ -43,6 +43,6 @@ HTTP → M1 → M4 → M3 reserve → M5 原宿主发送/SSE
 
 ## 当前尚差的接线
 
-原生 IPC/控制和固定完整宿主测试已通过；真实 M1、Rust M7/M2、M3/M4/M5 与核心终态已在同一公开链完成有限实机验证，包括生成后取消。M3 增量 SQLite、持久提交/cursor/暂停重开和 ACK 后 Frontend retire 已在同一双副本 Rust 链有限通过。仍须验收真正回复丢失、累计资源、健康新鲜度和强制退出恢复，见[计划](durable-runtime-and-retention.md)。这些通过前不宣布生产接口冻结；具体成绩以 progress 和对应 evidence 为准。
+原生 IPC/控制和固定完整宿主测试已通过；真实 M1、Rust M7/M2、M3/M4/M5 与核心终态已在同一公开链完成有限实机验证，包括生成后取消。M3 增量 SQLite、持久提交/cursor/暂停恢复、ACK 后 Frontend retire、真正回复丢失、520 family/1040 child 和强制退出恢复已在双副本链通过，`recovery-retirement-v1` 语义已冻结。重启时 M2 保持 unknown；持续健康新鲜度、生产目录/Manager 和性能仍未冻结。具体成绩以 progress 和对应 evidence 为准。
 
 Linux CPU 负责传输和故障回归；1 张 NPU 做单副本真实联调，2 张做双 TP1。三人使用独立分支/工作区，由集成提交统一同步服务器，不同时修改远端同一 checkout。
