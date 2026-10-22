@@ -282,3 +282,27 @@ fn retirement_identity_fields_are_bounded_monotonic_and_mode_stable() {
         Err(OwnerFault::Source)
     );
 }
+
+#[test]
+fn health_recovers_same_source_after_http_failure_and_classifies_replacement() {
+    let mut replacement = body();
+    replacement["binding"]["observer_epoch"] = serde_json::json!("observer-new");
+    let server = Server::new(vec![
+        (200, body().to_string()),
+        (503, "{}".into()),
+        (200, body().to_string()),
+        (200, replacement.to_string()),
+    ]);
+    let control =
+        HustSourceControl::connect_cold(&server.origin, TOKEN.into(), "replica-a", 101).unwrap();
+    let mut health = control.fork_for_health();
+    assert_eq!(
+        health.refresh_health(&spec(&server.origin)),
+        Err(HealthFault::Unavailable)
+    );
+    assert_eq!(health.refresh_health(&spec(&server.origin)), Ok(()));
+    assert_eq!(
+        health.refresh_health(&spec(&server.origin)),
+        Err(HealthFault::IdentityChanged)
+    );
+}

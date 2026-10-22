@@ -24,4 +24,6 @@ pub mod sqlite_row_runtime_store;
 pub mod sqlite_runtime_store;
 
 #[cfg(test)]
+mod control_tests;
+#[cfg(test)]
 mod tests;

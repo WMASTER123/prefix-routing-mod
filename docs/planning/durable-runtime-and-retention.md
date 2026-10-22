@@ -1,5 +1,7 @@
 # M3 持久提交、观测回收与启动恢复
 
+2026-10-22 增量：原恢复/回收合同不变，新增进程内控制门在有限公开链通过失联关准入、旧债保留、同源重验恢复、过期和身份冲突隔离，见[控制 ADR](../decisions/2026-10-22-control-admission.md)及[证据](../../evidence/control-admission-2026-10-22.md)。本文后续 10-18 的“缺少持续新鲜度”描述是该时点历史；常驻终态循环、SIGTERM 排空和 Manager 生产接线仍待实现。
+
 更新：2026-10-18。状态：Rust 候选已完成 x86_64/aarch64 CPU 正确性、双 NPU 真正 retire 回复丢失、520 family/1040 child 累计资源以及 Router 强退/暂停恢复/实例替换资格。基于这些证据冻结首版恢复与回收合同 `recovery-retirement-v1`；整个 MOD 的公开配置、Manager 生命周期、跨版本 ABI 和性能策略仍未冻结。前置真实公开 HTTP 有限链见[接线计划](native-public-chain.md)，本轮结果见[恢复与回收证据](../../evidence/recovery-retirement-qualification-2026-10-18.md)。
 
 ## 实际剩余问题

@@ -28,7 +28,9 @@
 
 `stream_extension_probe` 直接检查无消费时零 pull、慢消费者、源 drop、idle、chunk/总量、源错误与正常 EOF；随后走实际 Router 的普通和负载追踪两条 HTTP 分支，检查本地回调恰一次、原生连接计数释放及配置错误在发送前拒绝。真实结束对账与标准 LifecycleEvent 桥仍未交付。诊断 stage-comment 模式与该选项组合目前明确拒绝；未选择该选项不改变原诊断路径。
 
-仅用于 R1 评估，不是 MOD 激活、生产插件 ABI 或性能优化实现。底座为 Apache-2.0 的 [vLLM Router 固定提交 91b65ee](https://github.com/vllm-project/router/tree/91b65ee4bdfbe98863a32a2205dced5dbb249ffe)。保留上游许可证；本目录新增文件同许可。原版源码、Cargo.toml/lock、HUST 源码不修改。
+当前为固定宿主候选与资格工具，实际完成情况以 [progress](../../docs/progress.md) 为准。真实公开链及恢复/退役和控制准入门已有有限实机资格，尚未成为生产 MOD 入口。下面早期 R1/fixture 说明保留其原测试范围，不代表最新全链缺失。底座为 Apache-2.0 的 [vLLM Router 固定提交 91b65ee](https://github.com/vllm-project/router/tree/91b65ee4bdfbe98863a32a2205dced5dbb249ffe)，保留上游许可证；未改 HUST。SQLite 仅在隔离宿主显式 candidate feature 中增加。
+
+当前 `runtime_owner.rs` 通过相邻 `control_gate.rs` 子模块读控制新鲜度；复制 owner 时必须同时复制 control_gate。优先使用已检查路径/输入的 `tools/stage_router_runtime.sh`，不要按下方早期手工列表漏文件。控制门测试在同一 checks crate，真实接线见[2026-10-22 证据](../../evidence/control-admission-2026-10-22.md)。
 
 ## 实际增量
 

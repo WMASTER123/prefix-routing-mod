@@ -35,7 +35,7 @@ stage_file() {
   test ! -L "$task_destination"
   cp -T -- "$task_source" "$task_destination"
 }
-for task_module in prefix_extension runtime_provider runtime_owner runtime_cache_port request_feature_port native_kv_wire native_kv_owner native_kv_zmq native_kv_zmq_tests hust_source_control hust_source_control_tests; do
+for task_module in prefix_extension runtime_provider runtime_owner control_gate runtime_cache_port request_feature_port native_kv_wire native_kv_owner native_kv_zmq native_kv_zmq_tests hust_source_control hust_source_control_tests; do
   stage_file "$task_repo/experiments/router-extension/$task_module.rs" "src/routers/http/$task_module.rs"
 done
 stage_file "$task_repo/experiments/router-index/src/directory.rs" src/routers/http/runtime_directory.rs

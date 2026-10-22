@@ -14,6 +14,7 @@
 | [Ascend 设计约束](ascend-design.md) | NPU 知识应用、三道复用门槛、档案与 N0–N6 验收 |
 | [接口契约](contracts.md) | component-v0.1 可执行参考、所有权、代次及未冻结部分 |
 | [组件联调与三人工作包](planning/component-work-packages.md) | 首个闭环、独立任务、宿主准入、用卡与合并条件 |
+| [生产接线与开销工作包](planning/production-runtime-and-overhead.md) | 常驻循环、目标目录、Manager/排空、配置/错误和配对基线的具体未完成项 |
 | [KV 事件回归合同](kv-event-contract.md) | 固定 HUST framing/replay、快照边界及真实回归子集 |
 | [MOD 合规](mod-compliance.md) | 模板/Manager 版本、发现/启用边界、发布门槛 |
 | [测试](testing.md) | CPU、模拟、硬件及制品测试的真实覆盖 |

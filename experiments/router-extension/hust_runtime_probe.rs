@@ -64,11 +64,12 @@ mod sqlite_row_runtime_store;
 mod sqlite_runtime_store;
 
 use directory::{Binding, Limits};
-use hust_source_control::{HustSourceControl, SourceBinding, SourceIdentity};
+use hust_source_control::{HealthFault, HustSourceControl, SourceBinding, SourceIdentity};
 use native_kv_owner::{NativeKvOwner, SourceControl};
 use native_kv_zmq::ZmqNativeTransport;
 use request_feature_port::{CompletionFeaturePort, TokenizerPort};
 use runtime_cache_port::{InProcessCache, MonotonicClock, PartitionSpec};
+use runtime_owner::control_gate::{ControlSet, SourceKey, WorkerGate};
 use runtime_owner::{CachePort, RuntimeOwner, TerminalResult, WorkerControl};
 use runtime_provider::{FeaturePort, RuntimeProvider};
 #[cfg(feature = "durable-candidate")]
@@ -88,6 +89,8 @@ type DurableOption = Option<()>;
 #[serde(deny_unknown_fields)]
 struct Worker {
     origin: String,
+    #[serde(default)]
+    health_origin: Option<String>,
     #[serde(default)]
     retirement_origin: Option<String>,
     token: String,
@@ -114,6 +117,8 @@ struct Config {
     churn_families: usize,
     #[serde(default)]
     churn_children_per_family: usize,
+    #[serde(default)]
+    exercise_control_gate: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,6 +173,7 @@ struct Session {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     errors: Arc<Mutex<Vec<&'static str>>>,
+    health_control: Option<HustSourceControl>,
 }
 impl Session {
     fn start(
@@ -210,6 +216,7 @@ impl Session {
                     )
                 };
                 let source = control.identity().clone();
+                let health_control = control.fork_for_health_at(worker.health_origin.as_deref())?;
                 let spec = PartitionSpec {
                     binding: Binding {
                         worker: Arc::from(worker.origin.clone()),
@@ -230,7 +237,9 @@ impl Session {
                     // identity/liveness for M3, but deliberately leave M2
                     // unknown until a future snapshot-capable protocol exists.
                     control.verify(&spec)?;
-                    ready_tx.send(Ok((spec.clone(), source))).unwrap();
+                    ready_tx
+                        .send(Ok((spec.clone(), source, health_control)))
+                        .unwrap();
                     let mut refresh = Instant::now() + Duration::from_millis(500);
                     while !task_stop.load(Ordering::Acquire) {
                         if Instant::now() >= refresh {
@@ -267,7 +276,7 @@ impl Session {
                     transport,
                     control,
                 )?;
-                ready_tx.send(Ok((spec, source))).unwrap();
+                ready_tx.send(Ok((spec, source, health_control))).unwrap();
                 let mut refresh = Instant::now() + Duration::from_millis(500);
                 while !task_stop.load(Ordering::Acquire) {
                     owner.poll_once(Duration::from_millis(25))?;
@@ -285,7 +294,7 @@ impl Session {
                 let _ = ready_tx.send(Err(error));
             }
         });
-        let (spec, identity) = ready_rx
+        let (spec, identity, health_control) = ready_rx
             .recv_timeout(Duration::from_secs(15))
             .expect("KV startup timed out")
             .unwrap_or_else(|error| panic!("KV startup failed: {error:?}"));
@@ -295,6 +304,7 @@ impl Session {
             stop,
             thread: Some(thread),
             errors,
+            health_control: Some(health_control),
         }
     }
     fn stop(&mut self) {
@@ -310,6 +320,94 @@ impl Drop for Session {
         self.stop.store(true, Ordering::Release);
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
+        }
+    }
+}
+
+struct ControlSession {
+    gate: Arc<WorkerGate>,
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+    pause: Arc<AtomicBool>,
+}
+impl ControlSession {
+    fn start(session: &mut Session) -> Self {
+        let mut control = session
+            .health_control
+            .take()
+            .expect("health client consumed once");
+        let spec = session.spec.clone();
+        let key = SourceKey {
+            instance: session.identity.binding.instance_epoch.clone(),
+            observer: session.identity.binding.observer_epoch.clone(),
+            ownership: session.identity.ownership_mode.clone(),
+        };
+        let gate = Arc::new(
+            WorkerGate::new(
+                key.clone(),
+                Arc::new(runtime_owner::control_gate::MonotonicClock::default()),
+                3_000_000_000,
+            )
+            .unwrap(),
+        );
+        let stop = Arc::new(AtomicBool::new(false));
+        let task_stop = stop.clone();
+        let task_gate = gate.clone();
+        let pause = Arc::new(AtomicBool::new(false));
+        let task_pause = pause.clone();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let thread = thread::spawn(move || {
+            let mut first = true;
+            while !task_stop.load(Ordering::Acquire) {
+                if task_pause.load(Ordering::Acquire) {
+                    thread::sleep(Duration::from_millis(25));
+                    continue;
+                }
+                let Ok(probe) = task_gate.begin() else {
+                    break;
+                };
+                let result = match control.refresh_health(&spec) {
+                    Ok(()) => task_gate.complete(probe, &key),
+                    Err(HealthFault::Unavailable) => {
+                        let _ = task_gate.reject(probe);
+                        Err("control_unavailable")
+                    }
+                    Err(HealthFault::IdentityChanged) => {
+                        let _ = task_gate.quarantine();
+                        Err("control_identity_changed")
+                    }
+                };
+                if first {
+                    let _ = ready_tx.send(result);
+                    first = false;
+                }
+                for _ in 0..20 {
+                    if task_stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+            }
+            let _ = task_gate.drain();
+        });
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("control startup timed out")
+            .expect("initial control verification failed");
+        Self {
+            gate,
+            stop,
+            thread: Some(thread),
+            pause,
+        }
+    }
+}
+impl Drop for ControlSession {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.gate.drain();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
         }
     }
 }
@@ -468,6 +566,60 @@ fn terminal_identity(worker: Worker) -> SourceIdentity {
         serde_json::from_slice(&bytes).expect("terminal identity malformed");
     assert!(identity.valid());
     identity
+}
+
+async fn set_health_fault(client: &reqwest::Client, worker: &Worker, mode: &str) {
+    client
+        .post(format!(
+            "{}/__fault/{mode}",
+            worker.health_origin.as_ref().unwrap()
+        ))
+        .header("X-Prefix-Routing-Control", &worker.token)
+        .body(Vec::new())
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+}
+
+async fn wait_health(session: &ControlSession, epoch: &str, ready: bool) {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while session.gate.revision(epoch).is_some() != ready {
+        assert!(
+            Instant::now() < deadline,
+            "control gate did not reach expected state"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+async fn control_request(
+    client: &reqwest::Client,
+    origin: &str,
+    config: &Config,
+    prompt: &str,
+    owner: &RuntimeOwner,
+    expected: usize,
+) -> String {
+    let before = owner.checkpoint().unwrap().active;
+    let response = client.post(format!("{origin}/v1/completions"))
+        .json(&serde_json::json!({"model": config.model, "prompt": prompt, "max_tokens": 1, "temperature": 0}))
+        .send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let _: serde_json::Value = response.json().await.unwrap();
+    let after = owner.checkpoint().unwrap().active;
+    let added: Vec<_> = after
+        .iter()
+        .filter(|attempt| {
+            !before
+                .iter()
+                .any(|old| old.attempt_id == attempt.attempt_id)
+        })
+        .collect();
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0].worker_url, config.workers[expected].origin);
+    added[0].attempt_id.clone()
 }
 
 fn assert_old_cursor_rejected(worker: Worker, source: SourceIdentity, after: u64) {
@@ -919,6 +1071,15 @@ async fn main() {
     assert!(sessions
         .iter()
         .all(|session| session.identity.ownership_mode == config.terminal_ownership_mode));
+    let control_sessions: Vec<_> = sessions.iter_mut().map(ControlSession::start).collect();
+    let control_set = Arc::new(ControlSet(
+        config
+            .workers
+            .iter()
+            .zip(&control_sessions)
+            .map(|(worker, session)| (worker.origin.clone(), session.gate.clone()))
+            .collect(),
+    ));
     let controls: Vec<_> = sessions
         .iter()
         .map(|s| WorkerControl {
@@ -995,6 +1156,7 @@ async fn main() {
         assert_eq!(mode, RunMode::Qualify);
         (fresh_owner(), None::<()>)
     };
+    owner.install_controls(control_set.clone()).unwrap();
     let urls: Vec<_> = config.workers.iter().map(|w| w.origin.clone()).collect();
     assert!(
         urls[0] < urls[1],
@@ -1372,6 +1534,90 @@ async fn main() {
     )
     .await;
     assert_eq!(cancellation.get("FINISHED_ABORTED"), Some(&1));
+    let mut control_qualification = serde_json::Value::Null;
+    if config.exercise_control_gate {
+        assert!(config.churn_families == 0 && config.durable_store.is_some());
+        let epoch = &sessions[0].identity.binding.instance_epoch;
+        let debt = control_request(&client, &origin, &config, &prompts[0], &owner, 0).await;
+        set_health_fault(&client, &config.workers[0], "fail").await;
+        wait_health(&control_sessions[0], epoch, false).await;
+        control_request(&client, &origin, &config, &prompts[0], &owner, 1).await;
+        assert!(owner
+            .checkpoint()
+            .unwrap()
+            .active
+            .iter()
+            .any(|attempt| attempt.attempt_id == debt));
+        assert_eq!(owner.active_len().unwrap(), 2);
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        assert_eq!(owner.active_len().unwrap(), 0);
+        set_health_fault(&client, &config.workers[0], "pass").await;
+        wait_health(&control_sessions[0], epoch, true).await;
+        control_request(&client, &origin, &config, &prompts[0], &owner, 0).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        control_sessions[0].pause.store(true, Ordering::Release);
+        wait_health(&control_sessions[0], epoch, false).await;
+        control_request(&client, &origin, &config, &prompts[0], &owner, 1).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        control_sessions[0].pause.store(false, Ordering::Release);
+        wait_health(&control_sessions[0], epoch, true).await;
+        set_health_fault(&client, &config.workers[0], "identity").await;
+        wait_health(&control_sessions[0], epoch, false).await;
+        set_health_fault(&client, &config.workers[0], "pass").await;
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(control_sessions[0].gate.revision(epoch), None);
+        control_request(&client, &origin, &config, &prompts[0], &owner, 1).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        assert_eq!(owner.active_len().unwrap(), 0);
+        control_set.drain().unwrap();
+        let rejected = client
+            .post(format!("{origin}/v1/completions"))
+            .json(
+                &serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 1}),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert!(!rejected.status().is_success());
+        assert_eq!(owner.active_len().unwrap(), 0);
+        control_qualification = serde_json::json!({"http_control_failure": true, "same_source_revalidated": true, "debt_preserved": true, "health_expiry": true, "identity_quarantined": true, "identity_fault": "injected-observer-field", "other_replica_serves": true, "drain_rejected": true});
+    }
     let churn_started = Instant::now();
     for iteration in 1..=config.churn_families {
         let response = client
@@ -1498,6 +1744,6 @@ async fn main() {
     }
     println!(
         "{}",
-        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4 + config.churn_families, "retire_response_loss_recovered": retire_response_losses == config.expected_retire_response_losses, "retire_response_losses": retire_response_losses, "retired_families": retired_families, "churn_families": config.churn_families, "churn_children": config.churn_families * config.churn_children_per_family, "resource_samples": resource_samples, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
+        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4 + config.churn_families + if config.exercise_control_gate { 5 } else { 0 }, "control_gate_qualification": control_qualification, "retire_response_loss_recovered": retire_response_losses == config.expected_retire_response_losses, "retire_response_losses": retire_response_losses, "retired_families": retired_families, "churn_families": config.churn_families, "churn_children": config.churn_families * config.churn_children_per_family, "resource_samples": resource_samples, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
     );
 }

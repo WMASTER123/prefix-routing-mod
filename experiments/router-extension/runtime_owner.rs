@@ -9,12 +9,14 @@ use super::{
     runtime_provider::{AdmissionPort, Candidate, Decision, RequestView, SnapshotPort},
 };
 use serde::{Deserialize, Serialize};
+#[path = "control_gate.rs"]
+pub mod control_gate;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt::Debug,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
 };
 
@@ -107,6 +109,7 @@ struct Shared {
     failed: AtomicBool,
     max_active: usize,
     max_retired: usize,
+    controls: OnceLock<Arc<control_gate::ControlSet>>,
 }
 
 impl Shared {
@@ -276,6 +279,7 @@ impl RuntimeOwner {
                 failed: AtomicBool::new(false),
                 max_active,
                 max_retired,
+                controls: OnceLock::new(),
             }),
         })
     }
@@ -290,6 +294,31 @@ impl RuntimeOwner {
             retired: state.retired_order.iter().cloned().collect(),
             next_attempt: state.next_attempt,
         })
+    }
+
+    /// Install exactly once, before exposing this owner to the HTTP host.
+    /// Recovered uncertain debt is allowed; live reservations are not.
+    pub fn install_controls(
+        &self,
+        controls: Arc<control_gate::ControlSet>,
+    ) -> Result<(), &'static str> {
+        let state = self.shared.state.lock().map_err(|_| "owner_poisoned")?;
+        if state
+            .active
+            .values()
+            .any(|attempt| attempt.phase != AttemptPhase::Uncertain)
+            || controls.0.len() != state.workers.len()
+            || state
+                .workers
+                .keys()
+                .any(|worker| !controls.0.contains_key(worker))
+        {
+            return Err("control_install_conflict");
+        }
+        self.shared
+            .controls
+            .set(controls)
+            .map_err(|_| "controls_already_installed")
     }
 
     pub fn publish(
@@ -409,12 +438,18 @@ impl SnapshotPort for RuntimeOwner {
             } else {
                 None
             };
+            let healthy = worker.healthy
+                && self.shared.controls.get().is_none_or(|controls| {
+                    controls
+                        .revision(&worker.worker_url, &worker.instance_epoch)
+                        .is_some()
+                });
             result.push(Candidate {
                 worker_url: worker.worker_url,
                 instance_epoch: worker.instance_epoch,
                 worker_version: worker.worker_version,
                 config_version,
-                healthy: worker.healthy,
+                healthy,
                 draining: worker.draining,
                 local_outstanding,
                 matched_blocks,
@@ -481,6 +516,14 @@ impl AdmissionPort for RuntimeOwner {
             if local >= worker.capacity as usize {
                 return Err("worker_capacity");
             }
+            let control_revision = match self.shared.controls.get() {
+                Some(controls) => Some(
+                    controls
+                        .revision(&decision.worker_url, &decision.instance_epoch)
+                        .ok_or("control_unavailable")?,
+                ),
+                None => None,
+            };
             let attempt = ActiveAttempt {
                 request_id: decision.request_id.clone(),
                 attempt_id: decision.attempt_id.clone(),
@@ -496,6 +539,7 @@ impl AdmissionPort for RuntimeOwner {
             Ok(Box::new(OwnerLease {
                 attempt,
                 shared: self.shared.clone(),
+                control_revision,
             }) as Box<dyn Lease>)
         })
     }
@@ -505,6 +549,7 @@ impl AdmissionPort for RuntimeOwner {
 struct OwnerLease {
     attempt: ActiveAttempt,
     shared: Arc<Shared>,
+    control_revision: Option<u64>,
 }
 
 impl Lease for OwnerLease {
@@ -525,7 +570,14 @@ impl Lease for OwnerLease {
         if current != self.attempt || current.phase != AttemptPhase::Reserved {
             return Err("attempt_phase");
         }
-        if !Shared::fence_matches(&state, &current) {
+        let control_matches = match (self.shared.controls.get(), self.control_revision) {
+            (None, None) => true,
+            (Some(controls), Some(revision)) => {
+                controls.revision(&current.worker_url, &current.instance_epoch) == Some(revision)
+            }
+            _ => false,
+        };
+        if !Shared::fence_matches(&state, &current) || !control_matches {
             self.shared
                 .remove_active(&mut state, &self.attempt.attempt_id);
             return Err("decision_fence_changed");

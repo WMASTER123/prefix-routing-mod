@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-22：控制门在 aarch64 helper 68 项、原索引/IPC/控制 93 项、固定完整宿主 39 项通过，helper Clippy 未放宽 lint；双 NPU 控制 HTTP 失联、保债、同源恢复、健康过期、注入身份冲突和 drain 拒绝通过。Windows 新 CPU 子集 590/7 skipped/3 deselected；旧退役 fixture 修复请求体未读导致的间歇连接中断，完整子集连续三轮通过。具体制品、失败留痕和边界见[本轮证据](../evidence/control-admission-2026-10-22.md)。下方 10-18 的 CI 待完成属于当时记录，`49b3aea` 的六项 CI 已于本轮重新核对全部通过；新增代码 CI 不继承旧结果。
+
 2026-10-18 恢复/回收更新：本轮修改后 Python CPU 588 passed/7 skipped/3 deselected、integration 3 passed，Ruff 与格式通过；响应丢失代理在 Windows 连续重复 8 次通过。固定 aarch64 宿主最终 example 38 项、独立 checks 58 项通过；删除的 1 项曾假定原生 END 能证明暖 M2 回放完整，审查后改为重启时 unknown。限定排除原 Router 四项既存 lint 和组合 dead-code/type-complexity 后，本轮 `clippy -D warnings` 通过。双 910B2 已完成真正 retire 回复丢失、520 family/1040 child、Router 强退暂停恢复、旧 cursor 和实际实例替换；详见[资格记录](../evidence/recovery-retirement-qualification-2026-10-18.md)。这些仍不代替图模式、Manager 生命周期、长时间稳定性或性能；当前新 head 的 GitHub CI 尚待完成。
 
 2026-10-17 较早持久化增量：最终最小 SQLite feature 下 helper 57 项、Clippy 和 Python CPU 576/7 skipped、integration 3 项通过；代码 `3264050` 对应 5 项 GitHub 检查通过。新增真正子进程未提交退出、变化行回滚、行身份错配和整批损坏反例；固定 ARM 宿主新增显式 durable feature，真实接线与存储对照见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。以下按日期段落只描述当时范围；索引/完整宿主/真实 NPU 与 helper CI 不互相替代。

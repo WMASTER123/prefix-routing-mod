@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-22：进程内控制准入门的增量边界见[ADR](decisions/2026-10-22-control-admission.md)。新鲜度不写入持久 checkpoint，不清除旧债；具体公开配置/错误与常驻运行接口仍按[生产工作包](planning/production-runtime-and-overhead.md)实施，以下历史端口不能冒充最终配置 schema。
+
 2026-10-17：当前Rust候选端口、配置/错误/并发边界和三人代码所有权见[接手指南](项目接手指南_2026-10-17.md)。真实公开HTTP有限组合已通过，生产ABI仍未冻结；本文component-v0.1是Python参考合同。下方按日期记录仅描述当时状态，实际完成情况以[progress](progress.md)和evidence为准。
 
 2026-10-14 后续：原typed Router库的异步准入/自有载体/转发/生命周期已和真实HUST终态组合到同一实验账本，2 family/3 child及丢许可保债通过。原三文件宿主patch与HUST包装不变；新接收器映射显式实例，新增完整终态批次校验。当前仍不是生产HTTP入口、在线KV或性能验收，component-v0.1/生产ABI和MOD import_only不变。范围与下一步见[组合计划](planning/router-hust-terminal-chain.md)和[证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，下面同日较早记录仅对应当时阶段。
