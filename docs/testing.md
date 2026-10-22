@@ -1,6 +1,6 @@
 # 测试与 CI
 
-2026-10-22 后续：终态持续驱动新增 12 项 CPU 反例，共 80 项 aarch64 helper 测试及严格 Clippy 通过；含 active=0 确认重试、提交前/后故障、监督丢失、确认中停止和 future abort。真实运输仍为替身，完整宿主模块检查不等于已装入常驻服务。新服务器完成的是既有控制门的两卡复验，和新候选分开记账；Windows CPU 590/7 skipped/3 deselected、integration 3 及隔离包构建/干净安装通过。见[候选与实机边界](../evidence/terminal-driver-2026-10-22.md)。`70c56a2` 六项 CI 成功，后续提交需另验；仓库可见性确认期间新增代码不推送公开远端。
+2026-10-22 后续：终态持续驱动新增 12 项 CPU 反例，共 80 项 aarch64 helper 测试及严格 Clippy 通过；含 active=0 确认重试、提交前/后故障、监督丢失、确认中停止和 future abort。真实运输仍为替身，完整宿主模块检查不等于已装入常驻服务。新服务器完成的是既有控制门的两卡复验，和新候选分开记账；Windows CPU 590/7 skipped/3 deselected、integration 3 及隔离包构建/干净安装通过。见[候选与实机边界](../evidence/terminal-driver-2026-10-22.md)。`70c56a2` 六项 CI 成功，后续提交需另验；用户已确认保持公开，解除新增提交的推送暂缓，不继承旧 CI 成绩。
 
 2026-10-22：控制门在 aarch64 helper 68 项、原索引/IPC/控制 93 项、固定完整宿主 39 项通过，helper Clippy 未放宽 lint；双 NPU 控制 HTTP 失联、保债、同源恢复、健康过期、注入身份冲突和 drain 拒绝通过。Windows 新 CPU 子集 590/7 skipped/3 deselected；旧退役 fixture 修复请求体未读导致的间歇连接中断，完整子集连续三轮通过。具体制品、失败留痕和边界见[本轮证据](../evidence/control-admission-2026-10-22.md)。下方 10-18 的 CI 待完成属于当时记录，`49b3aea` 的六项 CI 已于本轮重新核对全部通过；新增代码 CI 不继承旧结果。
 
