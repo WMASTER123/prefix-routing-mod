@@ -139,6 +139,16 @@ def run(args, output, report):
     churn_children = int(getattr(args, "churn_children_per_family", 0))
     exercise_recovery = bool(getattr(args, "exercise_router_recovery", False))
     exercise_control = bool(getattr(args, "exercise_control_gate", False))
+    use_driver = bool(getattr(args, "use_terminal_driver", False))
+    if use_driver and not (
+        managed_retirement
+        and getattr(args, "durable_store", False)
+        and not exercise_recovery
+        and not inject_retire_loss
+        and not exercise_control
+        and churn_families == 0
+    ):
+        raise ValueError("Driver qualification requires isolated managed durable mode")
     if exercise_control and not (
         managed_retirement
         and getattr(args, "durable_store", False)
@@ -277,6 +287,8 @@ def run(args, output, report):
             "churn_children_per_family": churn_children,
             "exercise_control_gate": exercise_control,
         }
+        if use_driver:
+            config["use_terminal_driver"] = True
         if args.durable_store:
             config["durable_store"] = str(output / "runtime.sqlite")
         config_path = output / "private-runtime-config.json"
@@ -422,6 +434,8 @@ def run(args, output, report):
             != managed_retirement
         ):
             raise ValueError("Managed retirement result differs from requested mode")
+        if bool(records[0].get("terminal_driver_transport_verified")) != use_driver:
+            raise ValueError("Terminal driver result differs from requested mode")
         if bool(records[0].get("retire_response_loss_recovered")) is not True:
             raise ValueError(
                 "Retirement response-loss result differs from requested mode"
@@ -526,6 +540,7 @@ def main():
     )
     parser.add_argument("--churn-families", type=int, default=0)
     parser.add_argument("--exercise-control-gate", action="store_true")
+    parser.add_argument("--use-terminal-driver", action="store_true")
     parser.add_argument("--churn-children-per-family", type=int, default=0)
     parser.add_argument(
         "--exercise-router-recovery",

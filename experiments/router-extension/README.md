@@ -1,6 +1,6 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
-2026-10-22 后续：`terminal_driver.rs` 是同一 DurableRuntime 的每来源持续驱动 CPU 候选，checks 直接编译唯一源码。固定宿主可显式编译该模块，但有限 probe 仍调用原 reconcile；尚未将真实 HUST 运输接入驱动，不能把模块存在当作常驻服务交付。source 由 A 联审，循环/提交由 C 负责，B 联审 HTTP 排空。见[驱动 ADR](../../docs/decisions/2026-10-22-terminal-driver.md)和[验证记录](../../evidence/terminal-driver-2026-10-22.md)。
+2026-10-22 后续：`terminal_driver.rs` 与 `hust_terminal_transport.rs` 由 checks/固定宿主包含唯一源码。现有 FrontendEnds 的 CPU HTTP 联调已通过；有限 probe 的 `use_terminal_driver` 显式替换旧 reconcile，尚待 NPU，不是常驻 run。source 由 A 联审，循环/提交由 C 负责，B 联审 HTTP 排空。见[驱动 ADR](../../docs/decisions/2026-10-22-terminal-driver.md)和[运输记录](../../evidence/hust-terminal-transport-2026-10-22.md)。
 
 2026-10-16：`durable_runtime.rs` 在现有 `RuntimeOwner` 外增加候选持久提交边界，`runtime_store.rs` 定义 owner/generation/cursor 契约，`sqlite_runtime_store.rs` 是只在独立 helper crate 锁定的 SQLite WAL/FULL 候选。发送许可在 commit 后返回；终态、checkpoint 和 cursor 同一替换事务；恢复默认暂停。同步 Lease 回调不做磁盘 I/O，阻塞存储调用在有界异步提交任务中执行。该候选尚未复制到固定 Router 宿主或修改其 Cargo；结果与限制见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
 

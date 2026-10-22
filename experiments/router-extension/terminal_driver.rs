@@ -112,6 +112,11 @@ impl<T: TerminalTransport> TerminalDriver<T> {
         &self.cursor
     }
 
+    /// Read-only qualification diagnostics; never expose a second mutable consumer.
+    pub fn transport(&self) -> &T {
+        &self.transport
+    }
+
     pub fn pending_remote_confirmation(&self) -> bool {
         self.pending != Pending::None
     }

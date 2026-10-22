@@ -37,6 +37,9 @@ mod directory;
 mod durable_runtime;
 #[path = "../src/routers/http/hust_source_control.rs"]
 mod hust_source_control;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/hust_terminal_transport.rs"]
+pub mod hust_terminal_transport;
 #[path = "../src/routers/http/native_kv_owner.rs"]
 mod native_kv_owner;
 #[path = "../src/routers/http/native_kv_wire.rs"]
@@ -122,6 +125,8 @@ struct Config {
     churn_children_per_family: usize,
     #[serde(default)]
     exercise_control_gate: bool,
+    #[serde(default)]
+    use_terminal_driver: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -757,6 +762,12 @@ async fn reconcile(
     retired_families: &mut usize,
     retire_response_losses: &mut usize,
 ) -> BTreeMap<String, usize> {
+    if config.use_terminal_driver {
+        #[cfg(feature = "durable-candidate")]
+        return reconcile_driver(config, sessions, cursors, durable, retired_families).await;
+        #[cfg(not(feature = "durable-candidate"))]
+        panic!("terminal driver requires durable candidate");
+    }
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut statuses = BTreeMap::new();
     while owner.active_len().unwrap() != 0 {
@@ -895,6 +906,94 @@ async fn reconcile(
     statuses
 }
 
+#[cfg(feature = "durable-candidate")]
+async fn reconcile_driver(
+    config: &Config,
+    sessions: &[Session],
+    cursors: &mut [u64],
+    durable: &DurableOption,
+    retired_families: &mut usize,
+) -> BTreeMap<String, usize> {
+    use hust_terminal_transport::HustTerminalTransport;
+    use terminal_driver::{Ownership, PumpError, Step, TerminalDriver};
+    // Deliberately finite qualification: the future service will keep these
+    // drivers alive independently of HTTP and coordinate signal drain.
+    let runtime = durable
+        .as_ref()
+        .expect("terminal driver requires durable runtime");
+    assert_eq!(config.terminal_ownership_mode, "exclusive_router_v1");
+    assert_eq!(config.expected_retire_response_losses, 0);
+    let mut drivers: Vec<_> = config
+        .workers
+        .iter()
+        .zip(sessions)
+        .enumerate()
+        .map(|(index, (worker, session))| {
+            assert!(worker.retirement_origin.is_none());
+            let source = &session.identity;
+            assert_eq!(source.binding.worker_id, worker.worker_id);
+            let cursor = runtime.terminal_cursor(&worker.worker_id).unwrap().unwrap();
+            assert_eq!(cursor.through, cursors[index]);
+            assert_eq!(cursor.worker_url, worker.origin);
+            assert_eq!(cursor.instance_epoch, source.binding.instance_epoch);
+            assert_eq!(cursor.observer_epoch, source.binding.observer_epoch);
+            let transport = HustTerminalTransport::new(
+                cursor.clone(),
+                worker.token.clone(),
+                source.frontend_pid,
+                source.core_pid,
+                Ownership::ExclusiveRouterV1,
+                Duration::from_secs(2),
+            )
+            .unwrap();
+            TerminalDriver::new(
+                runtime.clone(),
+                transport,
+                cursor,
+                Ownership::ExclusiveRouterV1,
+            )
+            .unwrap()
+        })
+        .collect();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut statuses = BTreeMap::new();
+    loop {
+        for (index, driver) in drivers.iter_mut().enumerate() {
+            let before = driver.cursor().through;
+            match driver.step().await {
+                Ok(Step::Committed(_)) | Ok(Step::Idle) | Err(PumpError::Retry) => {}
+                Err(error) => panic!("terminal driver failed: {error:?}"),
+            }
+            // A successful local commit may be followed by a lost ACK/retire
+            // response and return Retry. Count that cursor advance only once;
+            // the loop still waits for pending confirmation before returning.
+            let advanced = driver.cursor().through.checked_sub(before).unwrap();
+            if advanced != 0 {
+                *retired_families = retired_families
+                    .checked_add(advanced.try_into().unwrap())
+                    .unwrap();
+                for (status, count) in driver.transport().last_poll_statuses() {
+                    *statuses.entry(status.clone()).or_insert(0) += count;
+                }
+            }
+            cursors[index] = driver.cursor().through;
+        }
+        if runtime.owner().active_len().unwrap() == 0
+            && drivers
+                .iter()
+                .all(|driver| !driver.pending_remote_confirmation())
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "terminal driver finite reconciliation timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    statuses
+}
+
 fn settle_volatile(
     owner: &RuntimeOwner,
     worker: &Worker,
@@ -941,6 +1040,16 @@ async fn main() {
         "managed retirement requires the durable candidate"
     );
     assert!(config.expected_retire_response_losses <= config.workers.len());
+    assert!(
+        !config.use_terminal_driver
+            || (config.durable_store.is_some()
+                && config.terminal_ownership_mode == "exclusive_router_v1"
+                && config.expected_retire_response_losses == 0
+                && config.churn_families == 0
+                && !config.exercise_control_gate
+                && mode == RunMode::Qualify),
+        "driver transport qualification requires isolated managed durable mode"
+    );
     assert!(
         config.expected_retire_response_losses == 0
             || config.terminal_ownership_mode == "exclusive_router_v1"
@@ -1747,6 +1856,6 @@ async fn main() {
     }
     println!(
         "{}",
-        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4 + config.churn_families + if config.exercise_control_gate { 5 } else { 0 }, "control_gate_qualification": control_qualification, "retire_response_loss_recovered": retire_response_losses == config.expected_retire_response_losses, "retire_response_losses": retire_response_losses, "retired_families": retired_families, "churn_families": config.churn_families, "churn_children": config.churn_families * config.churn_children_per_family, "resource_samples": resource_samples, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
+        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4 + config.churn_families + if config.exercise_control_gate { 5 } else { 0 }, "terminal_driver_transport_verified": config.use_terminal_driver, "control_gate_qualification": control_qualification, "retire_response_loss_recovered": retire_response_losses == config.expected_retire_response_losses, "retire_response_losses": retire_response_losses, "retired_families": retired_families, "churn_families": config.churn_families, "churn_children": config.churn_families * config.churn_children_per_family, "resource_samples": resource_samples, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
     );
 }

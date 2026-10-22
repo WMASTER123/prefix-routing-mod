@@ -4,6 +4,8 @@
 pub mod admission_bridge;
 #[path = "../../durable_runtime.rs"]
 pub mod durable_runtime;
+#[path = "../../hust_terminal_transport.rs"]
+pub mod hust_terminal_transport;
 #[path = "../../lifecycle_bridge.rs"]
 pub mod lifecycle_bridge;
 #[path = "../../online_bridge.rs"]
@@ -27,6 +29,8 @@ pub mod terminal_driver;
 
 #[cfg(test)]
 mod control_tests;
+#[cfg(test)]
+mod hust_terminal_transport_tests;
 #[cfg(test)]
 mod terminal_driver_tests;
 #[cfg(test)]
