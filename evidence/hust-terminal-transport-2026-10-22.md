@@ -35,7 +35,7 @@ cargo +1.99.0 build --locked --manifest-path experiments/router-extension/checks
 PYTHONPATH=src python -m tools.probe_hust_terminal_driver --binary experiments/router-extension/checks/target/debug/examples/hust_terminal_driver_probe
 ```
 
-CI helper 工作流增加上述跨进程协议联调并补触发路径。旧 `7110d16` 六项 CI 已成功，本增量独立核验，不能继承旧 CI。自审和自动化通过不代表独立人工审查完成；不自动合并。
+CI helper 工作流增加上述跨进程协议联调并补触发路径。实现提交 `4b867d9df6ecc34d9f4eb9dc9c55b752655450ea` 的六项检查已独立成功：validate / hust-source-methods 的 Python 3.11、3.12 四项，加 validate-helper 和 validate-index。新增联调在 [helper 工作流](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/39781226208)成功执行。该 CI 不覆盖完整宿主或 NPU；自审和自动化不代表独立人工审查完成，不自动合并。
 
 自审修正：有限新路径按持久 cursor 推进量记一次统计，不因“已提交但确认回复丢失→Retry”漏计；该统计仅在所有 pending 确认完成后作为有限资格结果。较大的响应限额测试使用独立宽期限，短期限只用于明确延迟响应体的用例，减少 CPU 争用造成的偶发失败。默认工具不向旧二进制配置增加 false 字段；显式新模式必须回报独立 marker，旧程序不能冒充新路径。
 

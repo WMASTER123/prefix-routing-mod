@@ -1,6 +1,6 @@
 # 测试与 CI
 
-2026-10-22 最新：固定 HUST HTTP 运输新增 6 项 socket 测试，Linux x86_64 helper 共 86 项及严格 Clippy 通过；Rust Driver↔现有 FrontendEnds 八个跨进程 HTTP 场景通过，Core utility 为替身。真实有限工具已提供显式新驱动路径，NPU/常驻验收仍待完成，见[运输记录](../evidence/hust-terminal-transport-2026-10-22.md)。此前 80 项 aarch64 helper 与两卡控制门属于[上一轮资格](../evidence/terminal-driver-2026-10-22.md)。`7110d16`（含持续驱动）六项 CI 成功；新 HTTP 增量需独立 CI。仓库按用户确认保持公开。
+2026-10-22 最新：固定 HUST HTTP 运输新增 6 项 socket 测试，Linux x86_64 helper 共 86 项及严格 Clippy 通过；Rust Driver↔现有 FrontendEnds 八个跨进程 HTTP 场景通过，Core utility 为替身。真实有限工具已提供显式新驱动路径，NPU/常驻验收仍待完成，见[运输记录](../evidence/hust-terminal-transport-2026-10-22.md)。此前 80 项 aarch64 helper 与两卡控制门属于[上一轮资格](../evidence/terminal-driver-2026-10-22.md)。`7110d16`（含持续驱动）与本轮 HTTP 实现 `4b867d9` 各自六项 CI 成功，后者包含新增联调；完整宿主和 NPU 不在这些 CI 中。仓库按用户确认保持公开。
 
 2026-10-22：控制门在 aarch64 helper 68 项、原索引/IPC/控制 93 项、固定完整宿主 39 项通过，helper Clippy 未放宽 lint；双 NPU 控制 HTTP 失联、保债、同源恢复、健康过期、注入身份冲突和 drain 拒绝通过。Windows 新 CPU 子集 590/7 skipped/3 deselected；旧退役 fixture 修复请求体未读导致的间歇连接中断，完整子集连续三轮通过。具体制品、失败留痕和边界见[本轮证据](../evidence/control-admission-2026-10-22.md)。下方 10-18 的 CI 待完成属于当时记录，`49b3aea` 的六项 CI 已于本轮重新核对全部通过；新增代码 CI 不继承旧结果。
 

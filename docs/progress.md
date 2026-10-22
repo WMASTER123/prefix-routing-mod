@@ -50,6 +50,6 @@
 
 2026-10-18 代码 `49b3aea` 的成绩：本地 CPU 588 通过/7 跳过/3 deselected、integration 3 通过，Ruff 检查与格式通过；aarch64 固定完整宿主 example 38 项、独立 checks 58 项通过，限定排除原 Router 四项既存 lint 和组合 dead-code/type-complexity 后 `clippy -D warnings` 通过。删除的 1 项是无法由原生 END 证明完整的暖 M2 恢复测试。2026-10-22 已重新查询：该提交的 6 项 GitHub 检查全部成功，仓库保留的 6 次历史失败都有后续成功修复，不能再将此提交写为 CI 待完成。新增控制门的成绩单独记录，不继承旧 CI。当前服务 venv 的全量 `pip check` 仍有平台预装工具依赖缺口，不能计为本轮通过。
 
-PR23 已合并到阶段分支 `codex/online-kv-directory`；后续为[草稿 PR24](https://github.com/WMASTER123/prefix-routing-mod/pull/24)，控制与生命周期候选在其上叠加[草稿 PR25](https://github.com/WMASTER123/prefix-routing-mod/pull/25)。`7110d16`（含 a53cba0 持续驱动）的 6 项 GitHub 检查已逐项成功；本轮 HTTP 运输增量需独立 CI，不继承旧成绩。`main` 尚不包含全部研发进展。`3264050`/`artifacts/t9` 是较早持久链输入；32066 旧证据和 32081 新 Rust 双副本退役结果、二进制/归档 hash 见[退役证据](../evidence/terminal-retirement-2026-10-17.md)。本轮没有自动合并或正式发布。
+PR23 已合并到阶段分支 `codex/online-kv-directory`；后续为[草稿 PR24](https://github.com/WMASTER123/prefix-routing-mod/pull/24)，控制与生命周期候选在其上叠加[草稿 PR25](https://github.com/WMASTER123/prefix-routing-mod/pull/25)。`7110d16`（含 a53cba0 持续驱动）的 6 项 GitHub 检查已逐项成功；本轮 HTTP 运输实现提交 `4b867d9` 的 6 项检查也已独立成功，包括新增跨进程 HTTP 场景，不能将该 CI 当完整宿主/NPU 验收。`main` 尚不包含全部研发进展。`3264050`/`artifacts/t9` 是较早持久链输入；32066 旧证据和 32081 新 Rust 双副本退役结果、二进制/归档 hash 见[退役证据](../evidence/terminal-retirement-2026-10-17.md)。本轮没有自动合并或正式发布。
 
 已完成自审、自动回归和上述实机子集；独立人工审查/合并未完成，不自动合并。Linux CPU 可推进持久化/协议；再次真实持续服务与恢复回归需要两个 TP1 NPU。测试完成清理自有进程，不运行空载保活负载。
