@@ -2,7 +2,7 @@
 
 2026-10-22，状态：后续工作包的具体合同草案，尚未实现生产服务。现行成绩以 [progress](../progress.md) 为准。
 
-本日后续：每来源持续终态驱动及固定 HUST HTTP 运输的 CPU 联调已实现，见[驱动 ADR](../decisions/2026-10-22-terminal-driver.md)与[运输记录](../../evidence/hust-terminal-transport-2026-10-22.md)。有限 probe 的显式新路径仍是请求之间调用 step，不是常驻循环；下一步先补完整宿主构建/回归（本机缓存不足）和新路径实机资格，再将同一驱动 run 与服务生命周期装配。现有有限工具的 panic/逐批重复资格断言不直接迁入生产；ACK 回应携带更新终态已纳入 CPU 回归。常驻请求/信号排空和 Manager 均仍待验收。
+本日后续：每来源持续终态驱动及固定 HUST HTTP 运输已完成 CPU 联调、新服务器完整宿主构建/39 项回归和双 NPU 有限接线，见[驱动 ADR](../decisions/2026-10-22-terminal-driver.md)与[最新记录](../../evidence/hust-terminal-driver-npu-2026-10-22.md)。有限 probe 的显式新路径仍是请求之间调用 step；下一步将同一驱动 run 与服务生命周期装配。现有有限工具的 panic/逐批重复资格断言不直接迁入生产；ACK 回应携带更新终态已纳入 CPU 回归。常驻请求/信号排空和 Manager 均仍待验收。
 
 ## 运行形态与目录
 

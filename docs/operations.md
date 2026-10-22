@@ -1,5 +1,7 @@
 # 新实验服务器操作基线
 
+2026-10-22 诊断入口：当前 ced6857/b47795c 候选的发行名来自 `hust-cedb477-native-v1` 映射，其中 Ascend 名为 `vllm-ascend`；旧归档的 `vllm-ascend-hust` 不可写死到新候选诊断。使用 `tools/inspect_runtime.py --execute --profile hust-cedb477-native-v1 --output <新私有报告>`，先验证固定版本和接口指纹再显式导入。报告保留注册后端目录，同时按已安装 Triton 的 `driver.is_active()` 检查唯一 Ascend 可激活后端；目录含 AMD/NVIDIA 不等于实际使用这些后端。该报告仍不替代完整依赖审计、设备计算或容量验收。旧模式省略 profile 只保留旧归档库存查询，不能作为当前候选配方。
+
 2026-10-17 当前操作入口：[接手指南](项目接手指南_2026-10-17.md)与[progress](progress.md)。本轮已核验 aarch64、两张910B2（本次物理4/5）、8核CPU配额/64GiB；使用项目隔离 HUST ced6857/b47795c 与 Qwen2.5-14B FP16/eager、双TP1。重分配后重新检查设备、路径与来源。已有公开HTTP全组件和真实持久commit→ACK有限资格，实验已正常清理；生产恢复/回收与完整MOD启停仍未通过。
 
 历史分配（2026-10-11）：CPU-only aarch64、16核CPU配额、64GiB RAM、16GiB /dev/shm、0 NPU。该资源与下方旧版命令不描述本轮机器；项目目录仍为 /root/work/prefix-routing-mod。

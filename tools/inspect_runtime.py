@@ -32,13 +32,41 @@ def loaded_libraries() -> list[str]:
     return sorted(paths)
 
 
+def distribution_versions(profile_id=None, *, version=None) -> dict[str, str]:
+    """Use the qualified mapping, never guess an alias from installed packages."""
+    version = metadata.version if version is None else version
+    engines = ("vllm", "vllm-ascend-hust")
+    if profile_id is not None:
+        from prefix_routing_mod.adapters.profiles import get_profile
+
+        engines = tuple(name for name, _ in get_profile(profile_id).packages)
+    return {name: version(name) for name in (*engines, "torch", "torch-npu")}
+
+
+def active_backends(backends) -> list[str]:
+    """Mirror the installed Triton driver's unique-active selection check."""
+    return sorted(
+        name for name, backend in backends.items() if backend.driver.is_active()
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--profile",
+        help="Verify fixed backend interface and use its distribution mapping",
+    )
     args = parser.parse_args()
     if args.output.exists():
         parser.error("Output already exists")
+    # Reject an unqualified profile before importing engines or touching devices.
+    interface = None
+    if args.profile is not None:
+        from prefix_routing_mod.adapters.profiles import inspect_backend
+
+        interface = inspect_backend(args.profile)
     # Imports happen only after explicit execution, never on MOD discovery.
     import torch
     import torch_npu
@@ -47,6 +75,7 @@ def main() -> int:
     import vllm_ascend
     from triton.backends import backends
 
+    active = active_backends(backends)
     report = {
         "schema_version": 1,
         "scope": "explicit_import_and_library_inventory",
@@ -62,18 +91,17 @@ def main() -> int:
             name: str(Path(module.__file__).resolve())
             for name, module in {"vllm": vllm, "vllm_ascend": vllm_ascend}.items()
         },
-        "distributions": {
-            name: metadata.version(name)
-            for name in ("vllm", "vllm-ascend-hust", "torch", "torch-npu")
-        },
+        "distributions": distribution_versions(args.profile),
+        "backend_interface": interface,
         "triton_backends": sorted(backends),
+        "triton_active_backends": active,
         "python_path": os.environ.get("PYTHONPATH"),
         "ld_library_path": os.environ.get("LD_LIBRARY_PATH"),
         "loaded_libraries": loaded_libraries(),
         "component_version_files": component_versions(),
         "environment_gate_passed": False,
     }
-    report["status"] = "pass" if set(backends) == {"ascend"} else "fail"
+    report["status"] = "pass" if active == ["ascend"] else "fail"
     if platform.system() == "Linux":
         result = subprocess.run(
             ["npu-smi", "info", "-m"],

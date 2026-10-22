@@ -15,9 +15,11 @@
 
 9. **控制新鲜度到准入的有限闭环**：新增默认关闭、单调期限与来源身份绑定的 WorkerGate，M3 快照/预留/发送前均校验；失联/过期关对应准入但保留旧债，同源新验证可恢复，冲突来源隔离。双 NPU 真实身份 HTTP 503、停止刷新后的真实期限到期、注入 observer 冲突、另一副本继续服务、保债和 drain 拒绝均通过，共结清 9 family。aarch64 helper 68、索引/IPC/控制 93、完整宿主 39 项通过；这是有限链，不是常驻 service 或 Manager 信号排空。细节及自审修复见[本轮证据](../evidence/control-admission-2026-10-22.md)。
 
-10. **终态持续驱动 CPU 候选**：同一 DurableRuntime 外新增每来源唯一的 `terminal_driver.rs`，持续轮询不依赖 HTTP 触发；active=0 也补 ACK/retire，同水位失联重试不重复结算，observe_only 不回收。停止等操作完成，任务丢失/取消失败关闭。aarch64 helper 共 80 项（新增 12 项）及 Clippy 通过；运输目前是 CPU 替身，尚未替代有限 HUST reconcile，也未完成信号/Manager。新服务器两卡复验的是第 9 项固定二进制，不是新驱动，见[范围与记录](../evidence/terminal-driver-2026-10-22.md)。
+10. **终态持续驱动 CPU 候选**：同一 DurableRuntime 外新增每来源唯一的 `terminal_driver.rs`，持续轮询不依赖 HTTP 触发；active=0 也补 ACK/retire，同水位失联重试不重复结算，observe_only 不回收。停止等操作完成，任务丢失/取消失败关闭。该步 aarch64 helper 共 80 项（新增 12 项）及 Clippy 通过，使用 CPU 运输替身；当时两卡复验的是第 9 项固定二进制。随后真实 HTTP 与新驱动实机资格分别见第 11、12 项，信号/Manager 仍未完成。见[当时范围](../evidence/terminal-driver-2026-10-22.md)。
 
-11. **固定 HUST HTTP 运输的 CPU 接线**：新增唯一 `hust_terminal_transport.rs`，调用现有可选终态端点，绑定完整 cursor/PID/mode，限时限字节、完整批与 family 校验；ACK 允许携带更新记录，后续 poll 才提交。Rust helper 86 项通过；真实 socket 和 Rust↔现有 FrontendEnds 的跨进程 HTTP 八场景通过，Core utility 是替身。有限公开链源码新增显式 `--use-terminal-driver` 路径，与旧 reconcile 互斥，完整宿主因本机依赖缓存不足尚未构建通过，需补构建及独立实机资格；旧两卡成绩不能继承。Windows CPU 596/integration 3、包构建/安装通过。旧服务器连接已关闭，尚未运行本轮 NPU。测试、审查和未决项见[运输记录](../evidence/hust-terminal-transport-2026-10-22.md)。
+11. **固定 HUST HTTP 运输的 CPU 接线**：新增唯一 `hust_terminal_transport.rs`，调用现有可选终态端点，绑定完整 cursor/PID/mode，限时限字节、完整批与 family 校验；ACK 允许携带更新记录，后续 poll 才提交。该步 Rust helper 86 项、跨进程 HTTP 八场景通过，Core utility 是替身；Windows CPU 596/integration 3、包构建/安装通过。有限公开链源码新增显式 `--use-terminal-driver`，与旧 reconcile 互斥；当时本地依赖缓存不足且旧服务器失联，宿主/NPU 资格后来由第 12 项补齐，不能倒用旧成绩。见[当时运输记录](../evidence/hust-terminal-transport-2026-10-22.md)。
+
+12. **新驱动完整宿主与双 NPU 有限资格**：在新分配上完成本轮 aarch64 helper 86/严格 Clippy、HTTP 协议八场景、完整宿主 39 项及实际 release 二进制构建，补齐第 11 项当时未完成的宿主/NPU 门槛。新驱动真实请求目标 A/A/B、命中 0/384/384，核心取消 FINISHED_ABORTED、4 family 回收、active=0；两后端自然退出且无残留。只调用有限 Driver.step，不是常驻 run。现场修正诊断工具的旧发行名和“注册后端=active 后端”误判，新增 9 项工具测试；Windows CPU 605、integration 3 通过，未改变服务环境。全量 pip check 的原 profiling 工具缺口仍保留。新制品 hash、原始报告及范围见[完整接线记录](../evidence/hust-terminal-driver-npu-2026-10-22.md)。
 
 固定基线为 HUST Core ced6857 / Ascend b47795c，Router91b65ee；未更换引擎、CANN 或全局 Python。服务使用项目隔离环境及窄 PYTHONPATH，本 MOD wheel 构建、干净安装和导入验证通过。当前平台镜像的服务 venv 全量 `pip check` 仍报告若干预装工具缺失可选依赖，不能再写成整环境依赖审计通过；这些项未由本 MOD 引入，需在冻结运行镜像时单列处理。
 
@@ -27,7 +29,7 @@
 |---|---|---|
 | M1 | 真实本地 Qwen tokenizer、完整块摘要，已装入公开字符串 completion 链 | 输入/输出预算和一次分词开销；chat/template、数组/token-id 不在当前支持范围 |
 | M2 | 复用原索引/Directory/Pool；真实 Rust 订阅写入同进程目录，连续性/父链/总配额/失信/实例围栏；Router 重启后安全降级为 unknown 已通过 | 大工作集/并发成本；当前不支持暖目录恢复，需权威快照水位的新 profile 后另行验收 |
-| M3 | 条件准入、发出后保债、真实终态/增量存储/commit→ACK→retire；回复丢失、累计回收、强退恢复与控制失联/过期/同源恢复有限资格通过；持续驱动及 HUST HTTP 运输 CPU 联调通过 | 新宿主构建/实机资格、生产常驻装配/readiness/排空和 Manager；跨主机所有权不在首版范围 |
+| M3 | 条件准入、发出后保债、真实终态/增量存储/commit→ACK→retire；原路径回复丢失、累计回收、强退恢复/控制资格通过；新驱动 HTTP 运输 CPU 与双 NPU 有限接线通过 | 新驱动常驻装配/readiness/排空、故障实机扩展与 Manager；跨主机所有权不在首版范围 |
 | M4 | 基础可信正命中优先/最低在途回退，真实目标和缓存结果符合预期 | 配对开销与强基线；优化策略后置 |
 | M5 | 复用原 Router HTTP/SSE，公开入口、真实转发及生成后取消通过 | 生产启停/排空、并发配置竞争/故障和可发布二进制 |
 | M6 | CPU/源码/原生 CI、可重复装配、手动 NPU 公开链/稳定性及原始报告 | 同底座开销、持续服务、强基线和多阈值容量曲线 |

@@ -1,6 +1,6 @@
 # 常驻终态循环的单来源驱动边界
 
-状态：驱动及固定 HUST HTTP 运输已通过 CPU 联调；有限 probe 新路径显式可选，尚待 NPU 资格与常驻装配，见[运输证据](../../evidence/hust-terminal-transport-2026-10-22.md)。
+状态：驱动及固定 HUST HTTP 运输已通过 CPU 联调和新二进制双 NPU 有限接线；常驻 run/信号装配仍待完成，见[最新实机证据](../../evidence/hust-terminal-driver-npu-2026-10-22.md)。较早 [CPU 记录](../../evidence/hust-terminal-transport-2026-10-22.md)中的宿主缓存不足已在新服务器补验证，不代表其当时已通过。
 
 后续接入合同：使用固定 ced6857/b47795c 可选终态端点的 HTTP 运输。连接前由现有来源控制核验身份，适配器绑定完整 cursor、Frontend/Core PID 和 ownership；仅回环 HTTP、禁代理/重定向，单次 RPC（含响应体）限时，解码前限制字节。poll/ACK 均整批核验 PID、身份、mode、连续序号和完整 family；ACK 成功响应按该固定处理器的先 ACK 后返回语义确认请求水位，允许携带后续记录，后续 poll 才提交这些记录。retire 只允许显式受管模式，并核验相同 binding 和精确水位。失联/5xx 可重试，拒绝游标、身份冲突、格式及资源超限失败关闭。CPU 协议联调不得写成 NPU 核心清理资格。
 

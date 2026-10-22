@@ -1,6 +1,6 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
-2026-10-22 后续：同一 DurableRuntime 的每来源持续驱动候选见[ADR](decisions/2026-10-22-terminal-driver.md)，公开配置/传输 ABI 不变。驱动不保存第二份历史；pending ACK/retire 与 active 债务分开，任务退出失败关闭。固定 HUST HTTP 运输已通过 CPU socket/现有观测状态联调，尚待 NPU 与常驻装配；下面的 component-v0.1 不替代该适配资格。
+2026-10-22 后续：同一 DurableRuntime 的每来源持续驱动候选见[ADR](decisions/2026-10-22-terminal-driver.md)，公开配置/传输 ABI 不变。驱动不保存第二份历史；pending ACK/retire 与 active 债务分开，任务退出失败关闭。固定 HUST HTTP 运输已通过 CPU socket/现有观测状态联调及双 NPU 有限 Driver.step 接线，常驻 run/信号装配仍待验收；下面的 component-v0.1 不替代该适配资格。
 
 2026-10-22：进程内控制准入门的增量边界见[ADR](decisions/2026-10-22-control-admission.md)。新鲜度不写入持久 checkpoint，不清除旧债；具体公开配置/错误与常驻运行接口仍按[生产工作包](planning/production-runtime-and-overhead.md)实施，以下历史端口不能冒充最终配置 schema。
 
