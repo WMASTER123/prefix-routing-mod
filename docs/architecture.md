@@ -31,7 +31,7 @@ M6在请求链外校准、压测、复现；M8以后只发布可关闭、可过�
 | M7宿主/MOD | 固定后端能力、事件/终态、版本差异与合法交付 | 集中profile映射；必要的小型只读包装默认关闭、固定守卫 |
 | M8后台亲和 | 有界历史到版本化软偏好 | 后置；净收益成立才开启，不控制引擎淘汰或迁移 |
 
-在线事件/健康/终态更新必须及时处理，不属于可延迟的M8慢路径。快慢分离是控制成本的结构，不单独宣称创新或性能优势。
+在线事件/健康/终态更新必须及时处理，不属于可延迟的M8慢路径。快慢分离是控制成本的结构，不单独宣称创新或性能优势。终态持续驱动复用唯一 M3，CPU 候选及监督围栏见[ADR](decisions/2026-10-22-terminal-driver.md)；真实运输装配尚未完成，禁止与有限 reconcile 同时消费一个来源。
 
 控制准入门在 M3 快照、预留、发送前分别校验单调新鲜度与发送围栏；M7 只有验证完整来源后才能续期。失联关闭对应副本的新准入，已发负债继续保留；同身份新验证可恢复，身份冲突隔离。M2 失信与该门分开，普通 KV/HTTP health 不续期，见[控制 ADR](decisions/2026-10-22-control-admission.md)。该增量不改变恢复/回收合同；生产常驻接线及 Manager 边界见[具体工作包](planning/production-runtime-and-overhead.md)。
 
@@ -50,7 +50,7 @@ Python包负责规范描述、配置预检、版本适配和可选后端观测�
 
 原生 KV 订阅异步更新 Router 同进程目录，请求直接查本地端口。独立索引进程/stdio 属于早期资格工具。受控空起点支持新版原生三帧；当前重启可按固定来源恢复 M3，M2 保持 unknown，不承诺暖目录或超窗恢复。
 
-原公开 HTTP 入口与 M1/M2/M3 本地绑定已通过真实 HUST 有限链。Rust 持久提交候选提供“许可前提交”和“终态/checkpoint/cursor 同事务”；增量 SQLite 已显式装入私有宿主。真正 retire 回复丢失、520 family/1040 child、Router 强退暂停恢复、旧 cursor 和实例替换均已通过；重启时只恢复 M3/终态来源，M2 因缺少权威快照边界固定降级为 unknown。因此只冻结 `recovery-retirement-v1` 语义合同，见[实现包](planning/durable-runtime-and-retention.md)和[证据](../evidence/recovery-retirement-qualification-2026-10-18.md)。完整快照仍为对照，行布局不是 O(1)；健康过期、Manager 完整启停、生产目录/公开配置和性能仍须验收。example 不直接作为生产 ABI，MOD 仍 import_only。
+原公开 HTTP 入口与 M1/M2/M3 本地绑定已通过真实 HUST 有限链。Rust 持久提交候选提供“许可前提交”和“终态/checkpoint/cursor 同事务”；增量 SQLite 已显式装入私有宿主。真正 retire 回复丢失、520 family/1040 child、Router 强退暂停恢复、旧 cursor 和实例替换均已通过；重启时只恢复 M3/终态来源，M2 因缺少权威快照边界固定降级为 unknown。因此只冻结 `recovery-retirement-v1` 语义合同，见[实现包](planning/durable-runtime-and-retention.md)和[证据](../evidence/recovery-retirement-qualification-2026-10-18.md)。完整快照仍为对照，行布局不是 O(1)；控制过期已有有限资格，但常驻接线、Manager 完整启停、生产目录/公开配置和性能仍须验收。example 不直接作为生产 ABI，MOD 仍 import_only。
 
 ## Ascend与兼容
 

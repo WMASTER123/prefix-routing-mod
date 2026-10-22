@@ -1,5 +1,7 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-22 后续：`terminal_driver.rs` 是同一 DurableRuntime 的每来源持续驱动 CPU 候选，checks 直接编译唯一源码。固定宿主可显式编译该模块，但有限 probe 仍调用原 reconcile；尚未将真实 HUST 运输接入驱动，不能把模块存在当作常驻服务交付。source 由 A 联审，循环/提交由 C 负责，B 联审 HTTP 排空。见[驱动 ADR](../../docs/decisions/2026-10-22-terminal-driver.md)和[验证记录](../../evidence/terminal-driver-2026-10-22.md)。
+
 2026-10-16：`durable_runtime.rs` 在现有 `RuntimeOwner` 外增加候选持久提交边界，`runtime_store.rs` 定义 owner/generation/cursor 契约，`sqlite_runtime_store.rs` 是只在独立 helper crate 锁定的 SQLite WAL/FULL 候选。发送许可在 commit 后返回；终态、checkpoint 和 cursor 同一替换事务；恢复默认暂停。同步 Lease 回调不做磁盘 I/O，阻塞存储调用在有界异步提交任务中执行。该候选尚未复制到固定 Router 宿主或修改其 Cargo；结果与限制见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
 
 2026-10-16：固定原版和三文件 patch 准入后，用 `bash tools/stage_router_runtime.sh --execute <artifacts下已审查的宿主目录>` 统一复制候选模块、原 Directory/Pool、共享 fixture 和 examples，避免漏文件或沿用旧副本。工具核验固定 Cargo 两文件、不改依赖，也不代替宿主 patch 审计。新 `hust_runtime_probe` 的真实公开入口/原生订阅验收见[计划](../../docs/planning/native-public-chain.md)；手动命令和通过范围以 evidence 为准。

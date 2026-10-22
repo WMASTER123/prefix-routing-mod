@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-22 后续：终态持续驱动新增 12 项 CPU 反例，共 80 项 aarch64 helper 测试及严格 Clippy 通过；含 active=0 确认重试、提交前/后故障、监督丢失、确认中停止和 future abort。真实运输仍为替身，完整宿主模块检查不等于已装入常驻服务。新服务器完成的是既有控制门的两卡复验，和新候选分开记账；Windows CPU 590/7 skipped/3 deselected、integration 3 及隔离包构建/干净安装通过。见[候选与实机边界](../evidence/terminal-driver-2026-10-22.md)。`70c56a2` 六项 CI 成功，后续提交需另验；仓库可见性确认期间新增代码不推送公开远端。
+
 2026-10-22：控制门在 aarch64 helper 68 项、原索引/IPC/控制 93 项、固定完整宿主 39 项通过，helper Clippy 未放宽 lint；双 NPU 控制 HTTP 失联、保债、同源恢复、健康过期、注入身份冲突和 drain 拒绝通过。Windows 新 CPU 子集 590/7 skipped/3 deselected；旧退役 fixture 修复请求体未读导致的间歇连接中断，完整子集连续三轮通过。具体制品、失败留痕和边界见[本轮证据](../evidence/control-admission-2026-10-22.md)。下方 10-18 的 CI 待完成属于当时记录，`49b3aea` 的六项 CI 已于本轮重新核对全部通过；新增代码 CI 不继承旧结果。
 
 2026-10-18 恢复/回收更新：本轮修改后 Python CPU 588 passed/7 skipped/3 deselected、integration 3 passed，Ruff 与格式通过；响应丢失代理在 Windows 连续重复 8 次通过。固定 aarch64 宿主最终 example 38 项、独立 checks 58 项通过；删除的 1 项曾假定原生 END 能证明暖 M2 回放完整，审查后改为重启时 unknown。限定排除原 Router 四项既存 lint 和组合 dead-code/type-complexity 后，本轮 `clippy -D warnings` 通过。双 910B2 已完成真正 retire 回复丢失、520 family/1040 child、Router 强退暂停恢复、旧 cursor 和实际实例替换；详见[资格记录](../evidence/recovery-retirement-qualification-2026-10-18.md)。这些仍不代替图模式、Manager 生命周期、长时间稳定性或性能；当前新 head 的 GitHub CI 尚待完成。

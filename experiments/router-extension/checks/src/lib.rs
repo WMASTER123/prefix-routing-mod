@@ -22,8 +22,12 @@ pub mod runtime_store;
 pub mod sqlite_row_runtime_store;
 #[path = "../../sqlite_runtime_store.rs"]
 pub mod sqlite_runtime_store;
+#[path = "../../terminal_driver.rs"]
+pub mod terminal_driver;
 
 #[cfg(test)]
 mod control_tests;
+#[cfg(test)]
+mod terminal_driver_tests;
 #[cfg(test)]
 mod tests;

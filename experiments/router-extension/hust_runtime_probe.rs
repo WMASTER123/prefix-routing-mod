@@ -62,6 +62,9 @@ mod sqlite_row_runtime_store;
 #[cfg(feature = "durable-candidate")]
 #[path = "../src/routers/http/sqlite_runtime_store.rs"]
 mod sqlite_runtime_store;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/terminal_driver.rs"]
+pub mod terminal_driver;
 
 use directory::{Binding, Limits};
 use hust_source_control::{HealthFault, HustSourceControl, SourceBinding, SourceIdentity};
