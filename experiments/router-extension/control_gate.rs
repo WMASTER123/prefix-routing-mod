@@ -79,6 +79,11 @@ pub struct WorkerGate {
     state: Mutex<State>,
 }
 impl WorkerGate {
+    /// Startup binding check; does not renew freshness or grant a send fence.
+    pub fn matches_source(&self, source: &SourceKey) -> bool {
+        &self.expected == source
+    }
+
     pub fn new(
         expected: SourceKey,
         clock: Arc<dyn Clock>,

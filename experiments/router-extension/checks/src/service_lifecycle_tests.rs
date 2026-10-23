@@ -9,10 +9,14 @@ use http_body::Body as _;
 use std::{collections::BTreeMap, pin::Pin};
 
 fn install_controls(f: &Fixture) -> Arc<ControlSet> {
+    install_controls_for(f, "observer-a", "exclusive_router_v1")
+}
+
+fn install_controls_for(f: &Fixture, observer: &str, ownership: &str) -> Arc<ControlSet> {
     let identity = SourceKey {
         instance: "instance-a".into(),
-        observer: "observer-a".into(),
-        ownership: "exclusive_router_v1".into(),
+        observer: observer.into(),
+        ownership: ownership.into(),
     };
     let gate = Arc::new(
         WorkerGate::new(
@@ -379,6 +383,39 @@ async fn body_preserves_trailers_and_releases_on_error_or_eof() {
 }
 
 use futures_util::StreamExt;
+
+#[tokio::test]
+async fn service_rejects_cross_bound_observer_and_ownership_before_any_rpc() {
+    for (observer, mode, ownership) in [
+        (
+            "other-observer",
+            "exclusive_router_v1",
+            Ownership::ExclusiveRouterV1,
+        ),
+        ("observer-a", "observe_only", Ownership::ExclusiveRouterV1),
+        ("observer-a", "exclusive_router_v1", Ownership::ObserveOnly),
+    ] {
+        let f = fixture();
+        let controls = install_controls_for(&f, observer, mode);
+        let transport = Transport::new(f.store.clone(), vec![]);
+        let calls = transport.calls.clone();
+        let driver =
+            TerminalDriver::new(f.runtime.clone(), transport, cursor(0), ownership).unwrap();
+        assert!(matches!(
+            ServiceSupervisor::start(
+                f.runtime.clone(),
+                controls,
+                vec![driver],
+                Duration::from_millis(10),
+                Duration::from_secs(5),
+                4
+            ),
+            Err("service_source_or_config_invalid")
+        ));
+        assert!(calls.lock().unwrap().values.is_empty());
+        assert!(f.runtime.owner().is_failed());
+    }
+}
 
 #[tokio::test]
 async fn service_timeout_does_not_abort_a_committed_pending_confirmation() {

@@ -25,7 +25,7 @@
 
 ## 组件状态
 
-2026-10-23 服务生命周期增量：已实现整体 readiness、HTTP handler/响应体在途计数、统一期限排空、stop-all/join 与监听关闭；Linux x86_64 helper 107/严格 Clippy、固定 Manager 的真实信号/超时/强退与暂停保债恢复四项通过。这属于 CPU 服务壳资格；尚未装配进真实 HUST 常驻入口，控制/KV 线程统一关闭、公开配置及 Manager 激活未完成，见[新记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。下段后台双卡成绩仅对应原路径。
+2026-10-23 服务生命周期增量：已实现整体 readiness、HTTP handler/响应体在途计数、统一期限排空、stop-all/join 与监听关闭；Linux x86_64 helper 108/严格 Clippy、固定 Manager 的真实信号/超时/强退与暂停保债恢复四项通过。审查补齐 observer/ownership 的跨来源一致性校验。这属于 CPU 服务壳资格；尚未装配进真实 HUST 常驻入口，控制/KV 线程统一关闭、公开配置及 Manager 激活未完成，见[新记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。下段后台双卡成绩仅对应原路径。
 
 2026-10-23 后台任务增量：每来源唯一 TerminalTask 已在同一真实公开链中运行原 run 循环，HTTP 侧不再触发 step。最终 aarch64 helper 95/严格 Clippy、HTTP 16 场景、完整宿主 39 项通过；两张 NPU 的实际 A/A/B、0/384/384 命中、关闭准入返回 503、核心取消、4 family 及两个任务 join 均通过。自审修正重试沿用旧就绪依据，补任务丢失/取消 join/panic/待确认反例；Windows CPU 606、integration 3 通过。完整服务 readiness、HTTP 工作计数、SIGTERM/期限排空与 Manager 仍未实现。输入代码 `75da63d` 六项 CI 成功，制品和报告见[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)。
 
@@ -33,7 +33,7 @@
 |---|---|---|
 | M1 | 真实本地 Qwen tokenizer、完整块摘要，已装入公开字符串 completion 链 | 输入/输出预算和一次分词开销；chat/template、数组/token-id 不在当前支持范围 |
 | M2 | 复用原索引/Directory/Pool；真实 Rust 订阅写入同进程目录，连续性/父链/总配额/失信/实例围栏；Router 重启后安全降级为 unknown 已通过 | 大工作集/并发成本；当前不支持暖目录恢复，需权威快照水位的新 profile 后另行验收 |
-| M3 | 条件准入、发出后保债、真实终态/增量存储/commit→ACK→retire；原路径回复丢失、累计回收、强退恢复/控制资格通过；新驱动的后台任务、确认与 join 已在双 NPU 有限请求链通过 | 整体服务 readiness、HTTP/信号/期限排空、后台路径故障实机扩展与 Manager；跨主机所有权不在首版范围 |
+| M3 | 条件准入、保债、持久终态与回收；后台任务已过双 NPU 有限资格；服务 readiness、HTTP 计数/期限排空与 Manager 信号已过 CPU 资格 | 将服务壳装入真实 HUST 入口，统一控制/KV 线程收尾、生产启动恢复和 Manager 激活；跨主机所有权不在首版范围 |
 | M4 | 基础可信正命中优先/最低在途回退，真实目标和缓存结果符合预期 | 配对开销与强基线；优化策略后置 |
 | M5 | 复用原 Router HTTP/SSE，公开入口、真实转发及生成后取消通过 | 生产启停/排空、并发配置竞争/故障和可发布二进制 |
 | M6 | CPU/源码/原生 CI、可重复装配、手动 NPU 公开链/稳定性及原始报告 | 同底座开销、持续服务、强基线和多阈值容量曲线 |

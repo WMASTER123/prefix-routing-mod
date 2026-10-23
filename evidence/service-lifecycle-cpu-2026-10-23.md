@@ -8,14 +8,14 @@
 
 HTTP 在途覆盖 handler、上传及响应体直到 EOF/error/drop；保留 trailer、size hint 和帧，不产生后端 ENDED。HTTP 有独立上限，readiness 探针不计入。第一次停止固定统一期限；关闭新准入，等待 HTTP、真实负债和终态确认，stop-all/join 后进入 quiesced，监听退出才进入 stopped。超时或异常关闭 owner，保留持久状态；不取消持久提交来伪造成功。
 
-自审补充了重复 service 拒绝、恢复未授权拒绝启动、控制失联/新验证/排空不可逆、pending 确认未完成不得成功退出，以及 poisoned lock 失败路径不重复加锁。Manager 使用固定 `extension-manager@00d1b940` 原 process_supervisor，无新 daemon；Manager SIGTERM 退出码 143 与 Router 的实际排空结果分别判定。
+自审补充了重复 service 拒绝、恢复未授权拒绝启动、控制失联/新验证/排空不可逆、pending 确认未完成不得成功退出，以及 poisoned lock 失败路径不重复加锁。收尾发现仅核对 worker/instance 不足，已补控制门和终态驱动的 observer/ownership 交叉绑定；三个反例均在 RPC 前拒绝。Manager 使用固定 `extension-manager@00d1b940` 原 process_supervisor，无新 daemon；Manager SIGTERM 退出码 143 与 Router 的实际排空结果分别判定。
 
 ## 验证
 
-- Linux x86_64 helper **107 项通过**，新增 12 项服务测试；严格 Clippy 通过。含真实 loopback 流式 HTTP、响应 trailer/error/EOF/drop、容量、超时保债、取消监督、来源校验与任务 panic。
+- Linux x86_64 helper **108 项通过**，新增 13 项服务测试；严格 Clippy 通过。含真实 loopback 流式 HTTP、响应 trailer/error/EOF/drop、容量、超时保债、取消监督、来源校验与任务 panic。
 - `tools.probe_service_manager` 的四个真实 Linux 子进程场景通过：正常排空、Router 排空期限、第二信号强退、Manager grace 到达。后三项重开同一 SQLite 后 active=1、paused=true、cursor=0；正常退出后 active=0、paused=true。验证 Manager 已回收子进程，不仅检查日志。后端明确是 CPU 替身。
-- Python CPU **606 passed / 7 skipped / 3 deselected**、integration **3 passed**；Ruff 检查/格式通过。Manager 场景加入 helper CI，最终提交 CI 需独立核验。
-- 本地完整 Router 构建缺少离线缓存 anyhow，不是 OpenSSL/HUST 版本冲突；本轮 aarch64 完整构建待补。
+- Python CPU **608 passed / 7 skipped / 3 deselected**、integration **3 passed**；Ruff 检查/格式、wheel 构建/干净安装验证通过。新增日志半行和损坏行两个反例。实现提交 `30de3d9` 六项 CI 均成功，包含新增 Manager 场景；[helper CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/39928596767)、[CPU/source CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/39928596817)。后续文档提交按其自身 HEAD 核验。
+- 本地完整 Router 构建缺少离线缓存 anyhow，不是 OpenSSL/HUST 版本冲突。服务器初版 `30de3d9` 已过 aarch64 helper 107/严格 Clippy、HTTP 16、Manager 四场景、完整固定宿主 39 项和 release 构建；observer/ownership 审查修复后还需按新输入复验。没有修改全局环境：Manager 使用原项目 `.venv`，不向缺少 Manager 的推理 venv 临时加包。
 
 测试 crate 新增 HTTP server/signal 特性和 `http-body=1.1.0` 直接引用。锁文件只增加原宿主已使用的 httpdate 1.0.3、errno 0.3.14、signal-hook-registry 1.4.8，不升级现有依赖；临时下载核对 crates.io checksum，仅写项目缓存。宿主候选直接引用同一 http-body，仍在 durable-candidate 关闭开关内。
 

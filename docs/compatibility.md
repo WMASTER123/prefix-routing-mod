@@ -1,5 +1,7 @@
 # 支持与候选矩阵
 
+2026-10-23 后续：service readiness/HTTP/期限与固定 Manager 的 CPU 资格见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。不扩大 HUST、Ascend、图、模型支持范围，不替代真实常驻启停验证，MOD 保持 import_only。
+
 2026-10-23：新增后台 TerminalTask 资格模式，具体 CPU、完整宿主和 NPU 状态见[本轮记录](../evidence/background-terminal-tasks-2026-10-23.md)。固定 Core ced6857 / Ascend b47795c 的模型、dtype、eager/TP1 范围不变；这不是跨版本兼容扩展。整体服务/Manager、目标图与性能仍未验收。
 
 2026-10-22 增量：同一固定 HUST 组合下，新终态驱动 HTTP 运输已完成 aarch64 完整宿主构建/39 项及双 NPU 有限 step 接线，见[最新资格](../evidence/hust-terminal-driver-npu-2026-10-22.md)。未扩展模型、dtype、图、并行或版本支持范围；常驻 run/Manager、长时间全链与容量仍未通过。诊断使用显式 profile，注册的 Triton 后端和唯一 active Ascend 分开报告；全量 profiling 工具依赖问题仍保留。

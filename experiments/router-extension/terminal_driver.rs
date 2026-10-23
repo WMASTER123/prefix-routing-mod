@@ -229,6 +229,10 @@ pub struct TerminalDriver<T> {
 }
 
 impl<T: TerminalTransport> TerminalDriver<T> {
+    pub fn ownership(&self) -> Ownership {
+        self.ownership
+    }
+
     pub fn uses_runtime(&self, runtime: &Arc<DurableRuntime>) -> bool {
         Arc::ptr_eq(&self.runtime, runtime)
     }

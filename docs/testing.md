@@ -1,6 +1,6 @@
 # 测试与 CI
 
-2026-10-23 后续：service helper 107 项、严格 Clippy、固定 Manager CPU 子进程四场景通过；Python CPU 606/integration 3。新增 `tools.probe_service_manager` 纳入 helper CI；固定 Manager commit、仅 Linux、真实信号及 SQLite 重开，不触发 NPU。范围见[证据](../evidence/service-lifecycle-cpu-2026-10-23.md)。
+2026-10-23 后续：service helper 108 项、严格 Clippy、固定 Manager CPU 子进程四场景通过；Python CPU 608/integration 3，wheel 构建和干净安装验证通过。新增 `tools.probe_service_manager` 纳入 helper CI；固定 Manager commit、仅 Linux、真实信号及 SQLite 重开，不触发 NPU。不同宿主/提交的准确范围见[证据](../evidence/service-lifecycle-cpu-2026-10-23.md)。
 
 2026-10-23：同一 helper 新增后台监督及就绪/停止反例，Linux x86_64 95 项、严格 Clippy 通过；原 HTTP 协议工具同时运行 step/run 各八项，CI 继续调用同一个入口。Windows CPU 606/7 skipped/3 deselected、integration 3 通过。完整宿主/两卡结果单独记录在[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)，不继承前一提交的 CI 或旧路径 NPU 成绩。
 

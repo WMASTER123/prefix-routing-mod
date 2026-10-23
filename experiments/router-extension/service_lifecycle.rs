@@ -2,9 +2,9 @@
 //! One service boundary around the existing HTTP host, ledger and terminal tasks.
 use super::{
     durable_runtime::DurableRuntime,
-    runtime_owner::control_gate::ControlSet,
+    runtime_owner::control_gate::{ControlSet, SourceKey},
     terminal_driver::{
-        StopReason, TerminalDriver, TerminalMonitor, TerminalTask, TerminalTransport,
+        Ownership, StopReason, TerminalDriver, TerminalMonitor, TerminalTask, TerminalTransport,
     },
 };
 use axum::{
@@ -243,7 +243,20 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
                 !driver.uses_runtime(&runtime)
                     || !expected.contains(driver.cursor())
                     || !seen.insert(driver.cursor().source_id.clone())
-                    || !controls.0.contains_key(&driver.cursor().worker_url)
+                    || controls
+                        .0
+                        .get(&driver.cursor().worker_url)
+                        .is_none_or(|gate| {
+                            !gate.matches_source(&SourceKey {
+                                instance: driver.cursor().instance_epoch.clone(),
+                                observer: driver.cursor().observer_epoch.clone(),
+                                ownership: match driver.ownership() {
+                                    Ownership::ObserveOnly => "observe_only",
+                                    Ownership::ExclusiveRouterV1 => "exclusive_router_v1",
+                                }
+                                .into(),
+                            })
+                        })
                     || !workers.iter().any(|worker| {
                         worker.worker_url == driver.cursor().worker_url
                             && worker.instance_epoch == driver.cursor().instance_epoch

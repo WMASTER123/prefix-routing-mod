@@ -1,5 +1,7 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-23 服务增量：共享 `service_lifecycle.rs` 已实现 readiness、HTTP body guard、有界 drain/join 和原 Axum 监听收尾；`checks/examples/service_lifecycle_probe.rs` 只作 CPU 信号资格。固定宿主包含同一源码以验证编译，原有限 NPU 模式尚未切换到新服务装配。复现和范围见[记录](../../evidence/service-lifecycle-cpu-2026-10-23.md)。
+
 2026-10-23：`TerminalTask` 在同一 `terminal_driver.rs` 监督后台 run；`background_terminal_driver` 是独立显式资格模式，不能同时调用旧 reconcile。新增有界进度/启动确认、失联撤销就绪、丢监督失败关闭、停止 join 及提交后诊断。CPU 的 step/run 各八项 HTTP 场景由现有 CI 运行；完整宿主/NPU 状态见[本轮记录](../../evidence/background-terminal-tasks-2026-10-23.md)。公开 service、信号排空和 Manager 尚未交付，用户当前不安排人员分工。
 
 2026-10-22 后续：`terminal_driver.rs` 与 `hust_terminal_transport.rs` 由 checks/固定宿主包含唯一源码。CPU HTTP 联调、完整宿主和双 NPU 有限接线均通过；有限 probe 的 `use_terminal_driver` 显式替换旧 reconcile，仍不是常驻 run。source 由 A 联审，循环/提交由 C 负责，B 联审 HTTP 排空。见[驱动 ADR](../../docs/decisions/2026-10-22-terminal-driver.md)和[最新实机记录](../../evidence/hust-terminal-driver-npu-2026-10-22.md)。
