@@ -25,6 +25,8 @@
 
 ## 组件状态
 
+2026-10-23 服务生命周期增量：已实现整体 readiness、HTTP handler/响应体在途计数、统一期限排空、stop-all/join 与监听关闭；Linux x86_64 helper 107/严格 Clippy、固定 Manager 的真实信号/超时/强退与暂停保债恢复四项通过。这属于 CPU 服务壳资格；尚未装配进真实 HUST 常驻入口，控制/KV 线程统一关闭、公开配置及 Manager 激活未完成，见[新记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。下段后台双卡成绩仅对应原路径。
+
 2026-10-23 后台任务增量：每来源唯一 TerminalTask 已在同一真实公开链中运行原 run 循环，HTTP 侧不再触发 step。最终 aarch64 helper 95/严格 Clippy、HTTP 16 场景、完整宿主 39 项通过；两张 NPU 的实际 A/A/B、0/384/384 命中、关闭准入返回 503、核心取消、4 family 及两个任务 join 均通过。自审修正重试沿用旧就绪依据，补任务丢失/取消 join/panic/待确认反例；Windows CPU 606、integration 3 通过。完整服务 readiness、HTTP 工作计数、SIGTERM/期限排空与 Manager 仍未实现。输入代码 `75da63d` 六项 CI 成功，制品和报告见[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)。
 
 | 组件 | 已实际完成 | 冻结/交付前剩余 |
@@ -44,7 +46,7 @@
 
 ## 接下来集中完成什么
 
-1. 保留已通过的控制门与后台终态任务资格，集中完成整体 service readiness、HTTP 工作计数、SIGTERM/期限排空、生产启动恢复与 Manager，再统一唯一源码目录和制品。具体边界见[生产工作包](planning/production-runtime-and-overhead.md)，不得改动保债、来源绑定或 commit→ACK→retire 顺序。
+1. 将已通过 CPU 验证的 service readiness、HTTP 工作计数和期限排空装入固定 Router/HUST 链；补控制/KV 线程关闭、生产启动恢复与 Manager 用户入口，再统一唯一源码目录和制品。具体边界见[生产工作包](planning/production-runtime-and-overhead.md)，不得改动保债、来源绑定或 commit→ACK→retire 顺序。
 2. 开展有界直连/原 Router/同底座仅加接线开销对照，明确启用的观测与持久性；随后做双副本强基线、多阈值容量曲线和输入/输出长度分组。
 3. 暂停人员分工讨论；保留[工作包](planning/component-work-packages.md)中的组件所有权，统一收敛生产目录、公开配置/错误码、Manager 和测试替身。恢复/回收语义已经冻结，不等于全部生产接口冻结。
 

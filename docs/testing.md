@@ -1,5 +1,7 @@
 # 测试与 CI
 
+2026-10-23 后续：service helper 107 项、严格 Clippy、固定 Manager CPU 子进程四场景通过；Python CPU 606/integration 3。新增 `tools.probe_service_manager` 纳入 helper CI；固定 Manager commit、仅 Linux、真实信号及 SQLite 重开，不触发 NPU。范围见[证据](../evidence/service-lifecycle-cpu-2026-10-23.md)。
+
 2026-10-23：同一 helper 新增后台监督及就绪/停止反例，Linux x86_64 95 项、严格 Clippy 通过；原 HTTP 协议工具同时运行 step/run 各八项，CI 继续调用同一个入口。Windows CPU 606/7 skipped/3 deselected、integration 3 通过。完整宿主/两卡结果单独记录在[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)，不继承前一提交的 CI 或旧路径 NPU 成绩。
 
 2026-10-22 最新：新服务器 aarch64 helper 86 项/严格 Clippy、HTTP 协议八场景、完整宿主 39 项及实际 release 构建通过；新驱动的双 NPU 有限请求/取消/4 family 回收通过，见[实机记录](../evidence/hust-terminal-driver-npu-2026-10-22.md)。诊断工具新增 9 项，Windows CPU 605/7 skipped/3 deselected、integration 3 通过。常驻 run/信号/Manager 与性能仍待完成；本轮未重跑新路径的真实故障注入。`7110d16` 与 HTTP 实现 `4b867d9` 各自六项 CI 成功，完整宿主和 NPU 属于另行手动资格。仓库按用户确认保持公开。

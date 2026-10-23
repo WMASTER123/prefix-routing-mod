@@ -1,5 +1,7 @@
 # 决策索引
 
+- [2026-10-23：整体就绪、HTTP 工作与有界排空](2026-10-23-service-lifecycle.md)；复用固定 Manager，CPU 资格不提升生产状态。
+
 - [2026-10-23：后台终态任务监督、就绪和停止](2026-10-23-terminal-task-supervision.md)；唯一来源消费者、有界进度、失联撤销就绪与 join，完整服务生命周期单独验收。
 
 - [2026-10-17：增量 SQLite 候选与真实持久接线](2026-10-17-incremental-runtime-store.md)；最小依赖、变化行写入、同事务游标和有限 commit→ACK 资格，不冻结生产恢复。

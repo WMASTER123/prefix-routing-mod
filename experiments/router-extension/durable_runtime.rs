@@ -43,6 +43,7 @@ pub struct DurableRuntime {
     commit_gate: tokio::sync::Mutex<()>,
     commit_slots: Arc<tokio::sync::Semaphore>,
     admission_ready: AtomicBool,
+    service_claimed: AtomicBool,
 }
 
 /// A durable transition mutates the in-memory owner before an awaited store
@@ -120,6 +121,7 @@ impl DurableRuntime {
             commit_gate: tokio::sync::Mutex::new(()),
             commit_slots: Arc::new(tokio::sync::Semaphore::new(MAX_COMMIT_WAITERS)),
             admission_ready: AtomicBool::new(true),
+            service_claimed: AtomicBool::new(false),
         })
     }
 
@@ -157,6 +159,7 @@ impl DurableRuntime {
             commit_gate: tokio::sync::Mutex::new(()),
             commit_slots: Arc::new(tokio::sync::Semaphore::new(MAX_COMMIT_WAITERS)),
             admission_ready: AtomicBool::new(false),
+            service_claimed: AtomicBool::new(false),
         })
     }
 
@@ -166,6 +169,27 @@ impl DurableRuntime {
 
     pub fn admission_ready(&self) -> bool {
         self.admission_ready.load(Ordering::Acquire) && !self.owner.is_failed()
+    }
+
+    /// A stopped service retires this runtime; consumers cannot be respawned
+    /// under the same owner. This process-local claim is not recovery evidence.
+    pub fn claim_service(&self) -> Result<(), &'static str> {
+        self.service_claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| ())
+            .map_err(|_| "service_already_claimed")
+    }
+
+    /// Bounded source inventory; the stored cursors remain the recovery authority.
+    pub fn terminal_cursors(&self) -> Result<Vec<TerminalCursor>, &'static str> {
+        Ok(self
+            .meta
+            .lock()
+            .map_err(|_| "durable_meta_poisoned")?
+            .cursors
+            .values()
+            .cloned()
+            .collect())
     }
 
     fn snapshot(

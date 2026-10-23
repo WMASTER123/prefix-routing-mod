@@ -1,5 +1,7 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-23 后续：服务候选及 HTTP/后端负债分离、来源覆盖、暂停恢复和期限语义见[ADR](decisions/2026-10-23-service-lifecycle.md)。CPU Manager 信号验证不等于 MOD 激活，不冻结公开配置和生产错误映射。
+
 2026-10-23：后台监督候选见[ADR](decisions/2026-10-23-terminal-task-supervision.md)。进度快照是有界观测，不是第二份恢复 cursor；首次成功、失联后重新成功与停止 join 有明确语义。CPU/实机状态见[记录](../evidence/background-terminal-tasks-2026-10-23.md)。整个服务 readiness、公开 schema、信号和 Manager 尚未冻结；下方带日期段落按其当时范围解释。
 
 2026-10-22 后续：同一 DurableRuntime 的每来源持续驱动候选见[ADR](decisions/2026-10-22-terminal-driver.md)，公开配置/传输 ABI 不变。驱动不保存第二份历史；pending ACK/retire 与 active 债务分开，任务退出失败关闭。固定 HUST HTTP 运输已通过 CPU socket/现有观测状态联调及双 NPU 有限 Driver.step 接线，常驻 run/信号装配仍待验收；下面的 component-v0.1 不替代该适配资格。

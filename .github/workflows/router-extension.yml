@@ -7,6 +7,7 @@ on:
       - tools/stage_router_runtime.sh
       - tools/stage_durable_router_probe.sh
       - tools/probe_hust_terminal_driver.py
+      - tools/probe_service_manager.py
       - src/prefix_routing_mod/terminal_transport.py
       - src/prefix_routing_mod/terminal_journal.py
       - src/prefix_routing_mod/hust_terminal.py
@@ -50,3 +51,9 @@ jobs:
         run: |
           cargo +1.99.0 build --locked --manifest-path experiments/router-extension/checks/Cargo.toml --example hust_terminal_driver_probe
           python -m tools.probe_hust_terminal_driver --binary experiments/router-extension/checks/target/debug/examples/hust_terminal_driver_probe
+      - name: Service signals, Manager escalation and paused recovery (CPU substitute)
+        run: |
+          python -m pip install uv==0.11.19
+          uv sync --frozen --extra test
+          cargo +1.99.0 build --locked --manifest-path experiments/router-extension/checks/Cargo.toml --example service_lifecycle_probe
+          uv run --frozen python -m tools.probe_service_manager --binary experiments/router-extension/checks/target/debug/examples/service_lifecycle_probe

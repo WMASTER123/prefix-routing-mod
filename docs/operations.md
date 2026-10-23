@@ -1,5 +1,7 @@
 # 新实验服务器操作基线
 
+2026-10-23 service 增量：CPU 资格入口和边界见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。Router drain 使用显式预算，Manager grace 必须另加清理余量；Manager 收到 SIGTERM 返回 143，需结合 Router 0/75/70 和保债状态判定。尚无可启用的生产 Manager 配方，不把实验 CLI 当交付启动方式。
+
 2026-10-23 后台资格入口：在已验证的 `tools.hust_runtime_chain --execute ... --durable-store --managed-terminal-retirement --use-terminal-driver` 上显式增加 `--background-terminal-driver`，使用全新输出目录。它运行每来源唯一后台任务，HTTP 侧只等待进度；仅接受独立资格模式，拒绝与未验证的恢复/churn/控制故障组合。具体制品、实测状态和边界见[本轮记录](../evidence/background-terminal-tasks-2026-10-23.md)。它仍是有限实验，不是正式 Manager 启动命令。
 
 2026-10-22 诊断入口：当前 ced6857/b47795c 候选的发行名来自 `hust-cedb477-native-v1` 映射，其中 Ascend 名为 `vllm-ascend`；旧归档的 `vllm-ascend-hust` 不可写死到新候选诊断。使用 `tools/inspect_runtime.py --execute --profile hust-cedb477-native-v1 --output <新私有报告>`，先验证固定版本和接口指纹再显式导入。报告保留注册后端目录，同时按已安装 Triton 的 `driver.is_active()` 检查唯一 Ascend 可激活后端；目录含 AMD/NVIDIA 不等于实际使用这些后端。该报告仍不替代完整依赖审计、设备计算或容量验收。旧模式省略 profile 只保留旧归档库存查询，不能作为当前候选配方。

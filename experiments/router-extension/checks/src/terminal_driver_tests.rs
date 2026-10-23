@@ -22,6 +22,9 @@ use std::{
     time::Duration,
 };
 
+#[path = "service_lifecycle_tests.rs"]
+mod service_tests;
+
 #[derive(Debug)]
 struct EmptyCache;
 impl CachePort for EmptyCache {

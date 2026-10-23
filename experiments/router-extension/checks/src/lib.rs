@@ -20,6 +20,8 @@ pub mod runtime_owner;
 pub mod runtime_provider;
 #[path = "../../runtime_store.rs"]
 pub mod runtime_store;
+#[path = "../../service_lifecycle.rs"]
+pub mod service_lifecycle;
 #[path = "../../sqlite_row_runtime_store.rs"]
 pub mod sqlite_row_runtime_store;
 #[path = "../../sqlite_runtime_store.rs"]

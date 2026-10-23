@@ -68,6 +68,11 @@ mod sqlite_runtime_store;
 #[cfg(feature = "durable-candidate")]
 #[path = "../src/routers/http/terminal_driver.rs"]
 pub mod terminal_driver;
+// Compile the shared service boundary in the fixed host. Existing finite modes
+// remain unchanged until the service composition receives separate qualification.
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/service_lifecycle.rs"]
+pub mod service_lifecycle;
 
 use directory::{Binding, Limits};
 use hust_source_control::{HealthFault, HustSourceControl, SourceBinding, SourceIdentity};

@@ -1,5 +1,7 @@
 # 架构基线
 
+2026-10-23 后续：新增同进程 service lifecycle，组合现有 HTTP、控制门、持久账本和终态任务。HTTP 在途、后端负债及待确认独立判断，单一期限排空；CPU/Manager 信号资格见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。真实 HUST 常驻装配及统一线程收尾待完成，下方旧日期状态保留历史范围。
+
 2026-10-23：同一终态驱动已增加每来源唯一 TerminalTask、有界进度与停止 join；显式后台资格路径和实测状态见[新记录](../evidence/background-terminal-tasks-2026-10-23.md)。下面 10-22 的有限 step 状态保留原时间范围。整体服务 readiness、HTTP 工作计数、信号排空与 Manager 仍待装配，不能由后台任务资格直接提升产品状态。
 
 更新：2026-10-22。组件完成情况以[progress](progress.md)为准；[历史架构增量](architecture-history.md)保留各次实验边界。真实公开 HTTP、M1、Rust M7→原 M2、M3/M4/M5 与 HUST 终态已完成有限组合；恢复/回收正确性合同 `recovery-retirement-v1` 已冻结，生产目录/Manager/性能仍待验收。三人代码所有权和未决边界见[接手指南](项目接手指南_2026-10-17.md)。详细功能需求仍在[总体规划](planning/前缀路由综合套件_总体架构与组件规划.md)。

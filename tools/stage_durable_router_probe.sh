@@ -24,7 +24,7 @@ GIT_CEILING_DIRECTORIES=$(dirname "$task_host") git -c core.autocrlf=true -C "$t
 # Cargo writes lockfiles with LF; keep the generated candidate reproducible
 # even when the reviewed source archive contains CRLF text.
 sed -i 's/\r$//' "$task_host/Cargo.lock"
-for task_module in durable_runtime runtime_store sqlite_runtime_store sqlite_row_runtime_store terminal_driver hust_terminal_transport; do
+for task_module in durable_runtime runtime_store sqlite_runtime_store sqlite_row_runtime_store terminal_driver hust_terminal_transport service_lifecycle; do
   task_target="$task_host/src/routers/http/$task_module.rs"
   test ! -L "$task_target"
   case "$(realpath -m -- "$task_target")" in

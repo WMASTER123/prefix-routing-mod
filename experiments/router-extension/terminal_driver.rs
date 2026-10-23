@@ -121,6 +121,25 @@ pub struct TerminalTask<T: TerminalTransport + 'static> {
 
 pub type DriverExit<T> = (Result<StopReason, PumpError>, TerminalDriver<T>);
 
+/// Read-only, bounded view. Cloning this never creates another consumer.
+#[derive(Clone)]
+pub struct TerminalMonitor {
+    runtime: Arc<DurableRuntime>,
+    progress: tokio::sync::watch::Receiver<DriverProgress>,
+    stop: tokio::sync::watch::Receiver<bool>,
+}
+impl TerminalMonitor {
+    pub fn progress(&self) -> DriverProgress {
+        let mut value = self.progress.borrow().clone();
+        if self.runtime.owner().is_failed() || self.progress.has_changed().is_err() {
+            value.phase = DriverPhase::Failed;
+        } else if *self.stop.borrow() {
+            value.phase = DriverPhase::Stopped;
+        }
+        value
+    }
+}
+
 impl<T: TerminalTransport + 'static> TerminalTask<T> {
     /// The caller verifies one task per source and all source bindings before
     /// admitting HTTP work. This is not an engine or process supervisor.
@@ -155,6 +174,14 @@ impl<T: TerminalTransport + 'static> TerminalTask<T> {
             progress.phase = DriverPhase::Stopped;
         }
         progress
+    }
+
+    pub fn monitor(&self) -> TerminalMonitor {
+        TerminalMonitor {
+            runtime: self.runtime.clone(),
+            progress: self.progress.clone(),
+            stop: self.stop.subscribe(),
+        }
     }
 
     pub fn request_stop(&self) {
@@ -202,6 +229,9 @@ pub struct TerminalDriver<T> {
 }
 
 impl<T: TerminalTransport> TerminalDriver<T> {
+    pub fn uses_runtime(&self, runtime: &Arc<DurableRuntime>) -> bool {
+        Arc::ptr_eq(&self.runtime, runtime)
+    }
     /// Construct only after source verification. A fresh source must already
     /// have its zero cursor persisted. Ownership handoff must precede new
     /// settlement; replaying an already committed ACK does not resume admission.

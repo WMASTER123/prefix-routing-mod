@@ -296,6 +296,13 @@ impl RuntimeOwner {
         })
     }
 
+    pub fn uses_controls(&self, controls: &Arc<control_gate::ControlSet>) -> bool {
+        self.shared
+            .controls
+            .get()
+            .is_some_and(|installed| Arc::ptr_eq(installed, controls))
+    }
+
     /// Install exactly once, before exposing this owner to the HTTP host.
     /// Recovered uncertain debt is allowed; live reservations are not.
     pub fn install_controls(

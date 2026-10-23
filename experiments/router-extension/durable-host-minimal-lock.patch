@@ -52,7 +52,15 @@ diff --git a/Cargo.lock b/Cargo.lock
  name = "rustc-hash"
  version = "1.1.0"
  source = "registry+https://github.com/rust-lang/crates.io-index"
-@@ -7447,6 +7477,7 @@
+@@ -7423,6 +7453,7 @@
+  "futures-util",
+  "hf-hub 0.4.3",
+  "http",
++ "http-body",
+  "http-body-util",
+  "k8s-openapi",
+  "kube",
+@@ -7447,6 +7478,7 @@
   "regex",
   "reqwest 0.13.5",
   "rmp-serde",
