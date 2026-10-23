@@ -4,6 +4,8 @@
 
 复用原 Router HTTP/SSE、唯一 DurableRuntime 和 TerminalTask，不创建代理或第二账本。外层 Axum middleware 在 handler 前登记 HTTP 工作，持有到响应体结束、错误或丢弃；上传、排队和流式响应都计入。该计数不是后端负债，不执行结算。正文帧、trailer、状态和头部保持原语义。
 
+进程内 service claim 阻止同一 runtime 重复构造服务监督器，不是全局消费者注册表；装配必须继续禁止旧 finite reconcile 与新 service 同源并行。当前请求入口使用短锁和有界来源扫描，不做网络/设备查询；其 Host 开销仍需配对测量，不能把正确性通过当作性能通过。
+
 服务从 starting 开始；只有来源集合与持久 cursor 完整匹配、同一控制门已安装且 observer/ownership 与驱动一致、恢复已授权、监听已建立、所有终态来源新鲜且至少一个控制门有效，才返回 ready。M2 unknown 不阻止安全基础回退。ready 不保证容量或未来发送成功，M3 仍执行原子准入及发送围栏。失联撤销 ready；draining 不可重新 serving。就绪端点不进入业务工作计数。
 
 停止先在同一服务锁内撤销就绪并禁止新的 HTTP 工作，再关闭所有控制门；继续原 HTTP 和终态任务。HTTP=0、后端 active=0 和所有来源已确认是停止后台任务的必要条件。对全部任务先发 stop，再 join 并检查 pending；最后等待监听退出。单一单调 deadline 覆盖等待和 join，重复停止不能延长期限。

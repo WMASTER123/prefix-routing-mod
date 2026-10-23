@@ -27,6 +27,8 @@
 
 2026-10-23 服务生命周期增量：已实现整体 readiness、HTTP handler/响应体在途计数、统一期限排空、stop-all/join 与监听关闭；Linux x86_64 helper 108/严格 Clippy、固定 Manager 的真实信号/超时/强退与暂停保债恢复四项通过。审查补齐 observer/ownership 的跨来源一致性校验。这属于 CPU 服务壳资格；尚未装配进真实 HUST 常驻入口，控制/KV 线程统一关闭、公开配置及 Manager 激活未完成，见[新记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。下段后台双卡成绩仅对应原路径。
 
+最终输入 `c6028c8` 已补齐 aarch64 helper 108、HTTP 16、Manager 4、完整宿主 39/release 构建及六项 CI，Python CPU 608/integration 3/wheel 验证通过。当前没有新增 NPU 执行或容量结论，实验子进程已由监督器回收。
+
 2026-10-23 后台任务增量：每来源唯一 TerminalTask 已在同一真实公开链中运行原 run 循环，HTTP 侧不再触发 step。最终 aarch64 helper 95/严格 Clippy、HTTP 16 场景、完整宿主 39 项通过；两张 NPU 的实际 A/A/B、0/384/384 命中、关闭准入返回 503、核心取消、4 family 及两个任务 join 均通过。自审修正重试沿用旧就绪依据，补任务丢失/取消 join/panic/待确认反例；Windows CPU 606、integration 3 通过。完整服务 readiness、HTTP 工作计数、SIGTERM/期限排空与 Manager 仍未实现。输入代码 `75da63d` 六项 CI 成功，制品和报告见[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)。
 
 | 组件 | 已实际完成 | 冻结/交付前剩余 |

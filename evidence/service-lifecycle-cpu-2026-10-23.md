@@ -15,7 +15,11 @@ HTTP 在途覆盖 handler、上传及响应体直到 EOF/error/drop；保留 tra
 - Linux x86_64 helper **108 项通过**，新增 13 项服务测试；严格 Clippy 通过。含真实 loopback 流式 HTTP、响应 trailer/error/EOF/drop、容量、超时保债、取消监督、来源校验与任务 panic。
 - `tools.probe_service_manager` 的四个真实 Linux 子进程场景通过：正常排空、Router 排空期限、第二信号强退、Manager grace 到达。后三项重开同一 SQLite 后 active=1、paused=true、cursor=0；正常退出后 active=0、paused=true。验证 Manager 已回收子进程，不仅检查日志。后端明确是 CPU 替身。
 - Python CPU **608 passed / 7 skipped / 3 deselected**、integration **3 passed**；Ruff 检查/格式、wheel 构建/干净安装验证通过。新增日志半行和损坏行两个反例。实现提交 `30de3d9` 六项 CI 均成功，包含新增 Manager 场景；[helper CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/39928596767)、[CPU/source CI](https://github.com/WMASTER123/prefix-routing-mod/actions/runs/39928596817)。后续文档提交按其自身 HEAD 核验。
-- 本地完整 Router 构建缺少离线缓存 anyhow，不是 OpenSSL/HUST 版本冲突。服务器初版 `30de3d9` 已过 aarch64 helper 107/严格 Clippy、HTTP 16、Manager 四场景、完整固定宿主 39 项和 release 构建；observer/ownership 审查修复后还需按新输入复验。没有修改全局环境：Manager 使用原项目 `.venv`，不向缺少 Manager 的推理 venv 临时加包。
+- 本地完整 Router 构建缺少离线缓存 anyhow，不是 OpenSSL/HUST 版本冲突。服务器初版 `30de3d9` 已过 aarch64 helper 107/严格 Clippy、HTTP 16、Manager 四场景、完整固定宿主 39 项和 release 构建。审查修复输入 **`c6028c86293dd9f9e48dfaccc263b94b840355e7`** 已重新通过 aarch64 helper **108**/严格 Clippy、HTTP **16**、Manager **4**、固定宿主 **39** 和 release 构建；该提交六项 GitHub CI 也全部成功。没有修改全局环境：Manager 使用原项目 `.venv`，不向缺少 Manager 的推理 venv 临时加包。
+
+最终 aarch64 制品位于项目隔离目录 `artifacts/durable-host-minimal-20261017/target/release/examples/hust_runtime_probe`，SHA256 为 `a4257b6103054e585ceb38dbe8615c06da025ad40861675637f9cb8f30008777`；共享 service 源码 SHA256 为 `b1dcc2d10756d261c91aef8d2fd90989329c4ceb59b74d62a684134bcd3f3797`。本轮只构建并跑 CPU 资格，未用该二进制跑 NPU，不继承旧二进制实机资格。原二进制和源码保存在私有资格目录，可回退核对。
+
+原始记录在服务器项目内 `artifacts/c23-service-reviewed/`：helper/Clippy/宿主构建日志、`manager.json`、`http.json`、`sha256.txt`。Manager 汇总 SHA256 为 `8b19d1825850ec1b9a9b79bc60f397195ca2111b3e967fcd511ffb077f79195a`，HTTP 汇总为 `51330ee4d16311d2d1b6269f47dabdb60de6ad7aea9a9b239149c18423dc010c`。修复前记录保留在 `artifacts/c23-service-qualification/`，不将旧成绩顶替最终输入。完整宿主仍有原上游弃用/dead-code 警告，不声称整个宿主严格 Clippy 零警告。
 
 测试 crate 新增 HTTP server/signal 特性和 `http-body=1.1.0` 直接引用。锁文件只增加原宿主已使用的 httpdate 1.0.3、errno 0.3.14、signal-hook-registry 1.4.8，不升级现有依赖；临时下载核对 crates.io checksum，仅写项目缓存。宿主候选直接引用同一 http-body，仍在 durable-candidate 关闭开关内。
 
