@@ -127,6 +127,8 @@ struct Config {
     exercise_control_gate: bool,
     #[serde(default)]
     use_terminal_driver: bool,
+    #[serde(default)]
+    background_terminal_driver: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -907,33 +909,27 @@ async fn reconcile(
 }
 
 #[cfg(feature = "durable-candidate")]
-async fn reconcile_driver(
+fn make_terminal_drivers(
     config: &Config,
     sessions: &[Session],
-    cursors: &mut [u64],
     durable: &DurableOption,
-    retired_families: &mut usize,
-) -> BTreeMap<String, usize> {
+) -> Vec<terminal_driver::TerminalDriver<hust_terminal_transport::HustTerminalTransport>> {
     use hust_terminal_transport::HustTerminalTransport;
-    use terminal_driver::{Ownership, PumpError, Step, TerminalDriver};
-    // Deliberately finite qualification: the future service will keep these
-    // drivers alive independently of HTTP and coordinate signal drain.
+    use terminal_driver::{Ownership, TerminalDriver};
     let runtime = durable
         .as_ref()
         .expect("terminal driver requires durable runtime");
     assert_eq!(config.terminal_ownership_mode, "exclusive_router_v1");
     assert_eq!(config.expected_retire_response_losses, 0);
-    let mut drivers: Vec<_> = config
+    config
         .workers
         .iter()
         .zip(sessions)
-        .enumerate()
-        .map(|(index, (worker, session))| {
+        .map(|(worker, session)| {
             assert!(worker.retirement_origin.is_none());
             let source = &session.identity;
             assert_eq!(source.binding.worker_id, worker.worker_id);
             let cursor = runtime.terminal_cursor(&worker.worker_id).unwrap().unwrap();
-            assert_eq!(cursor.through, cursors[index]);
             assert_eq!(cursor.worker_url, worker.origin);
             assert_eq!(cursor.instance_epoch, source.binding.instance_epoch);
             assert_eq!(cursor.observer_epoch, source.binding.observer_epoch);
@@ -954,7 +950,27 @@ async fn reconcile_driver(
             )
             .unwrap()
         })
-        .collect();
+        .collect()
+}
+
+#[cfg(feature = "durable-candidate")]
+async fn reconcile_driver(
+    config: &Config,
+    sessions: &[Session],
+    cursors: &mut [u64],
+    durable: &DurableOption,
+    retired_families: &mut usize,
+) -> BTreeMap<String, usize> {
+    use terminal_driver::{PumpError, Step};
+    assert!(
+        !config.background_terminal_driver,
+        "one consumer per source"
+    );
+    let runtime = durable.as_ref().unwrap();
+    let mut drivers = make_terminal_drivers(config, sessions, durable);
+    for (index, driver) in drivers.iter().enumerate() {
+        assert_eq!(driver.cursor().through, cursors[index]);
+    }
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut statuses = BTreeMap::new();
     loop {
@@ -992,6 +1008,197 @@ async fn reconcile_driver(
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     statuses
+}
+
+#[cfg(feature = "durable-candidate")]
+type BackgroundTasks =
+    Vec<terminal_driver::TerminalTask<hust_terminal_transport::HustTerminalTransport>>;
+
+/// Qualification waits only on task progress and the original owner. No poll,
+/// ACK or retire occurs in this HTTP-side waiter.
+#[cfg(feature = "durable-candidate")]
+async fn wait_background(tasks: &BackgroundTasks, owner: &RuntimeOwner, expected: &[u64]) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        assert!(!owner.is_failed(), "background terminal task failed");
+        let progress: Vec<_> = tasks.iter().map(|task| task.progress()).collect();
+        for (state, through) in progress.iter().zip(expected) {
+            assert!(state.through <= *through, "unexpected source waterline");
+        }
+        if owner.active_len().unwrap() == 0
+            && progress
+                .iter()
+                .zip(expected)
+                .all(|(state, through)| state.settled() && state.through == *through)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "background terminal drain timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+#[cfg(feature = "durable-candidate")]
+async fn qualify_background(
+    config: &Config,
+    sessions: &[Session],
+    durable: &DurableOption,
+    controls: &ControlSet,
+    origin: &str,
+    client: &reqwest::Client,
+    prompts: &[String; 2],
+) -> serde_json::Value {
+    use terminal_driver::{StopReason, TerminalTask};
+    let runtime = durable.as_ref().unwrap();
+    let owner = runtime.owner();
+    // Each source is moved into exactly one task before the first request. The
+    // finite reconciler is never called while these tasks exist.
+    let tasks: BackgroundTasks = make_terminal_drivers(config, sessions, durable)
+        .into_iter()
+        .map(|driver| TerminalTask::spawn(driver, Duration::from_millis(25)).unwrap())
+        .collect();
+    let mut expected = vec![0; tasks.len()];
+    wait_background(&tasks, owner, &expected).await;
+    assert!(tasks.iter().all(|task| task
+        .progress()
+        .ready_at(Instant::now(), Duration::from_secs(5))));
+    let mut results = Vec::new();
+    for (prompt, target, cached) in [(0, 0, 0), (0, 0, 384), (1, 1, 384)] {
+        let response = client.post(format!("{origin}/v1/completions"))
+            .json(&serde_json::json!({"model": config.model, "prompt": prompts[prompt], "max_tokens": 16, "temperature": 0}))
+            .send().await.unwrap().error_for_status().unwrap();
+        let reply: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(
+            reply["usage"]["prompt_tokens_details"]["cached_tokens"],
+            cached
+        );
+        expected[target] += 1;
+        wait_background(&tasks, owner, &expected).await;
+        // Actual per-source committed cursor, not a prediction from M4.
+        results.push(serde_json::json!({"worker": target, "cached_tokens": cached}));
+    }
+    let response = client.post(format!("{origin}/v1/completions"))
+        .json(&serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 256, "ignore_eos": true, "temperature": 0, "stream": true}))
+        .send().await.unwrap().error_for_status().unwrap();
+    let mut stream = response.bytes_stream();
+    wait_generated(&mut stream).await;
+    // Closing admission does not stop reconciliation or falsely end the stream.
+    controls.drain().unwrap();
+    let rejected = client
+        .post(format!("{origin}/v1/completions"))
+        .json(&serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status().as_u16(), 503);
+    drop(stream);
+    expected[0] += 1;
+    wait_background(&tasks, owner, &expected).await;
+    // Stop ALL sources before joining the first: each task's exit fence closes
+    // the shared owner. No task is aborted during a commit/ACK/retire.
+    for task in &tasks {
+        task.request_stop();
+    }
+    let mut statuses = BTreeMap::<String, usize>::new();
+    for (index, task) in tasks.into_iter().enumerate() {
+        let (result, driver) = task.join().await.unwrap();
+        assert_eq!(result, Ok(StopReason::Requested));
+        assert!(!driver.pending_remote_confirmation());
+        assert_eq!(driver.cursor().through, expected[index]);
+        for (status, count) in driver.transport().committed_statuses() {
+            *statuses.entry(status.clone()).or_default() += count;
+        }
+    }
+    assert_eq!(statuses.get("FINISHED_ABORTED"), Some(&1));
+    assert_eq!(owner.active_len().unwrap(), 0);
+    let store = Arc::new(
+        SqliteRowRuntimeStore::open(
+            config.durable_store.as_ref().unwrap(),
+            DEFAULT_MAX_SNAPSHOT_BYTES,
+        )
+        .unwrap(),
+    );
+    let stored = store.load().unwrap();
+    assert!(stored.checkpoint.active.is_empty());
+    for (index, worker) in config.workers.iter().enumerate() {
+        assert_eq!(
+            stored
+                .terminal_cursors
+                .iter()
+                .find(|cursor| cursor.source_id == worker.worker_id)
+                .unwrap()
+                .through,
+            expected[index]
+        );
+    }
+    let recovered = DurableRuntime::recover(
+        Arc::new(UnknownCache),
+        uuid::Uuid::new_v4().simple().to_string(),
+        store,
+        16,
+        16,
+    )
+    .unwrap();
+    assert!(!recovered.admission_ready());
+    serde_json::json!({
+        "status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7",
+        "requests": results, "cancel_core_statuses": statuses, "active_after_terminal": 0,
+        "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": true,
+        "managed_terminal_retirement_verified": true, "terminal_driver_transport_verified": true,
+        "background_terminal_driver_verified": true, "startup_confirmation_verified": true,
+        "admission_drain_rejected": true, "background_tasks_joined": true,
+        "retire_response_loss_recovered": true, "retire_response_losses": 0,
+        "retired_families": expected.iter().sum::<u64>(), "churn_families": 0, "churn_children": 0,
+        "durable_recovery_verified": false, "production_lifecycle_verified": false,
+        "performance_verified": false
+    })
+}
+
+#[cfg(feature = "durable-candidate")]
+#[derive(Debug)]
+struct UnknownCache;
+#[cfg(feature = "durable-candidate")]
+impl CachePort for UnknownCache {
+    fn lookup(&self, _: &str, _: &str, _: &str, _: &[String]) -> Option<u32> {
+        None
+    }
+}
+
+async fn wait_generated(
+    stream: &mut (impl futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin),
+) {
+    let mut pending = Vec::new();
+    for _ in 0..64 {
+        let chunk = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        pending.extend_from_slice(&chunk);
+        assert!(pending.len() <= 65536);
+        while let Some(boundary) = pending.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<_> = pending.drain(..=boundary).collect();
+            if let Some(data) = std::str::from_utf8(&line)
+                .unwrap()
+                .trim()
+                .strip_prefix("data: ")
+            {
+                if data != "[DONE]" {
+                    let value: serde_json::Value = serde_json::from_str(data).unwrap();
+                    if value["choices"][0]["text"]
+                        .as_str()
+                        .is_some_and(|text| !text.is_empty())
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    panic!("cancel must follow an actual generated output");
 }
 
 fn settle_volatile(
@@ -1040,6 +1247,7 @@ async fn main() {
         "managed retirement requires the durable candidate"
     );
     assert!(config.expected_retire_response_losses <= config.workers.len());
+    assert!(!config.background_terminal_driver || config.use_terminal_driver);
     assert!(
         !config.use_terminal_driver
             || (config.durable_store.is_some()
@@ -1538,6 +1746,26 @@ async fn main() {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     assert_eq!(lookup(0, 1), Some(0));
+    #[cfg(feature = "durable-candidate")]
+    if config.background_terminal_driver {
+        let report = qualify_background(
+            &config,
+            &sessions,
+            &durable,
+            &control_set,
+            &origin,
+            &client,
+            &prompts,
+        )
+        .await;
+        shutdown_tx.send(()).unwrap();
+        http.await.unwrap();
+        for session in &mut sessions {
+            session.stop();
+        }
+        println!("{report}");
+        return;
+    }
     let mut resource_samples = Vec::new();
     let mut results = Vec::new();
     for (prompt, expected_worker, expected_cached) in [(0, 0, 0), (0, 0, 384), (1, 1, 384)] {
@@ -1599,40 +1827,7 @@ async fn main() {
         .json(&serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 256, "temperature": 0, "ignore_eos": true, "stream": true}))
         .send().await.unwrap().error_for_status().unwrap();
     let mut stream = response.bytes_stream();
-    let mut saw_text = false;
-    let mut pending = Vec::new();
-    for _ in 0..64 {
-        let chunk = tokio::time::timeout(Duration::from_secs(10), stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        pending.extend_from_slice(&chunk);
-        assert!(pending.len() <= 65536);
-        while let Some(boundary) = pending.iter().position(|byte| *byte == b'\n') {
-            let line: Vec<u8> = pending.drain(..=boundary).collect();
-            if let Some(data) = std::str::from_utf8(&line)
-                .unwrap()
-                .trim()
-                .strip_prefix("data: ")
-            {
-                if data == "[DONE]" {
-                    continue;
-                }
-                let value: serde_json::Value = serde_json::from_str(data).unwrap();
-                if value["choices"][0]["text"]
-                    .as_str()
-                    .is_some_and(|text| !text.is_empty())
-                {
-                    saw_text = true;
-                }
-            }
-        }
-        if saw_text {
-            break;
-        }
-    }
-    assert!(saw_text, "cancel must follow an actual generated output");
+    wait_generated(&mut stream).await;
     drop(stream);
     assert_eq!(owner.active_len().unwrap(), 1);
     let cancellation = reconcile(

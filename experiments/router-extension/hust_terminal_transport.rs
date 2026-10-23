@@ -77,6 +77,7 @@ pub struct HustTerminalTransport {
     ownership: Ownership,
     deadline: Duration,
     last_poll_statuses: BTreeMap<String, usize>,
+    committed_statuses: BTreeMap<String, usize>,
 }
 
 impl HustTerminalTransport {
@@ -130,6 +131,7 @@ impl HustTerminalTransport {
             ownership,
             deadline,
             last_poll_statuses: BTreeMap::new(),
+            committed_statuses: BTreeMap::new(),
         })
     }
 
@@ -186,6 +188,12 @@ impl HustTerminalTransport {
     /// Finite qualification diagnostics only, never used to settle the ledger.
     pub fn last_poll_statuses(&self) -> &BTreeMap<String, usize> {
         &self.last_poll_statuses
+    }
+
+    /// At most seven validated status labels, saturating diagnostic counters.
+    /// Never used for settlement or recovery decisions.
+    pub fn committed_statuses(&self) -> &BTreeMap<String, usize> {
+        &self.committed_statuses
     }
 
     async fn read(
@@ -319,6 +327,12 @@ impl HustTerminalTransport {
 }
 
 impl TerminalTransport for HustTerminalTransport {
+    fn committed(&mut self) {
+        for (status, count) in &self.last_poll_statuses {
+            let total = self.committed_statuses.entry(status.clone()).or_default();
+            *total = total.saturating_add(*count);
+        }
+    }
     fn poll<'a>(&'a mut self, after: &'a TerminalCursor) -> RpcFuture<'a, TerminalBatch> {
         Box::pin(async move {
             let (batch, statuses) = self.read(after, 0).await?;

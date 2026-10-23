@@ -38,3 +38,17 @@ def test_driver_mode_rejects_unqualified_combinations_before_launch(
     arguments.update(change)
     with pytest.raises(ValueError, match="requires|requires isolated"):
         hust_runtime_chain.run(SimpleNamespace(**arguments), tmp_path, {})
+
+
+def test_background_mode_requires_driver_before_backend_inspection(
+    monkeypatch, tmp_path
+):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Invalid background mode must not start or inspect the backend")
+
+    monkeypatch.setattr(hust_runtime_chain, "require_terminal_plugins", unexpected)
+    arguments = SimpleNamespace(
+        background_terminal_driver=True, use_terminal_driver=False
+    )
+    with pytest.raises(ValueError, match="Background driver requires"):
+        hust_runtime_chain.run(arguments, tmp_path, {})

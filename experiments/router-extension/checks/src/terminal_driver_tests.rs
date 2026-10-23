@@ -8,8 +8,8 @@ use crate::{
     sqlite_row_runtime_store::SqliteRowRuntimeStore,
     sqlite_runtime_store::DEFAULT_MAX_SNAPSHOT_BYTES,
     terminal_driver::{
-        Ownership, PumpError, RpcFault, RpcFuture, Step, StopReason, TerminalBatch, TerminalDriver,
-        TerminalTransport,
+        DriverPhase, DriverProgress, Ownership, PumpError, RpcFault, RpcFuture, Step, StopReason,
+        TerminalBatch, TerminalDriver, TerminalTask, TerminalTransport,
     },
 };
 use std::{
@@ -643,4 +643,272 @@ async fn aborted_pump_fails_admission_closed_and_keeps_pending_confirmation_reco
     // authoritative. A fresh verified driver must retry that waterline.
     assert_eq!(f.store.load().unwrap().terminal_cursors, vec![cursor(1)]);
     assert!(f.store.load().unwrap().checkpoint.active.is_empty());
+}
+
+async fn wait_phase<T: TerminalTransport + 'static>(task: &TerminalTask<T>, phase: DriverPhase) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while task.progress().phase != phase {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn supervised_task_confirms_startup_before_ready_and_settles_without_http() {
+    let f = fixture();
+    let record = sent(&f.runtime, "a", 1).await;
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        Transport::new(f.store.clone(), vec![record]),
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(20)).unwrap();
+    assert_eq!(task.progress().phase, DriverPhase::Starting);
+    assert!(!task
+        .progress()
+        .ready_at(std::time::Instant::now(), Duration::from_secs(1)));
+    wait_phase(&task, DriverPhase::Idle).await;
+    let progress = task.progress();
+    assert!(progress.ready_at(std::time::Instant::now(), Duration::from_secs(1)));
+    assert!(progress.settled());
+    assert_eq!(progress.through, 1);
+    assert_eq!(f.runtime.owner().active_len().unwrap(), 0);
+    task.request_stop();
+    assert!(!task
+        .progress()
+        .ready_at(std::time::Instant::now(), Duration::from_secs(1)));
+    let (result, driver) = task.join().await.unwrap();
+    assert_eq!(result, Ok(StopReason::Requested));
+    assert!(!driver.pending_remote_confirmation());
+    assert!(!f.runtime.admission_ready());
+}
+
+#[tokio::test]
+async fn supervised_retry_does_not_claim_readiness_or_drain_when_debt_is_zero() {
+    let f = fixture();
+    let record = sent(&f.runtime, "a", 1).await;
+    let transport = Transport::new(f.store.clone(), vec![record]);
+    transport.calls.lock().unwrap().retire_losses = 1;
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        transport,
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(100)).unwrap();
+    wait_phase(&task, DriverPhase::Retrying).await;
+    let progress = task.progress();
+    assert_eq!(f.runtime.owner().active_len().unwrap(), 0);
+    assert_eq!(progress.through, 1);
+    assert!(progress.pending_confirmation);
+    assert!(!progress.settled());
+    assert!(!progress.ready_at(std::time::Instant::now(), Duration::from_secs(1)));
+    wait_phase(&task, DriverPhase::Idle).await;
+    let (result, driver) = task.join().await.unwrap();
+    assert_eq!(result, Ok(StopReason::Requested));
+    assert!(!driver.pending_remote_confirmation());
+    assert_eq!(f.store.load().unwrap().terminal_cursors, vec![cursor(1)]);
+}
+
+#[tokio::test]
+async fn supervised_stop_with_unavailable_remote_reports_pending_for_restart() {
+    let f = fixture();
+    let transport = Transport::new(f.store.clone(), vec![]);
+    // Keep the initial ACK unavailable, including when there is no local debt.
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        UnavailableAck(transport),
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(20)).unwrap();
+    wait_phase(&task, DriverPhase::Retrying).await;
+    let (result, driver) = task.join().await.unwrap();
+    assert_eq!(result, Ok(StopReason::Requested));
+    assert!(driver.pending_remote_confirmation());
+    assert_eq!(driver.cursor(), &cursor(0));
+    assert!(!f.runtime.admission_ready());
+}
+
+struct UnavailableAck(Transport);
+impl TerminalTransport for UnavailableAck {
+    fn poll<'a>(&'a mut self, cursor: &'a TerminalCursor) -> RpcFuture<'a, TerminalBatch> {
+        self.0.poll(cursor)
+    }
+    fn acknowledge<'a>(&'a mut self, _: &'a TerminalCursor) -> RpcFuture<'a, ()> {
+        Box::pin(async { Err(RpcFault::Unavailable) })
+    }
+    fn retire<'a>(&'a mut self, cursor: &'a TerminalCursor) -> RpcFuture<'a, ()> {
+        self.0.retire(cursor)
+    }
+}
+
+#[test]
+fn progress_readiness_has_a_monotonic_deadline_and_busy_is_not_drain() {
+    let now = std::time::Instant::now();
+    let mut progress = DriverProgress {
+        phase: DriverPhase::Idle,
+        through: 0,
+        pending_confirmation: false,
+        last_success: Some(now),
+    };
+    assert!(progress.ready_at(now, Duration::from_millis(10)));
+    assert!(!progress.ready_at(now + Duration::from_millis(10), Duration::from_millis(10)));
+    assert!(!progress.ready_at(now - Duration::from_millis(1), Duration::from_millis(10)));
+    assert!(!progress.ready_at(now, Duration::ZERO));
+    progress.phase = DriverPhase::Working;
+    assert!(progress.ready_at(now, Duration::from_millis(10)));
+    assert!(!progress.settled());
+    for phase in [
+        DriverPhase::Starting,
+        DriverPhase::Retrying,
+        DriverPhase::Stopped,
+        DriverPhase::Failed,
+    ] {
+        progress.phase = phase;
+        assert!(!progress.ready_at(now, Duration::from_millis(10)));
+        assert!(!progress.settled());
+    }
+}
+
+#[tokio::test]
+async fn dropping_supervisor_closes_admission_without_aborting_held_confirmation() {
+    let f = fixture();
+    let record = sent(&f.runtime, "a", 1).await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let inner = Transport::new(f.store.clone(), vec![record]);
+    let calls = inner.calls.clone();
+    let transport = HoldAcknowledgement {
+        inner,
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        transport,
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(10)).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), entered.notified())
+        .await
+        .unwrap();
+    assert!(!task.progress().settled());
+    drop(task);
+    assert!(!f.runtime.admission_ready());
+    release.notify_one();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !calls.lock().unwrap().values.contains(&("retire", 1)) {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(f.store.load().unwrap().terminal_cursors, vec![cursor(1)]);
+}
+
+#[tokio::test]
+async fn cancelling_join_retains_stop_and_does_not_cancel_remote_confirmation() {
+    let f = fixture();
+    let record = sent(&f.runtime, "a", 1).await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let inner = Transport::new(f.store.clone(), vec![record]);
+    let calls = inner.calls.clone();
+    let transport = HoldAcknowledgement {
+        inner,
+        entered: entered.clone(),
+        release: release.clone(),
+    };
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        transport,
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(10)).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), entered.notified())
+        .await
+        .unwrap();
+    let joining = tokio::spawn(task.join());
+    tokio::task::yield_now().await;
+    joining.abort();
+    assert!(matches!(joining.await, Err(error) if error.is_cancelled()));
+    assert!(!f.runtime.admission_ready());
+    release.notify_one();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !calls.lock().unwrap().values.contains(&("retire", 1)) {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(f.store.load().unwrap().terminal_cursors, vec![cursor(1)]);
+}
+
+struct PanicPoll(Transport);
+impl TerminalTransport for PanicPoll {
+    fn poll<'a>(&'a mut self, _: &'a TerminalCursor) -> RpcFuture<'a, TerminalBatch> {
+        Box::pin(async { panic!("fixture task panic") })
+    }
+    fn acknowledge<'a>(&'a mut self, cursor: &'a TerminalCursor) -> RpcFuture<'a, ()> {
+        self.0.acknowledge(cursor)
+    }
+    fn retire<'a>(&'a mut self, cursor: &'a TerminalCursor) -> RpcFuture<'a, ()> {
+        self.0.retire(cursor)
+    }
+}
+
+#[tokio::test]
+async fn task_panic_closes_admission_and_join_reports_failure_without_erasing_debt() {
+    let f = fixture();
+    let _record = sent(&f.runtime, "a", 1).await;
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        PanicPoll(Transport::new(f.store.clone(), vec![])),
+        cursor(0),
+        Ownership::ObserveOnly,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(10)).unwrap();
+    wait_phase(&task, DriverPhase::Failed).await;
+    assert!(matches!(
+        task.join().await,
+        Err("terminal_driver_task_failed")
+    ));
+    assert!(!f.runtime.admission_ready());
+    assert_eq!(f.store.load().unwrap().checkpoint.active.len(), 1);
+}
+
+#[tokio::test]
+async fn invalid_task_interval_and_unpolled_supervisor_drop_fail_closed() {
+    for invalid in [true, false] {
+        let f = fixture();
+        let transport = Transport::new(f.store.clone(), vec![]);
+        let calls = transport.calls.clone();
+        let driver = TerminalDriver::new(
+            f.runtime.clone(),
+            transport,
+            cursor(0),
+            Ownership::ObserveOnly,
+        )
+        .unwrap();
+        if invalid {
+            assert!(TerminalTask::spawn(driver, Duration::ZERO).is_err());
+        } else {
+            drop(TerminalTask::spawn(driver, Duration::from_secs(1)).unwrap());
+            tokio::task::yield_now().await;
+        }
+        assert!(!f.runtime.admission_ready());
+        assert!(calls.lock().unwrap().values.is_empty());
+    }
 }

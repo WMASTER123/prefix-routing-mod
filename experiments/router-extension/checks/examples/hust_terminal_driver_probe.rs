@@ -9,7 +9,7 @@ use prefix_router_extension_checks::{
     runtime_store::{RuntimeStore, TerminalCursor},
     sqlite_row_runtime_store::SqliteRowRuntimeStore,
     sqlite_runtime_store::DEFAULT_MAX_SNAPSHOT_BYTES,
-    terminal_driver::{Ownership, PumpError, Step, TerminalDriver},
+    terminal_driver::{DriverPhase, Ownership, PumpError, Step, TerminalDriver, TerminalTask},
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -94,8 +94,9 @@ async fn main() {
         Duration::from_secs(1),
     )
     .unwrap();
-    let mut driver =
-        TerminalDriver::new(runtime.clone(), transport, config.cursor.clone(), ownership).unwrap();
+    let mut driver = Some(
+        TerminalDriver::new(runtime.clone(), transport, config.cursor.clone(), ownership).unwrap(),
+    );
     emit(json!({"ready":true,"npu_validated":false}));
     // Commands are fixture-only and bounded. The caller also enforces a process
     // deadline; stdin is not part of the production terminal transport.
@@ -137,19 +138,46 @@ async fn main() {
                 lease.closed(true, CloseEvidence::TransportEof);
                 json!({"attempt":attempt})
             }
-            "step" => match driver.step().await {
+            "step" => match driver.as_mut().unwrap().step().await {
                 Ok(Step::Idle) => json!({"step":"idle"}),
                 Ok(Step::Committed(count)) => json!({"step":"committed","count":count}),
                 Err(PumpError::Retry) => json!({"step":"retry"}),
                 Err(PumpError::Fatal(reason)) => json!({"step":"fatal","reason":reason}),
             },
+            "run" => {
+                let task =
+                    TerminalTask::spawn(driver.take().unwrap(), Duration::from_millis(5)).unwrap();
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                loop {
+                    let progress = task.progress();
+                    if progress.phase == DriverPhase::Failed
+                        || (progress.settled() && runtime.owner().active_len().unwrap() == 0)
+                    {
+                        break;
+                    }
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "background fixture deadline"
+                    );
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                let (result, finished) = task.join().await.unwrap();
+                driver = Some(finished);
+                match result {
+                    Ok(_) => json!({"step":"stopped"}),
+                    Err(PumpError::Fatal(reason)) => json!({"step":"fatal", "reason":reason}),
+                    Err(PumpError::Retry) => panic!("run must retry internally"),
+                }
+            }
             _ => panic!("unknown fixture command"),
         };
         let persisted = store.load().unwrap();
+        let current = driver.as_ref().unwrap();
         emit(
             json!({"result":result,"active":runtime.owner().active_len().unwrap(),
-            "through":driver.cursor().through,"stored_through":persisted.terminal_cursors[0].through,
-            "generation":persisted.generation,"pending":driver.pending_remote_confirmation(),
+            "through":current.cursor().through,"stored_through":persisted.terminal_cursors[0].through,
+            "generation":persisted.generation,"pending":current.pending_remote_confirmation(),
+            "committed_statuses":current.transport().committed_statuses(),
             "failed":runtime.owner().is_failed()}),
         );
     }

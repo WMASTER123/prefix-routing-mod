@@ -182,7 +182,7 @@ def _receive(lines):
     return json.loads(value)
 
 
-def qualify(binary, scenario):
+def qualify(binary, scenario, *, background=False):
     with tempfile.TemporaryDirectory(prefix="prefix-hust-driver-") as directory:
         root = Path(directory)
         source = _Source(scenario, root / "runtime.sqlite")
@@ -238,7 +238,7 @@ def qualify(binary, scenario):
                 source.register(second["result"]["attempt"], ended=False)
             if scenario == "unknown_attempt":
                 source.register("prm-unknown")
-            first_step = command("step")
+            first_step = command("run" if background else "step")
             if scenario == "unknown_attempt":
                 assert first_step["result"]["step"] == "fatal"
                 assert first_step["active"] == 1 and first_step["stored_through"] == 0
@@ -247,20 +247,31 @@ def qualify(binary, scenario):
                 assert first_step["result"]["step"] == "fatal"
                 assert first_step["active"] == 0 and first_step["stored_through"] == 1
             else:
-                if scenario in {"ack_loss", "retire_loss", "unavailable"}:
+                if not background and scenario in {
+                    "ack_loss",
+                    "retire_loss",
+                    "unavailable",
+                }:
                     assert first_step["result"]["step"] == "retry"
                     assert first_step["active"] == (
                         1 if scenario == "unavailable" else 0
                     )
-                if scenario == "concurrent_ack":
+                if not background and scenario == "concurrent_ack":
                     assert (
                         first_step["active"] == 1 and first_step["stored_through"] == 1
                     )
                     assert source.ack_new_records == 1
-                last = command("step")
+                last = first_step if background else command("step")
                 assert (
-                    last["active"] == 0 and not last["pending"] and not last["failed"]
+                    last["active"] == 0
+                    and not last["pending"]
+                    and last["failed"] == background
                 )
+                assert last["committed_statuses"].get("FINISHED_STOPPED") == 1
+                if background:
+                    assert last["result"]["step"] == "stopped"
+                if scenario == "concurrent_ack":
+                    assert last["committed_statuses"].get("FINISHED_ABORTED") == 1
                 assert last["stored_through"] == (
                     2 if scenario == "concurrent_ack" else 1
                 )
@@ -285,7 +296,12 @@ def qualify(binary, scenario):
             output_thread.join(timeout=3)
             process.stdout.close()
             process.stderr.close()
-        return {"scenario": scenario, "status": "pass", "calls": source.calls}
+        return {
+            "scenario": scenario,
+            "background": background,
+            "status": "pass",
+            "calls": source.calls,
+        }
 
 
 def main():
@@ -306,6 +322,19 @@ def main():
             "unknown_attempt",
         )
     ]
+    results.extend(
+        qualify(binary, scenario, background=True)
+        for scenario in (
+            "normal",
+            "concurrent_ack",
+            "ack_loss",
+            "retire_loss",
+            "unavailable",
+            "observe_only",
+            "identity_change",
+            "unknown_attempt",
+        )
+    )
     print(
         json.dumps(
             {

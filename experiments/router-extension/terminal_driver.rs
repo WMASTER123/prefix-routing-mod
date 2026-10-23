@@ -5,7 +5,12 @@ use super::{
     durable_runtime::{DurableRuntime, TerminalRecord},
     runtime_store::TerminalCursor,
 };
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 pub type RpcFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, RpcFault>> + Send + 'a>>;
 
@@ -32,6 +37,9 @@ pub trait TerminalTransport: Send {
     fn poll<'a>(&'a mut self, after: &'a TerminalCursor) -> RpcFuture<'a, TerminalBatch>;
     fn acknowledge<'a>(&'a mut self, through: &'a TerminalCursor) -> RpcFuture<'a, ()>;
     fn retire<'a>(&'a mut self, through: &'a TerminalCursor) -> RpcFuture<'a, ()>;
+    /// Optional bounded diagnostics for the last poll, called once only after
+    /// its durable commit. Must not perform I/O or change admission/source state.
+    fn committed(&mut self) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +70,117 @@ pub enum Step {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopReason {
     Requested,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriverPhase {
+    Starting,
+    Working,
+    Idle,
+    Retrying,
+    Stopped,
+    Failed,
+}
+
+/// One replaceable snapshot per source, never an event queue or a second cursor
+/// authority. Only DurableRuntime's stored cursor can be used for recovery.
+#[derive(Debug, Clone)]
+pub struct DriverProgress {
+    pub phase: DriverPhase,
+    pub through: u64,
+    pub pending_confirmation: bool,
+    pub last_success: Option<Instant>,
+}
+
+impl DriverProgress {
+    pub fn ready_at(&self, now: Instant, max_age: Duration) -> bool {
+        !max_age.is_zero()
+            && matches!(self.phase, DriverPhase::Idle | DriverPhase::Working)
+            && self.last_success.is_some_and(|last| {
+                now.checked_duration_since(last)
+                    .is_some_and(|age| age < max_age)
+            })
+    }
+
+    /// Only a drain hint: close new admission and finish HTTP work first, then
+    /// join all tasks and inspect their final pending flags before claiming drain.
+    pub fn settled(&self) -> bool {
+        self.phase == DriverPhase::Idle && !self.pending_confirmation
+    }
+}
+
+/// Owns a single source consumer. Dropping the supervisor closes admission and
+/// asks the task to stop between bounded operations; it never aborts a commit.
+#[must_use = "keep the terminal task supervised and join it on shutdown"]
+pub struct TerminalTask<T: TerminalTransport + 'static> {
+    runtime: Arc<DurableRuntime>,
+    stop: tokio::sync::watch::Sender<bool>,
+    progress: tokio::sync::watch::Receiver<DriverProgress>,
+    task: Option<tokio::task::JoinHandle<DriverExit<T>>>,
+}
+
+pub type DriverExit<T> = (Result<StopReason, PumpError>, TerminalDriver<T>);
+
+impl<T: TerminalTransport + 'static> TerminalTask<T> {
+    /// The caller verifies one task per source and all source bindings before
+    /// admitting HTTP work. This is not an engine or process supervisor.
+    pub fn spawn(mut driver: TerminalDriver<T>, interval: Duration) -> Result<Self, &'static str> {
+        if !(Duration::from_millis(1)..=Duration::from_secs(60)).contains(&interval) {
+            driver.runtime.owner().fail_closed();
+            return Err("terminal_driver_interval_invalid");
+        }
+        let runtime = driver.runtime.clone();
+        let (stop, receiver) = tokio::sync::watch::channel(false);
+        let (sender, progress) =
+            tokio::sync::watch::channel(driver.progress(DriverPhase::Starting, None));
+        let task = tokio::spawn(async move {
+            let result = driver.run_inner(receiver, interval, Some(sender)).await;
+            (result, driver)
+        });
+        Ok(Self {
+            runtime,
+            stop,
+            progress,
+            task: Some(task),
+        })
+    }
+
+    pub fn progress(&self) -> DriverProgress {
+        let mut progress = self.progress.borrow().clone();
+        if self.runtime.owner().is_failed()
+            || self.task.as_ref().is_none_or(|task| task.is_finished())
+        {
+            progress.phase = DriverPhase::Failed;
+        } else if *self.stop.borrow() {
+            progress.phase = DriverPhase::Stopped;
+        }
+        progress
+    }
+
+    pub fn request_stop(&self) {
+        self.stop.send_replace(true);
+    }
+
+    /// Await this method, not a timeout around a mutating step. Cancelling this
+    /// join still leaves the task's stop flag set and admission closed.
+    pub async fn join(
+        mut self,
+    ) -> Result<(Result<StopReason, PumpError>, TerminalDriver<T>), &'static str> {
+        self.request_stop();
+        let result = self.task.as_mut().expect("owned terminal task").await;
+        self.task.take();
+        self.runtime.owner().fail_closed();
+        result.map_err(|_| "terminal_driver_task_failed")
+    }
+}
+
+impl<T: TerminalTransport + 'static> Drop for TerminalTask<T> {
+    fn drop(&mut self) {
+        if self.task.is_some() {
+            self.runtime.owner().fail_closed();
+            self.request_stop();
+        }
+    }
 }
 
 // Losing a reconciliation task must never leave HTTP admission enabled, even
@@ -119,6 +238,15 @@ impl<T: TerminalTransport> TerminalDriver<T> {
 
     pub fn pending_remote_confirmation(&self) -> bool {
         self.pending != Pending::None
+    }
+
+    fn progress(&self, phase: DriverPhase, last_success: Option<Instant>) -> DriverProgress {
+        DriverProgress {
+            phase,
+            through: self.cursor.through,
+            pending_confirmation: self.pending_remote_confirmation(),
+            last_success,
+        }
     }
 
     fn fatal(&mut self, reason: &'static str) -> PumpError {
@@ -187,6 +315,7 @@ impl<T: TerminalTransport> TerminalDriver<T> {
             Err(_) => return Err(self.fatal("terminal_driver_commit_failed")),
         };
         self.cursor.through = through;
+        self.transport.committed();
         self.pending = Pending::Acknowledge;
         self.confirm().await?;
         Ok(Step::Committed(count))
@@ -198,33 +327,64 @@ impl<T: TerminalTransport> TerminalDriver<T> {
     /// Host still owns admission drain, HTTP count, signal budget and exit code.
     pub async fn run(
         &mut self,
+        stop: tokio::sync::watch::Receiver<bool>,
+        interval: Duration,
+    ) -> Result<StopReason, PumpError> {
+        self.run_inner(stop, interval, None).await
+    }
+
+    async fn run_inner(
+        &mut self,
         mut stop: tokio::sync::watch::Receiver<bool>,
         interval: Duration,
+        progress: Option<tokio::sync::watch::Sender<DriverProgress>>,
     ) -> Result<StopReason, PumpError> {
         let _supervision = SupervisionFence(self.runtime.clone());
         if interval < Duration::from_millis(1) || interval > Duration::from_secs(60) {
             return Err(self.fatal("terminal_driver_interval_invalid"));
         }
-        loop {
+        let mut last_success = None;
+        let result = loop {
             if *stop.borrow() {
-                return Ok(StopReason::Requested);
+                break Ok(StopReason::Requested);
             }
-            match self.step().await {
-                Ok(_) | Err(PumpError::Retry) => {}
-                Err(error) => return Err(error),
+            if let Some(sender) = &progress {
+                sender.send_replace(self.progress(DriverPhase::Working, last_success));
+            }
+            let phase = match self.step().await {
+                Ok(_) => {
+                    last_success = Some(Instant::now());
+                    DriverPhase::Idle
+                }
+                Err(PumpError::Retry) => DriverPhase::Retrying,
+                Err(error) => break Err(error),
+            };
+            if let Some(sender) = &progress {
+                sender.send_replace(self.progress(phase, last_success));
             }
             // Observe a stop that arrived during an operation before sleeping.
             if *stop.borrow() {
-                return Ok(StopReason::Requested);
+                break Ok(StopReason::Requested);
             }
             tokio::select! {
                 changed = stop.changed() => {
                     if changed.is_err() {
-                        return Err(self.fatal("terminal_driver_supervisor_gone"));
+                        break Err(self.fatal("terminal_driver_supervisor_gone"));
                     }
                 }
                 _ = tokio::time::sleep(interval) => {}
             }
+        };
+        if let Some(sender) = &progress {
+            sender.send_replace(self.progress(
+                if result.is_ok() {
+                    DriverPhase::Stopped
+                } else {
+                    DriverPhase::Failed
+                },
+                last_success,
+            ));
         }
+        result
     }
 }

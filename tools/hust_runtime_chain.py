@@ -140,6 +140,9 @@ def run(args, output, report):
     exercise_recovery = bool(getattr(args, "exercise_router_recovery", False))
     exercise_control = bool(getattr(args, "exercise_control_gate", False))
     use_driver = bool(getattr(args, "use_terminal_driver", False))
+    background_driver = bool(getattr(args, "background_terminal_driver", False))
+    if background_driver and not use_driver:
+        raise ValueError("Background driver requires --use-terminal-driver")
     if use_driver and not (
         managed_retirement
         and getattr(args, "durable_store", False)
@@ -289,6 +292,8 @@ def run(args, output, report):
         }
         if use_driver:
             config["use_terminal_driver"] = True
+        if background_driver:
+            config["background_terminal_driver"] = True
         if args.durable_store:
             config["durable_store"] = str(output / "runtime.sqlite")
         config_path = output / "private-runtime-config.json"
@@ -436,6 +441,22 @@ def run(args, output, report):
             raise ValueError("Managed retirement result differs from requested mode")
         if bool(records[0].get("terminal_driver_transport_verified")) != use_driver:
             raise ValueError("Terminal driver result differs from requested mode")
+        if (
+            bool(records[0].get("background_terminal_driver_verified"))
+            != background_driver
+        ):
+            raise ValueError(
+                "Background terminal driver result differs from requested mode"
+            )
+        if background_driver and not all(
+            records[0].get(key) is True
+            for key in (
+                "startup_confirmation_verified",
+                "admission_drain_rejected",
+                "background_tasks_joined",
+            )
+        ):
+            raise ValueError("Background driver lifecycle coverage incomplete")
         if bool(records[0].get("retire_response_loss_recovered")) is not True:
             raise ValueError(
                 "Retirement response-loss result differs from requested mode"
@@ -541,6 +562,7 @@ def main():
     parser.add_argument("--churn-families", type=int, default=0)
     parser.add_argument("--exercise-control-gate", action="store_true")
     parser.add_argument("--use-terminal-driver", action="store_true")
+    parser.add_argument("--background-terminal-driver", action="store_true")
     parser.add_argument("--churn-children-per-family", type=int, default=0)
     parser.add_argument(
         "--exercise-router-recovery",
