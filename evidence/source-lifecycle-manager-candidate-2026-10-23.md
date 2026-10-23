@@ -1,6 +1,6 @@
 # 控制/KV 统一生命周期、恢复与 Manager 入口候选记录
 
-日期：2026-10-23  
+日期：2026-10-23
 代码输入：`b96d4c25a768b8ba417cf1a7e7b8a94bb7248c36`
 
 ## 本轮完成
@@ -36,4 +36,3 @@
 2. 使用全新账本和冷来源启动 `serve`，验证 readiness、连续请求、取消、控制失联、KV 断连以及 SIGTERM 的 KV/控制/终态 stop-all + join。
 3. 在旧 Router 已确认退出后用原账本启动 `recover-serve`，验证默认暂停、旧债保留、同身份来源复核、takeover、M2 unknown 和恢复后新请求。
 4. 用固定 Manager 执行同样的正常信号、二次信号和 grace 超时，确认仅清理 Router 进程树，不停止两个 HUST 后端。
-
