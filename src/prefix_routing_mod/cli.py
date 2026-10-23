@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .adapters.profiles import inspect_backend
 from .config import load_config
+from .manager import ManagerEntryError, run_router
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -18,6 +19,13 @@ def main(argv: list[str] | None = None) -> int:
         help="check an explicit backend profile without importing engines",
     )
     backend.add_argument("--profile", required=True)
+    manager = commands.add_parser(
+        "manager-run",
+        help="supervise one explicit Router command with the pinned Manager",
+    )
+    manager.add_argument("--drain-seconds", type=float, required=True)
+    manager.add_argument("--shutdown-grace-seconds", type=float, required=True)
+    manager.add_argument("router_command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if args.command == "backend-doctor":
         try:
@@ -27,6 +35,16 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(json.dumps(report))
         return 0
+    if args.command == "manager-run":
+        try:
+            return run_router(
+                args.router_command,
+                args.drain_seconds,
+                args.shutdown_grace_seconds,
+            )
+        except ManagerEntryError as error:
+            print(json.dumps({"manager_started": False, "error": str(error)}))
+            return 2
     try:
         config = load_config(args.config)
     except (OSError, ValueError) as error:

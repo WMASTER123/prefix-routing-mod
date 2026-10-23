@@ -2,7 +2,10 @@
 //! One service boundary around the existing HTTP host, ledger and terminal tasks.
 use super::{
     durable_runtime::DurableRuntime,
-    runtime_owner::control_gate::{ControlSet, SourceKey},
+    runtime_owner::{
+        control_gate::{ControlSet, SourceKey},
+        WorkerControl,
+    },
     terminal_driver::{
         Ownership, StopReason, TerminalDriver, TerminalMonitor, TerminalTask, TerminalTransport,
     },
@@ -17,11 +20,29 @@ use axum::{
 use http_body::{Body as HttpBody, Frame, SizeHint};
 use std::{
     collections::BTreeSet,
+    future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
     time::{Duration, Instant},
 };
+
+pub type TaskJoinFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), &'static str>> + Send + 'a>>;
+
+/// A Router-owned source loop, such as one native-KV subscriber or control
+/// refresher. HUST backend processes must never implement this interface: the
+/// service only stops and joins work that it created itself.
+pub trait ManagedSourceTask: Send + Sync {
+    /// Stable, non-secret identifier, for example `kv:replica-a`.
+    fn task_id(&self) -> &str;
+    /// True only after the loop has completed its initial source proof.
+    fn ready(&self) -> bool;
+    /// A task failure is sticky. A requested stop is not a failure.
+    fn failed(&self) -> bool;
+    fn request_stop(&self);
+    fn join(&self) -> TaskJoinFuture<'_>;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -42,6 +63,7 @@ pub struct ServiceState {
     runtime: Arc<DurableRuntime>,
     controls: Arc<ControlSet>,
     sources: Vec<(String, String, TerminalMonitor)>,
+    source_tasks: Vec<Arc<dyn ManagedSourceTask>>,
     max_age: Duration,
     max_http: usize,
     state: Mutex<StateData>,
@@ -53,6 +75,10 @@ impl ServiceState {
                 .sources
                 .iter()
                 .all(|(_, _, source)| source.progress().ready_at(Instant::now(), self.max_age))
+            && self
+                .source_tasks
+                .iter()
+                .all(|task| task.ready() && !task.failed())
             && self
                 .sources
                 .iter()
@@ -212,13 +238,95 @@ impl Shutdown {
 pub struct ServiceSupervisor<T: TerminalTransport + 'static> {
     pub state: Arc<ServiceState>,
     tasks: Vec<TerminalTask<T>>,
+    source_tasks: Vec<Arc<dyn ManagedSourceTask>>,
     finished: bool,
 }
 impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
+    /// Recoveries remain paused until exact worker/source identities are proven
+    /// and the caller has independently established that the old dispatcher is
+    /// stopped. Source tasks are stopped and joined on every rejected startup.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn resume_recovered(
+        runtime: Arc<DurableRuntime>,
+        controls: Arc<ControlSet>,
+        drivers: Vec<TerminalDriver<T>>,
+        source_tasks: Vec<Arc<dyn ManagedSourceTask>>,
+        config_version: u64,
+        workers: Vec<WorkerControl>,
+        previous_dispatcher_stopped: bool,
+        interval: Duration,
+        max_age: Duration,
+        max_http: usize,
+    ) -> Result<Self, &'static str> {
+        let mut seen = BTreeSet::new();
+        if source_tasks.iter().any(|task| {
+            task.task_id().is_empty()
+                || task.task_id().len() > 192
+                || !seen.insert(task.task_id().to_owned())
+                || !task.ready()
+                || task.failed()
+        }) {
+            Self::stop_sources(&source_tasks).await;
+            return Err("service_source_or_config_invalid");
+        }
+        if let Err(error) = runtime
+            .resume(config_version, workers, previous_dispatcher_stopped)
+            .await
+        {
+            Self::stop_sources(&source_tasks).await;
+            return Err(error);
+        }
+        match Self::start_with_sources(
+            runtime.clone(),
+            controls,
+            drivers,
+            source_tasks.clone(),
+            interval,
+            max_age,
+            max_http,
+        ) {
+            Ok(supervisor) => Ok(supervisor),
+            Err(error) => {
+                runtime.owner().fail_closed();
+                Self::stop_sources(&source_tasks).await;
+                Err(error)
+            }
+        }
+    }
+
+    async fn stop_sources(source_tasks: &[Arc<dyn ManagedSourceTask>]) {
+        for task in source_tasks {
+            task.request_stop();
+        }
+        for task in source_tasks {
+            let _ = task.join().await;
+        }
+    }
+
     pub fn start(
         runtime: Arc<DurableRuntime>,
         controls: Arc<ControlSet>,
         drivers: Vec<TerminalDriver<T>>,
+        interval: Duration,
+        max_age: Duration,
+        max_http: usize,
+    ) -> Result<Self, &'static str> {
+        Self::start_with_sources(
+            runtime,
+            controls,
+            drivers,
+            vec![],
+            interval,
+            max_age,
+            max_http,
+        )
+    }
+
+    pub fn start_with_sources(
+        runtime: Arc<DurableRuntime>,
+        controls: Arc<ControlSet>,
+        drivers: Vec<TerminalDriver<T>>,
+        source_tasks: Vec<Arc<dyn ManagedSourceTask>>,
         interval: Duration,
         max_age: Duration,
         max_http: usize,
@@ -230,6 +338,7 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
         let expected = runtime.terminal_cursors()?;
         let workers = runtime.owner().checkpoint()?.workers;
         let mut seen = BTreeSet::new();
+        let mut seen_tasks = BTreeSet::new();
         if drivers.is_empty()
             || drivers.len() != expected.len()
             || drivers.len() != controls.0.len()
@@ -239,6 +348,13 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
             || max_age > Duration::from_secs(300)
             || max_http == 0
             || max_http > 1_000_000
+            || source_tasks.iter().any(|task| {
+                task.task_id().is_empty()
+                    || task.task_id().len() > 192
+                    || !seen_tasks.insert(task.task_id().to_owned())
+                    || !task.ready()
+                    || task.failed()
+            })
             || drivers.iter().any(|driver| {
                 !driver.uses_runtime(&runtime)
                     || !expected.contains(driver.cursor())
@@ -280,6 +396,7 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
                 runtime,
                 controls,
                 sources,
+                source_tasks: source_tasks.clone(),
                 max_age,
                 max_http,
                 state: Mutex::new(StateData {
@@ -289,6 +406,7 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
                 }),
             }),
             tasks,
+            source_tasks,
             finished: false,
         })
     }
@@ -308,6 +426,9 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
                 if self.state.runtime.owner().is_failed() {
                     return Shutdown::Failed;
                 }
+                if self.source_tasks.iter().any(|task| task.failed()) {
+                    return Shutdown::Failed;
+                }
                 if self.state.http_inflight() == Ok(0)
                     && self.state.runtime.owner().active_len() == Ok(0)
                     && self.tasks.iter().all(|task| task.progress().settled())
@@ -324,6 +445,14 @@ impl<T: TerminalTransport + 'static> ServiceSupervisor<T> {
                     Ok((Ok(StopReason::Requested), driver))
                         if !driver.pending_remote_confirmation() => {}
                     _ => return Shutdown::Failed,
+                }
+            }
+            for task in &self.source_tasks {
+                task.request_stop();
+            }
+            for task in &self.source_tasks {
+                if task.join().await.is_err() {
+                    return Shutdown::Failed;
                 }
             }
             Shutdown::Clean
@@ -349,6 +478,9 @@ impl<T: TerminalTransport + 'static> Drop for ServiceSupervisor<T> {
         if !self.finished {
             self.state.fail();
             for task in &self.tasks {
+                task.request_stop();
+            }
+            for task in &self.source_tasks {
                 task.request_stop();
             }
         }

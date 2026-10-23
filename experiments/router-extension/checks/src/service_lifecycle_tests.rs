@@ -1,12 +1,65 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::{
-    runtime_owner::control_gate::{ControlSet, MonotonicClock, SourceKey, WorkerGate},
-    service_lifecycle::{self, Phase, ServiceSupervisor, Shutdown, TrackedBody},
+    runtime_owner::{
+        control_gate::{ControlSet, MonotonicClock, SourceKey, WorkerGate},
+        WorkerControl,
+    },
+    service_lifecycle::{
+        self, ManagedSourceTask, Phase, ServiceSupervisor, Shutdown, TaskJoinFuture, TrackedBody,
+    },
 };
 use axum::{body::Body, routing::get, Router};
 use http_body::Body as _;
-use std::{collections::BTreeMap, pin::Pin};
+use std::{
+    collections::BTreeMap,
+    pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
+struct ManagedFixture {
+    id: String,
+    ready: AtomicBool,
+    failed: AtomicBool,
+    stopped: AtomicBool,
+    joined: AtomicBool,
+}
+
+impl ManagedFixture {
+    fn new(id: &str) -> Arc<Self> {
+        Arc::new(Self {
+            id: id.into(),
+            ready: AtomicBool::new(true),
+            failed: AtomicBool::new(false),
+            stopped: AtomicBool::new(false),
+            joined: AtomicBool::new(false),
+        })
+    }
+}
+
+impl ManagedSourceTask for ManagedFixture {
+    fn task_id(&self) -> &str {
+        &self.id
+    }
+    fn ready(&self) -> bool {
+        self.ready.load(Ordering::Acquire)
+    }
+    fn failed(&self) -> bool {
+        self.failed.load(Ordering::Acquire)
+    }
+    fn request_stop(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+    fn join(&self) -> TaskJoinFuture<'_> {
+        Box::pin(async move {
+            if !self.stopped.load(Ordering::Acquire) {
+                return Err("fixture_join_before_stop");
+            }
+            self.joined.store(true, Ordering::Release);
+            Ok(())
+        })
+    }
+}
 
 fn install_controls(f: &Fixture) -> Arc<ControlSet> {
     install_controls_for(f, "observer-a", "exclusive_router_v1")
@@ -595,4 +648,177 @@ async fn failed_terminal_source_never_looks_like_a_clean_shutdown() {
         supervisor.shutdown(Duration::from_secs(1)).await,
         Shutdown::Failed
     );
+}
+
+#[tokio::test]
+async fn router_owned_source_tasks_gate_readiness_and_are_stopped_then_joined() {
+    let f = fixture();
+    let controls = install_controls(&f);
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        Transport::new(f.store.clone(), vec![]),
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let kv = ManagedFixture::new("kv:worker-a");
+    let control = ManagedFixture::new("control:worker-a");
+    let tasks: Vec<Arc<dyn ManagedSourceTask>> = vec![kv.clone(), control.clone()];
+    let supervisor = ServiceSupervisor::start_with_sources(
+        f.runtime.clone(),
+        controls,
+        vec![driver],
+        tasks,
+        Duration::from_millis(10),
+        Duration::from_secs(5),
+        4,
+    )
+    .unwrap();
+    let state = supervisor.state.clone();
+    state.listening().unwrap();
+    ready(&state).await;
+    control.ready.store(false, Ordering::Release);
+    assert!(!state.ready());
+    control.ready.store(true, Ordering::Release);
+    assert!(state.ready());
+    assert_eq!(
+        supervisor.shutdown(Duration::from_secs(1)).await,
+        Shutdown::Clean
+    );
+    for task in [kv, control] {
+        assert!(task.stopped.load(Ordering::Acquire));
+        assert!(task.joined.load(Ordering::Acquire));
+    }
+}
+
+#[tokio::test]
+async fn source_task_failure_fails_shutdown_and_duplicate_ids_are_rejected() {
+    let f = fixture();
+    let controls = install_controls(&f);
+    let make_driver = || {
+        TerminalDriver::new(
+            f.runtime.clone(),
+            Transport::new(f.store.clone(), vec![]),
+            cursor(0),
+            Ownership::ExclusiveRouterV1,
+        )
+        .unwrap()
+    };
+    let failed = ManagedFixture::new("kv:worker-a");
+    failed.failed.store(true, Ordering::Release);
+    assert!(matches!(
+        ServiceSupervisor::start_with_sources(
+            f.runtime.clone(),
+            controls.clone(),
+            vec![make_driver()],
+            vec![failed],
+            Duration::from_millis(10),
+            Duration::from_secs(5),
+            4,
+        ),
+        Err("service_source_or_config_invalid")
+    ));
+
+    let f = fixture();
+    let controls = install_controls(&f);
+    let first = ManagedFixture::new("control:worker-a");
+    let second = ManagedFixture::new("control:worker-a");
+    assert!(matches!(
+        ServiceSupervisor::start_with_sources(
+            f.runtime.clone(),
+            controls,
+            vec![TerminalDriver::new(
+                f.runtime.clone(),
+                Transport::new(f.store.clone(), vec![]),
+                cursor(0),
+                Ownership::ExclusiveRouterV1,
+            )
+            .unwrap()],
+            vec![first, second],
+            Duration::from_millis(10),
+            Duration::from_secs(5),
+            4,
+        ),
+        Err("service_source_or_config_invalid")
+    ));
+}
+
+#[tokio::test]
+async fn recovered_service_stays_paused_until_source_proof_then_owns_cleanup() {
+    let f = fixture();
+    let recovered = Arc::new(
+        DurableRuntime::recover(
+            Arc::new(EmptyCache),
+            "process-recovered".into(),
+            f.store.clone(),
+            16,
+            16,
+        )
+        .unwrap(),
+    );
+    assert!(!recovered.admission_ready());
+    let identity = SourceKey {
+        instance: "instance-a".into(),
+        observer: "observer-a".into(),
+        ownership: "exclusive_router_v1".into(),
+    };
+    let gate = Arc::new(
+        WorkerGate::new(
+            identity.clone(),
+            Arc::new(MonotonicClock::default()),
+            60_000_000_000,
+        )
+        .unwrap(),
+    );
+    gate.complete(gate.begin().unwrap(), &identity).unwrap();
+    let controls = Arc::new(ControlSet(BTreeMap::from([(
+        "http://worker-a".into(),
+        gate,
+    )])));
+    recovered
+        .owner()
+        .install_controls(controls.clone())
+        .unwrap();
+    let workers = vec![WorkerControl {
+        worker_url: "http://worker-a".into(),
+        instance_epoch: "instance-a".into(),
+        worker_version: 1,
+        cache_identity: "identity-a".into(),
+        healthy: true,
+        draining: false,
+        capacity: 8,
+    }];
+    let driver = TerminalDriver::new(
+        recovered.clone(),
+        Transport::new(f.store.clone(), vec![]),
+        cursor(0),
+        Ownership::ExclusiveRouterV1,
+    )
+    .unwrap();
+    let kv = ManagedFixture::new("kv:worker-a");
+    let control = ManagedFixture::new("control:worker-a");
+    let tasks: Vec<Arc<dyn ManagedSourceTask>> = vec![kv.clone(), control.clone()];
+    let supervisor = ServiceSupervisor::resume_recovered(
+        recovered.clone(),
+        controls,
+        vec![driver],
+        tasks,
+        2,
+        workers,
+        true,
+        Duration::from_millis(10),
+        Duration::from_secs(5),
+        4,
+    )
+    .await
+    .unwrap();
+    assert!(recovered.admission_ready());
+    supervisor.state.listening().unwrap();
+    ready(&supervisor.state).await;
+    assert_eq!(
+        supervisor.shutdown(Duration::from_secs(1)).await,
+        Shutdown::Clean
+    );
+    assert!(kv.joined.load(Ordering::Acquire));
+    assert!(control.joined.load(Ordering::Acquire));
 }

@@ -90,6 +90,8 @@ use {
     sqlite_row_runtime_store::SqliteRowRuntimeStore,
     sqlite_runtime_store::DEFAULT_MAX_SNAPSHOT_BYTES,
 };
+#[cfg(feature = "durable-candidate")]
+use service_lifecycle::{ManagedSourceTask, TaskJoinFuture};
 
 #[cfg(feature = "durable-candidate")]
 type DurableOption = Option<Arc<DurableRuntime>>;
@@ -134,11 +136,17 @@ struct Config {
     use_terminal_driver: bool,
     #[serde(default)]
     background_terminal_driver: bool,
+    #[serde(default)]
+    service_listen: Option<String>,
+    #[serde(default)]
+    service_drain_seconds: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RunMode {
     Qualify,
+    Serve,
+    RecoverServe,
     CrashAfterSend,
     RecoverAfterCrash,
     RejectReplacedSource,
@@ -148,6 +156,8 @@ impl RunMode {
     fn parse(value: Option<std::ffi::OsString>) -> Self {
         match value.as_deref().and_then(std::ffi::OsStr::to_str) {
             None | Some("qualify") => Self::Qualify,
+            Some("serve") => Self::Serve,
+            Some("recover-serve") => Self::RecoverServe,
             Some("crash-after-send") => Self::CrashAfterSend,
             Some("recover-after-crash") => Self::RecoverAfterCrash,
             Some("reject-replaced-source") => Self::RejectReplacedSource,
@@ -183,10 +193,11 @@ impl TokenizerPort for LocalTokenizer {
 }
 
 struct Session {
+    task_id: String,
     spec: PartitionSpec,
     identity: SourceIdentity,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
     errors: Arc<Mutex<Vec<&'static str>>>,
     health_control: Option<HustSourceControl>,
 }
@@ -198,6 +209,7 @@ impl Session {
         incarnation: u64,
         existing: Option<ExistingSource>,
     ) -> Self {
+        let task_id = format!("kv:{}", worker.worker_id);
         let stop = Arc::new(AtomicBool::new(false));
         let errors = Arc::new(Mutex::new(Vec::new()));
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -314,17 +326,18 @@ impl Session {
             .expect("KV startup timed out")
             .unwrap_or_else(|error| panic!("KV startup failed: {error:?}"));
         Self {
+            task_id,
             spec,
             identity,
             stop,
-            thread: Some(thread),
+            thread: Mutex::new(Some(thread)),
             errors,
             health_control: Some(health_control),
         }
     }
     fn stop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Some(handle) = self.thread.take() {
+        if let Some(handle) = self.thread.lock().unwrap().take() {
             handle.join().expect("KV owner panicked");
         }
         assert!(self.errors.lock().unwrap().is_empty(), "KV owner failed");
@@ -333,20 +346,56 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Some(handle) = self.thread.take() {
+        if let Some(handle) = self.thread.lock().unwrap().take() {
             let _ = handle.join();
         }
     }
 }
 
+#[cfg(feature = "durable-candidate")]
+impl ManagedSourceTask for Session {
+    fn task_id(&self) -> &str {
+        &self.task_id
+    }
+    fn ready(&self) -> bool {
+        self.errors.lock().is_ok_and(|errors| errors.is_empty())
+    }
+    fn failed(&self) -> bool {
+        !self.ready()
+    }
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
+    fn join(&self) -> TaskJoinFuture<'_> {
+        let handle = self.thread.lock().ok().and_then(|mut thread| thread.take());
+        let errors = self.errors.clone();
+        Box::pin(async move {
+            let Some(handle) = handle else {
+                return Ok(());
+            };
+            tokio::task::spawn_blocking(move || handle.join())
+                .await
+                .map_err(|_| "kv_join_cancelled")?
+                .map_err(|_| "kv_thread_panicked")?;
+            if errors.lock().map_err(|_| "kv_error_state_poisoned")?.is_empty() {
+                Ok(())
+            } else {
+                Err("kv_thread_failed")
+            }
+        })
+    }
+}
+
 struct ControlSession {
+    task_id: String,
     gate: Arc<WorkerGate>,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
     pause: Arc<AtomicBool>,
 }
 impl ControlSession {
     fn start(session: &mut Session) -> Self {
+        let task_id = format!("control:{}", session.identity.binding.worker_id);
         let mut control = session
             .health_control
             .take()
@@ -410,9 +459,10 @@ impl ControlSession {
             .expect("control startup timed out")
             .expect("initial control verification failed");
         Self {
+            task_id,
             gate,
             stop,
-            thread: Some(thread),
+            thread: Mutex::new(Some(thread)),
             pause,
         }
     }
@@ -421,9 +471,38 @@ impl Drop for ControlSession {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
         let _ = self.gate.drain();
-        if let Some(thread) = self.thread.take() {
+        if let Some(thread) = self.thread.lock().unwrap().take() {
             let _ = thread.join();
         }
+    }
+}
+
+#[cfg(feature = "durable-candidate")]
+impl ManagedSourceTask for ControlSession {
+    fn task_id(&self) -> &str {
+        &self.task_id
+    }
+    fn ready(&self) -> bool {
+        true
+    }
+    fn failed(&self) -> bool {
+        false
+    }
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.gate.drain();
+    }
+    fn join(&self) -> TaskJoinFuture<'_> {
+        let handle = self.thread.lock().ok().and_then(|mut thread| thread.take());
+        Box::pin(async move {
+            let Some(handle) = handle else {
+                return Ok(());
+            };
+            tokio::task::spawn_blocking(move || handle.join())
+                .await
+                .map_err(|_| "control_join_cancelled")?
+                .map_err(|_| "control_thread_panicked")
+        })
     }
 }
 
@@ -1253,6 +1332,12 @@ async fn main() {
     );
     assert!(config.expected_retire_response_losses <= config.workers.len());
     assert!(!config.background_terminal_driver || config.use_terminal_driver);
+    if matches!(mode, RunMode::Serve | RunMode::RecoverServe) {
+        assert!(config.use_terminal_driver && config.background_terminal_driver);
+        assert!(config.service_listen.is_some() && config.service_drain_seconds.is_some());
+    } else {
+        assert!(config.service_listen.is_none() && config.service_drain_seconds.is_none());
+    }
     assert!(
         !config.use_terminal_driver
             || (config.durable_store.is_some()
@@ -1260,7 +1345,7 @@ async fn main() {
                 && config.expected_retire_response_losses == 0
                 && config.churn_families == 0
                 && !config.exercise_control_gate
-                && mode == RunMode::Qualify),
+                && matches!(mode, RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe)),
         "driver transport qualification requires isolated managed durable mode"
     );
     assert!(
@@ -1275,7 +1360,7 @@ async fn main() {
                 && (1..=8).contains(&config.churn_children_per_family))
     );
     assert!(
-        mode == RunMode::Qualify
+        matches!(mode, RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe)
             || (config.terminal_ownership_mode == "exclusive_router_v1"
                 && config.durable_store.is_some()
                 && config.churn_families == 0),
@@ -1315,7 +1400,7 @@ async fn main() {
     #[cfg(feature = "durable-candidate")]
     let existing_sources: BTreeMap<String, ExistingSource> = if matches!(
         mode,
-        RunMode::RecoverAfterCrash | RunMode::RejectReplacedSource
+        RunMode::RecoverAfterCrash | RunMode::RecoverServe | RunMode::RejectReplacedSource
     ) {
         let store_path = config
             .durable_store
@@ -1431,7 +1516,7 @@ async fn main() {
         )
     };
     #[cfg(feature = "durable-candidate")]
-    let (owner, durable) = if mode == RunMode::RecoverAfterCrash {
+    let (owner, durable) = if matches!(mode, RunMode::RecoverAfterCrash | RunMode::RecoverServe) {
         let path = config.durable_store.as_ref().unwrap();
         let runtime = Arc::new(
             DurableRuntime::recover(
@@ -1542,6 +1627,123 @@ async fn main() {
         vec![],
         false,
     );
+    #[cfg(feature = "durable-candidate")]
+    if matches!(mode, RunMode::Serve | RunMode::RecoverServe) {
+        use axum::routing::get;
+        use service_lifecycle::{self, ManagedSourceTask, ServiceSupervisor};
+
+        let listen: std::net::SocketAddr = config
+            .service_listen
+            .as_deref()
+            .expect("service_listen is required")
+            .parse()
+            .expect("service_listen must be a numeric socket address");
+        let drain_seconds = config
+            .service_drain_seconds
+            .expect("service_drain_seconds is required");
+        assert!((1..=300).contains(&drain_seconds));
+        if let Some(manager_budget) = std::env::var_os("PREFIX_ROUTING_DRAIN_SECONDS") {
+            let manager_budget: f64 = manager_budget
+                .to_str()
+                .expect("Manager drain budget must be UTF-8")
+                .parse()
+                .expect("Manager drain budget must be numeric");
+            assert_eq!(manager_budget, drain_seconds as f64);
+        }
+        let runtime = durable
+            .as_ref()
+            .expect("service requires the durable runtime")
+            .clone();
+        let drivers = make_terminal_drivers(&config, &sessions, &durable);
+        let mut source_tasks: Vec<Arc<dyn ManagedSourceTask>> = sessions
+            .into_iter()
+            .map(|session| Arc::new(session) as Arc<dyn ManagedSourceTask>)
+            .collect();
+        source_tasks.extend(
+            control_sessions
+                .into_iter()
+                .map(|session| Arc::new(session) as Arc<dyn ManagedSourceTask>),
+        );
+        let supervisor = if mode == RunMode::RecoverServe {
+            ServiceSupervisor::resume_recovered(
+                runtime,
+                control_set,
+                drivers,
+                source_tasks,
+                2,
+                controls,
+                true,
+                Duration::from_millis(25),
+                Duration::from_secs(5),
+                1024,
+            )
+            .await
+            .expect("service recovery failed closed")
+        } else {
+            ServiceSupervisor::start_with_sources(
+                runtime,
+                control_set,
+                drivers,
+                source_tasks,
+                Duration::from_millis(25),
+                Duration::from_secs(5),
+                1024,
+            )
+            .expect("service startup failed closed")
+        };
+        let state = supervisor.state.clone();
+        let app = app
+            .route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                service_lifecycle::track_http,
+            ))
+            .route(
+                "/readyz",
+                get(service_lifecycle::readiness).with_state(state),
+            );
+        let listener = tokio::net::TcpListener::bind(listen)
+            .await
+            .expect("Router listen failed");
+        let actual = listener.local_addr().unwrap();
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "starting",
+                "scope": "real-hust-service-candidate",
+                "origin": format!("http://{actual}"),
+                "pid": std::process::id(),
+                "recovered": mode == RunMode::RecoverServe
+            })
+        );
+        let stop = async {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut term = signal(SignalKind::terminate()).unwrap();
+                let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+                tokio::select! { _ = term.recv() => (), _ = interrupt.recv() => () }
+            }
+            #[cfg(not(unix))]
+            tokio::signal::ctrl_c().await.unwrap();
+        };
+        let result = service_lifecycle::serve_until(
+            listener,
+            app,
+            supervisor,
+            stop,
+            Duration::from_secs(drain_seconds),
+        )
+        .await;
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "stopped",
+                "shutdown": format!("{result:?}"),
+                "active": owner.active_len().unwrap_or(usize::MAX)
+            })
+        );
+        std::process::exit(result.exit_code());
+    }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
