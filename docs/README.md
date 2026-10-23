@@ -1,5 +1,7 @@
 # 文档导航与权威顺序
 
+2026-10-23 增量：[后台终态监督记录](../evidence/background-terminal-tasks-2026-10-23.md)与[合同](decisions/2026-10-23-terminal-task-supervision.md)描述后台任务、就绪依据和停止 join；完整服务/Manager 仍未交付。当前按用户要求暂停人员分工讨论，下面较早日期描述按历史范围解释。
+
 2026-10-22 增量：控制门已有有限两卡资格；新终态驱动 HTTP 运输已补齐完整宿主构建/39 项和双 NPU 有限接线，见[最新实机记录](../evidence/hust-terminal-driver-npu-2026-10-22.md)。常驻 run、信号排空与 Manager 仍待完成，下面 10-18 的成绩为历史基线。
 
 2026-10-18 接手入口：[项目接手指南](项目接手指南_2026-10-17.md)。当前原公开HTTP、真实M1、原生M7→同进程M2、M3/M4/M5和HUST终态，以及显式增量存储的真实commit→ACK→retire、回复丢失幂等、强退保债和累计回收均已通过有限双TP1验证；`recovery-retirement-v1` 已冻结，重启后 M2 安全降级 unknown。生产目录/Manager启停、长时间全链和容量收益仍待验收。完成情况以 progress 与对应 evidence 为准，较早日期的局部状态按历史解释。

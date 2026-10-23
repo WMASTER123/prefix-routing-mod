@@ -1,6 +1,6 @@
 # 当前进展与执行顺序
 
-更新：2026-10-22。本页是现行完成情况入口；[接手指南](项目接手指南_2026-10-17.md)集中记录框架、端口、三人所有权和未决边界。[上一阶段](progress-native-owner-history-20261016.md)和 [更早历史](progress-history.md)保留原证据边界。组件数与测试数不用于计算“完成百分比”。
+更新：2026-10-23。本页是现行完成情况入口；[接手指南](项目接手指南_2026-10-17.md)集中记录框架、端口、所有权和未决边界。[上一阶段](progress-native-owner-history-20261016.md)和 [更早历史](progress-history.md)保留原证据边界。组件数与测试数不用于计算“完成百分比”。用户本轮要求暂不讨论人员分工，当前继续按既定组件边界推进实现和审查。
 
 ## 本阶段已完成
 
@@ -25,11 +25,13 @@
 
 ## 组件状态
 
+2026-10-23 后台任务增量：每来源唯一 TerminalTask 已在同一真实公开链中运行原 run 循环，HTTP 侧不再触发 step。最终 aarch64 helper 95/严格 Clippy、HTTP 16 场景、完整宿主 39 项通过；两张 NPU 的实际 A/A/B、0/384/384 命中、关闭准入返回 503、核心取消、4 family 及两个任务 join 均通过。自审修正重试沿用旧就绪依据，补任务丢失/取消 join/panic/待确认反例；Windows CPU 606、integration 3 通过。完整服务 readiness、HTTP 工作计数、SIGTERM/期限排空与 Manager 仍未实现。输入代码 `75da63d` 六项 CI 成功，制品和报告见[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)。
+
 | 组件 | 已实际完成 | 冻结/交付前剩余 |
 |---|---|---|
 | M1 | 真实本地 Qwen tokenizer、完整块摘要，已装入公开字符串 completion 链 | 输入/输出预算和一次分词开销；chat/template、数组/token-id 不在当前支持范围 |
 | M2 | 复用原索引/Directory/Pool；真实 Rust 订阅写入同进程目录，连续性/父链/总配额/失信/实例围栏；Router 重启后安全降级为 unknown 已通过 | 大工作集/并发成本；当前不支持暖目录恢复，需权威快照水位的新 profile 后另行验收 |
-| M3 | 条件准入、发出后保债、真实终态/增量存储/commit→ACK→retire；原路径回复丢失、累计回收、强退恢复/控制资格通过；新驱动 HTTP 运输 CPU 与双 NPU 有限接线通过 | 新驱动常驻装配/readiness/排空、故障实机扩展与 Manager；跨主机所有权不在首版范围 |
+| M3 | 条件准入、发出后保债、真实终态/增量存储/commit→ACK→retire；原路径回复丢失、累计回收、强退恢复/控制资格通过；新驱动的后台任务、确认与 join 已在双 NPU 有限请求链通过 | 整体服务 readiness、HTTP/信号/期限排空、后台路径故障实机扩展与 Manager；跨主机所有权不在首版范围 |
 | M4 | 基础可信正命中优先/最低在途回退，真实目标和缓存结果符合预期 | 配对开销与强基线；优化策略后置 |
 | M5 | 复用原 Router HTTP/SSE，公开入口、真实转发及生成后取消通过 | 生产启停/排空、并发配置竞争/故障和可发布二进制 |
 | M6 | CPU/源码/原生 CI、可重复装配、手动 NPU 公开链/稳定性及原始报告 | 同底座开销、持续服务、强基线和多阈值容量曲线 |
@@ -42,9 +44,9 @@
 
 ## 接下来集中完成什么
 
-1. 按[控制准入 ADR](decisions/2026-10-22-control-admission.md)保留已通过的控制门资格；接着推进[生产接线与开销工作包](planning/production-runtime-and-overhead.md)中的常驻终态循环、信号排空、Manager 监管、唯一源码迁移与制品。不得改动保债、来源绑定或 commit→ACK→retire 顺序。
+1. 保留已通过的控制门与后台终态任务资格，集中完成整体 service readiness、HTTP 工作计数、SIGTERM/期限排空、生产启动恢复与 Manager，再统一唯一源码目录和制品。具体边界见[生产工作包](planning/production-runtime-and-overhead.md)，不得改动保债、来源绑定或 commit→ACK→retire 顺序。
 2. 开展有界直连/原 Router/同底座仅加接线开销对照，明确启用的观测与持久性；随后做双副本强基线、多阈值容量曲线和输入/输出长度分组。
-3. 正式按 A(M7/M2)、B(M1/M4/M5)、C(M3/M6/交付)分工。共享语义已冻结，生产目录迁移、公开配置/错误码、Manager 和测试替身仍由集成负责人统一收敛并交叉审查。见[工作包](planning/component-work-packages.md)和[接手指南](项目接手指南_2026-10-17.md)。
+3. 暂停人员分工讨论；保留[工作包](planning/component-work-packages.md)中的组件所有权，统一收敛生产目录、公开配置/错误码、Manager 和测试替身。恢复/回收语义已经冻结，不等于全部生产接口冻结。
 
 用户暂无固定 SLO：容量评测仍按预冻结的多阈值 TTFT/生成停顿与输入/输出预算分组，保留失败分母；chunk 间隔不冒称逐 token 间隔。尚未开展正式容量实验。
 

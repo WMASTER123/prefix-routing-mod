@@ -1,5 +1,7 @@
 # 支持与候选矩阵
 
+2026-10-23：新增后台 TerminalTask 资格模式，具体 CPU、完整宿主和 NPU 状态见[本轮记录](../evidence/background-terminal-tasks-2026-10-23.md)。固定 Core ced6857 / Ascend b47795c 的模型、dtype、eager/TP1 范围不变；这不是跨版本兼容扩展。整体服务/Manager、目标图与性能仍未验收。
+
 2026-10-22 增量：同一固定 HUST 组合下，新终态驱动 HTTP 运输已完成 aarch64 完整宿主构建/39 项及双 NPU 有限 step 接线，见[最新资格](../evidence/hust-terminal-driver-npu-2026-10-22.md)。未扩展模型、dtype、图、并行或版本支持范围；常驻 run/Manager、长时间全链与容量仍未通过。诊断使用显式 profile，注册的 Triton 后端和唯一 active Ascend 分开报告；全量 profiling 工具依赖问题仍保留。
 
 2026-10-18 当前状态以[progress](progress.md)和[接手指南](项目接手指南_2026-10-17.md)为准：固定HUST与双TP1的原公开HTTP/M1/M2/M3/M4/M5/M7有限链已通过，`recovery-retirement-v1` 的强退保债、暂停恢复、退役幂等和累计回收已过资格；重启后 M2 固定降级 unknown。Manager激活、长时间全链、跨版本认证和容量收益尚未验收。下方按日期的旧状态为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。

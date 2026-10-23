@@ -44,7 +44,7 @@ jobs:
           rustfmt +1.99.0 --edition 2021 --check experiments/router-extension/checks/examples/sqlite_runtime_store_probe.rs
           cargo +1.99.0 clippy --locked --manifest-path experiments/router-extension/checks/Cargo.toml --all-targets -- -D warnings
           cargo +1.99.0 test --locked --manifest-path experiments/router-extension/checks/Cargo.toml
-      - name: Actual observer state to Rust terminal driver over HTTP (CPU core substitute)
+      - name: Finite and background drivers against observer HTTP (CPU core substitute)
         env:
           PYTHONPATH: ${{ github.workspace }}/src
         run: |
