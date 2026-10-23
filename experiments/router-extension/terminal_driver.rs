@@ -356,7 +356,12 @@ impl<T: TerminalTransport> TerminalDriver<T> {
                     last_success = Some(Instant::now());
                     DriverPhase::Idle
                 }
-                Err(PumpError::Retry) => DriverPhase::Retrying,
+                Err(PumpError::Retry) => {
+                    // A retry invalidates the last readiness proof. Starting
+                    // the next RPC must not reopen readiness before it succeeds.
+                    last_success = None;
+                    DriverPhase::Retrying
+                }
                 Err(error) => break Err(error),
             };
             if let Some(sender) = &progress {

@@ -912,3 +912,29 @@ async fn invalid_task_interval_and_unpolled_supervisor_drop_fail_closed() {
         assert!(calls.lock().unwrap().values.is_empty());
     }
 }
+
+#[tokio::test]
+async fn retry_after_a_success_invalidates_the_prior_readiness_proof() {
+    let f = fixture();
+    let mut transport = Transport::new(f.store.clone(), vec![]);
+    transport.batches.push_back(Err(RpcFault::Unavailable));
+    let driver = TerminalDriver::new(
+        f.runtime.clone(),
+        transport,
+        cursor(0),
+        Ownership::ObserveOnly,
+    )
+    .unwrap();
+    let task = TerminalTask::spawn(driver, Duration::from_millis(100)).unwrap();
+    wait_phase(&task, DriverPhase::Idle).await;
+    assert!(task.progress().last_success.is_some());
+    wait_phase(&task, DriverPhase::Retrying).await;
+    let mut progress = task.progress();
+    assert!(progress.last_success.is_none());
+    // Even the next in-flight RPC cannot reuse the pre-failure success time.
+    progress.phase = DriverPhase::Working;
+    assert!(!progress.ready_at(std::time::Instant::now(), Duration::from_secs(60)));
+    wait_phase(&task, DriverPhase::Idle).await;
+    assert!(task.progress().last_success.is_some());
+    assert!(task.join().await.unwrap().0.is_ok());
+}
