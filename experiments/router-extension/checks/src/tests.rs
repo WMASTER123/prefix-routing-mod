@@ -890,6 +890,11 @@ mod runtime_owner {
             owner.apply_terminal(&attempt, "http://b", "b-1").unwrap(),
             TerminalResult::Duplicate
         );
+        // A background terminal consumer may finish before the HTTP body or
+        // disconnect callback. Late transport evidence must not reopen debt.
+        lease.closed(true, CloseEvidence::TransportDropped);
+        assert_eq!(owner.active_len().unwrap(), 0);
+        assert!(!owner.is_failed());
     }
 
     #[tokio::test]

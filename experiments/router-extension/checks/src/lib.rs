@@ -4,6 +4,8 @@
 pub mod admission_bridge;
 #[path = "../../durable_runtime.rs"]
 pub mod durable_runtime;
+#[path = "../../hust_terminal_transport.rs"]
+pub mod hust_terminal_transport;
 #[path = "../../lifecycle_bridge.rs"]
 pub mod lifecycle_bridge;
 #[path = "../../online_bridge.rs"]
@@ -18,10 +20,20 @@ pub mod runtime_owner;
 pub mod runtime_provider;
 #[path = "../../runtime_store.rs"]
 pub mod runtime_store;
+#[path = "../../service_lifecycle.rs"]
+pub mod service_lifecycle;
 #[path = "../../sqlite_row_runtime_store.rs"]
 pub mod sqlite_row_runtime_store;
 #[path = "../../sqlite_runtime_store.rs"]
 pub mod sqlite_runtime_store;
+#[path = "../../terminal_driver.rs"]
+pub mod terminal_driver;
 
+#[cfg(test)]
+mod control_tests;
+#[cfg(test)]
+mod hust_terminal_transport_tests;
+#[cfg(test)]
+mod terminal_driver_tests;
 #[cfg(test)]
 mod tests;

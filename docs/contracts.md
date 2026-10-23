@@ -1,5 +1,13 @@
 # 接口契约：component-v0.1 研发参考与未冻结部分
 
+2026-10-23 后续：服务候选及 HTTP/后端负债分离、来源覆盖、暂停恢复和期限语义见[ADR](decisions/2026-10-23-service-lifecycle.md)。CPU Manager 信号验证不等于 MOD 激活，不冻结公开配置和生产错误映射。
+
+2026-10-23：后台监督候选见[ADR](decisions/2026-10-23-terminal-task-supervision.md)。进度快照是有界观测，不是第二份恢复 cursor；首次成功、失联后重新成功与停止 join 有明确语义。CPU/实机状态见[记录](../evidence/background-terminal-tasks-2026-10-23.md)。整个服务 readiness、公开 schema、信号和 Manager 尚未冻结；下方带日期段落按其当时范围解释。
+
+2026-10-22 后续：同一 DurableRuntime 的每来源持续驱动候选见[ADR](decisions/2026-10-22-terminal-driver.md)，公开配置/传输 ABI 不变。驱动不保存第二份历史；pending ACK/retire 与 active 债务分开，任务退出失败关闭。固定 HUST HTTP 运输已通过 CPU socket/现有观测状态联调及双 NPU 有限 Driver.step 接线，常驻 run/信号装配仍待验收；下面的 component-v0.1 不替代该适配资格。
+
+2026-10-22：进程内控制准入门的增量边界见[ADR](decisions/2026-10-22-control-admission.md)。新鲜度不写入持久 checkpoint，不清除旧债；具体公开配置/错误与常驻运行接口仍按[生产工作包](planning/production-runtime-and-overhead.md)实施，以下历史端口不能冒充最终配置 schema。
+
 2026-10-17：当前Rust候选端口、配置/错误/并发边界和三人代码所有权见[接手指南](项目接手指南_2026-10-17.md)。真实公开HTTP有限组合已通过，生产ABI仍未冻结；本文component-v0.1是Python参考合同。下方按日期记录仅描述当时状态，实际完成情况以[progress](progress.md)和evidence为准。
 
 2026-10-14 后续：原typed Router库的异步准入/自有载体/转发/生命周期已和真实HUST终态组合到同一实验账本，2 family/3 child及丢许可保债通过。原三文件宿主patch与HUST包装不变；新接收器映射显式实例，新增完整终态批次校验。当前仍不是生产HTTP入口、在线KV或性能验收，component-v0.1/生产ABI和MOD import_only不变。范围与下一步见[组合计划](planning/router-hust-terminal-chain.md)和[证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，下面同日较早记录仅对应当时阶段。

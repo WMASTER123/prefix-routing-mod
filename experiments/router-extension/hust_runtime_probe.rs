@@ -37,6 +37,9 @@ mod directory;
 mod durable_runtime;
 #[path = "../src/routers/http/hust_source_control.rs"]
 mod hust_source_control;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/hust_terminal_transport.rs"]
+pub mod hust_terminal_transport;
 #[path = "../src/routers/http/native_kv_owner.rs"]
 mod native_kv_owner;
 #[path = "../src/routers/http/native_kv_wire.rs"]
@@ -62,15 +65,26 @@ mod sqlite_row_runtime_store;
 #[cfg(feature = "durable-candidate")]
 #[path = "../src/routers/http/sqlite_runtime_store.rs"]
 mod sqlite_runtime_store;
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/terminal_driver.rs"]
+pub mod terminal_driver;
+// Compile the shared service boundary in the fixed host. Existing finite modes
+// remain unchanged until the service composition receives separate qualification.
+#[cfg(feature = "durable-candidate")]
+#[path = "../src/routers/http/service_lifecycle.rs"]
+pub mod service_lifecycle;
 
 use directory::{Binding, Limits};
-use hust_source_control::{HustSourceControl, SourceBinding, SourceIdentity};
+use hust_source_control::{HealthFault, HustSourceControl, SourceBinding, SourceIdentity};
 use native_kv_owner::{NativeKvOwner, SourceControl};
 use native_kv_zmq::ZmqNativeTransport;
 use request_feature_port::{CompletionFeaturePort, TokenizerPort};
 use runtime_cache_port::{InProcessCache, MonotonicClock, PartitionSpec};
+use runtime_owner::control_gate::{ControlSet, SourceKey, WorkerGate};
 use runtime_owner::{CachePort, RuntimeOwner, TerminalResult, WorkerControl};
 use runtime_provider::{FeaturePort, RuntimeProvider};
+#[cfg(feature = "durable-candidate")]
+use service_lifecycle::{ManagedSourceTask, TaskJoinFuture};
 #[cfg(feature = "durable-candidate")]
 use {
     durable_runtime::{DurableRuntime, TerminalRecord},
@@ -88,6 +102,8 @@ type DurableOption = Option<()>;
 #[serde(deny_unknown_fields)]
 struct Worker {
     origin: String,
+    #[serde(default)]
+    health_origin: Option<String>,
     #[serde(default)]
     retirement_origin: Option<String>,
     token: String,
@@ -114,11 +130,23 @@ struct Config {
     churn_families: usize,
     #[serde(default)]
     churn_children_per_family: usize,
+    #[serde(default)]
+    exercise_control_gate: bool,
+    #[serde(default)]
+    use_terminal_driver: bool,
+    #[serde(default)]
+    background_terminal_driver: bool,
+    #[serde(default)]
+    service_listen: Option<String>,
+    #[serde(default)]
+    service_drain_seconds: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RunMode {
     Qualify,
+    Serve,
+    RecoverServe,
     CrashAfterSend,
     RecoverAfterCrash,
     RejectReplacedSource,
@@ -128,6 +156,8 @@ impl RunMode {
     fn parse(value: Option<std::ffi::OsString>) -> Self {
         match value.as_deref().and_then(std::ffi::OsStr::to_str) {
             None | Some("qualify") => Self::Qualify,
+            Some("serve") => Self::Serve,
+            Some("recover-serve") => Self::RecoverServe,
             Some("crash-after-send") => Self::CrashAfterSend,
             Some("recover-after-crash") => Self::RecoverAfterCrash,
             Some("reject-replaced-source") => Self::RejectReplacedSource,
@@ -163,11 +193,13 @@ impl TokenizerPort for LocalTokenizer {
 }
 
 struct Session {
+    task_id: String,
     spec: PartitionSpec,
     identity: SourceIdentity,
     stop: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
     errors: Arc<Mutex<Vec<&'static str>>>,
+    health_control: Option<HustSourceControl>,
 }
 impl Session {
     fn start(
@@ -177,6 +209,7 @@ impl Session {
         incarnation: u64,
         existing: Option<ExistingSource>,
     ) -> Self {
+        let task_id = format!("kv:{}", worker.worker_id);
         let stop = Arc::new(AtomicBool::new(false));
         let errors = Arc::new(Mutex::new(Vec::new()));
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
@@ -210,6 +243,7 @@ impl Session {
                     )
                 };
                 let source = control.identity().clone();
+                let health_control = control.fork_for_health_at(worker.health_origin.as_deref())?;
                 let spec = PartitionSpec {
                     binding: Binding {
                         worker: Arc::from(worker.origin.clone()),
@@ -230,7 +264,9 @@ impl Session {
                     // identity/liveness for M3, but deliberately leave M2
                     // unknown until a future snapshot-capable protocol exists.
                     control.verify(&spec)?;
-                    ready_tx.send(Ok((spec.clone(), source))).unwrap();
+                    ready_tx
+                        .send(Ok((spec.clone(), source, health_control)))
+                        .unwrap();
                     let mut refresh = Instant::now() + Duration::from_millis(500);
                     while !task_stop.load(Ordering::Acquire) {
                         if Instant::now() >= refresh {
@@ -267,7 +303,7 @@ impl Session {
                     transport,
                     control,
                 )?;
-                ready_tx.send(Ok((spec, source))).unwrap();
+                ready_tx.send(Ok((spec, source, health_control))).unwrap();
                 let mut refresh = Instant::now() + Duration::from_millis(500);
                 while !task_stop.load(Ordering::Acquire) {
                     owner.poll_once(Duration::from_millis(25))?;
@@ -285,21 +321,23 @@ impl Session {
                 let _ = ready_tx.send(Err(error));
             }
         });
-        let (spec, identity) = ready_rx
+        let (spec, identity, health_control) = ready_rx
             .recv_timeout(Duration::from_secs(15))
             .expect("KV startup timed out")
             .unwrap_or_else(|error| panic!("KV startup failed: {error:?}"));
         Self {
+            task_id,
             spec,
             identity,
             stop,
-            thread: Some(thread),
+            thread: Mutex::new(Some(thread)),
             errors,
+            health_control: Some(health_control),
         }
     }
     fn stop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Some(handle) = self.thread.take() {
+        if let Some(handle) = self.thread.lock().unwrap().take() {
             handle.join().expect("KV owner panicked");
         }
         assert!(self.errors.lock().unwrap().is_empty(), "KV owner failed");
@@ -308,9 +346,167 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
-        if let Some(handle) = self.thread.take() {
+        if let Some(handle) = self.thread.lock().unwrap().take() {
             let _ = handle.join();
         }
+    }
+}
+
+#[cfg(feature = "durable-candidate")]
+impl ManagedSourceTask for Session {
+    fn task_id(&self) -> &str {
+        &self.task_id
+    }
+    fn ready(&self) -> bool {
+        self.errors.lock().is_ok_and(|errors| errors.is_empty())
+    }
+    fn failed(&self) -> bool {
+        !self.ready()
+    }
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+    }
+    fn join(&self) -> TaskJoinFuture<'_> {
+        let handle = self.thread.lock().ok().and_then(|mut thread| thread.take());
+        let errors = self.errors.clone();
+        Box::pin(async move {
+            let Some(handle) = handle else {
+                return Ok(());
+            };
+            tokio::task::spawn_blocking(move || handle.join())
+                .await
+                .map_err(|_| "kv_join_cancelled")?
+                .map_err(|_| "kv_thread_panicked")?;
+            if errors
+                .lock()
+                .map_err(|_| "kv_error_state_poisoned")?
+                .is_empty()
+            {
+                Ok(())
+            } else {
+                Err("kv_thread_failed")
+            }
+        })
+    }
+}
+
+struct ControlSession {
+    task_id: String,
+    gate: Arc<WorkerGate>,
+    stop: Arc<AtomicBool>,
+    thread: Mutex<Option<JoinHandle<()>>>,
+    pause: Arc<AtomicBool>,
+}
+impl ControlSession {
+    fn start(session: &mut Session) -> Self {
+        let task_id = format!("control:{}", session.identity.binding.worker_id);
+        let mut control = session
+            .health_control
+            .take()
+            .expect("health client consumed once");
+        let spec = session.spec.clone();
+        let key = SourceKey {
+            instance: session.identity.binding.instance_epoch.clone(),
+            observer: session.identity.binding.observer_epoch.clone(),
+            ownership: session.identity.ownership_mode.clone(),
+        };
+        let gate = Arc::new(
+            WorkerGate::new(
+                key.clone(),
+                Arc::new(runtime_owner::control_gate::MonotonicClock::default()),
+                3_000_000_000,
+            )
+            .unwrap(),
+        );
+        let stop = Arc::new(AtomicBool::new(false));
+        let task_stop = stop.clone();
+        let task_gate = gate.clone();
+        let pause = Arc::new(AtomicBool::new(false));
+        let task_pause = pause.clone();
+        let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+        let thread = thread::spawn(move || {
+            let mut first = true;
+            while !task_stop.load(Ordering::Acquire) {
+                if task_pause.load(Ordering::Acquire) {
+                    thread::sleep(Duration::from_millis(25));
+                    continue;
+                }
+                let Ok(probe) = task_gate.begin() else {
+                    break;
+                };
+                let result = match control.refresh_health(&spec) {
+                    Ok(()) => task_gate.complete(probe, &key),
+                    Err(HealthFault::Unavailable) => {
+                        let _ = task_gate.reject(probe);
+                        Err("control_unavailable")
+                    }
+                    Err(HealthFault::IdentityChanged) => {
+                        let _ = task_gate.quarantine();
+                        Err("control_identity_changed")
+                    }
+                };
+                if first {
+                    let _ = ready_tx.send(result);
+                    first = false;
+                }
+                for _ in 0..20 {
+                    if task_stop.load(Ordering::Acquire) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+            }
+            let _ = task_gate.drain();
+        });
+        ready_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("control startup timed out")
+            .expect("initial control verification failed");
+        Self {
+            task_id,
+            gate,
+            stop,
+            thread: Mutex::new(Some(thread)),
+            pause,
+        }
+    }
+}
+impl Drop for ControlSession {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.gate.drain();
+        if let Some(thread) = self.thread.lock().unwrap().take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+#[cfg(feature = "durable-candidate")]
+impl ManagedSourceTask for ControlSession {
+    fn task_id(&self) -> &str {
+        &self.task_id
+    }
+    fn ready(&self) -> bool {
+        true
+    }
+    fn failed(&self) -> bool {
+        false
+    }
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Release);
+        let _ = self.gate.drain();
+    }
+    fn join(&self) -> TaskJoinFuture<'_> {
+        let handle = self.thread.lock().ok().and_then(|mut thread| thread.take());
+        Box::pin(async move {
+            let Some(handle) = handle else {
+                return Ok(());
+            };
+            tokio::task::spawn_blocking(move || handle.join())
+                .await
+                .map_err(|_| "control_join_cancelled")?
+                .map_err(|_| "control_thread_panicked")
+        })
     }
 }
 
@@ -470,6 +666,60 @@ fn terminal_identity(worker: Worker) -> SourceIdentity {
     identity
 }
 
+async fn set_health_fault(client: &reqwest::Client, worker: &Worker, mode: &str) {
+    client
+        .post(format!(
+            "{}/__fault/{mode}",
+            worker.health_origin.as_ref().unwrap()
+        ))
+        .header("X-Prefix-Routing-Control", &worker.token)
+        .body(Vec::new())
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+}
+
+async fn wait_health(session: &ControlSession, epoch: &str, ready: bool) {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while session.gate.revision(epoch).is_some() != ready {
+        assert!(
+            Instant::now() < deadline,
+            "control gate did not reach expected state"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+async fn control_request(
+    client: &reqwest::Client,
+    origin: &str,
+    config: &Config,
+    prompt: &str,
+    owner: &RuntimeOwner,
+    expected: usize,
+) -> String {
+    let before = owner.checkpoint().unwrap().active;
+    let response = client.post(format!("{origin}/v1/completions"))
+        .json(&serde_json::json!({"model": config.model, "prompt": prompt, "max_tokens": 1, "temperature": 0}))
+        .send().await.unwrap();
+    assert_eq!(response.status().as_u16(), 200);
+    let _: serde_json::Value = response.json().await.unwrap();
+    let after = owner.checkpoint().unwrap().active;
+    let added: Vec<_> = after
+        .iter()
+        .filter(|attempt| {
+            !before
+                .iter()
+                .any(|old| old.attempt_id == attempt.attempt_id)
+        })
+        .collect();
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0].worker_url, config.workers[expected].origin);
+    added[0].attempt_id.clone()
+}
+
 fn assert_old_cursor_rejected(worker: Worker, source: SourceIdentity, after: u64) {
     assert!(after < source.retired_through);
     let client = reqwest::blocking::Client::builder()
@@ -602,6 +852,12 @@ async fn reconcile(
     retired_families: &mut usize,
     retire_response_losses: &mut usize,
 ) -> BTreeMap<String, usize> {
+    if config.use_terminal_driver {
+        #[cfg(feature = "durable-candidate")]
+        return reconcile_driver(config, sessions, cursors, durable, retired_families).await;
+        #[cfg(not(feature = "durable-candidate"))]
+        panic!("terminal driver requires durable candidate");
+    }
     let deadline = Instant::now() + Duration::from_secs(15);
     let mut statuses = BTreeMap::new();
     while owner.active_len().unwrap() != 0 {
@@ -740,6 +996,299 @@ async fn reconcile(
     statuses
 }
 
+#[cfg(feature = "durable-candidate")]
+fn make_terminal_drivers(
+    config: &Config,
+    sessions: &[Session],
+    durable: &DurableOption,
+) -> Vec<terminal_driver::TerminalDriver<hust_terminal_transport::HustTerminalTransport>> {
+    use hust_terminal_transport::HustTerminalTransport;
+    use terminal_driver::{Ownership, TerminalDriver};
+    let runtime = durable
+        .as_ref()
+        .expect("terminal driver requires durable runtime");
+    assert_eq!(config.terminal_ownership_mode, "exclusive_router_v1");
+    assert_eq!(config.expected_retire_response_losses, 0);
+    config
+        .workers
+        .iter()
+        .zip(sessions)
+        .map(|(worker, session)| {
+            assert!(worker.retirement_origin.is_none());
+            let source = &session.identity;
+            assert_eq!(source.binding.worker_id, worker.worker_id);
+            let cursor = runtime.terminal_cursor(&worker.worker_id).unwrap().unwrap();
+            assert_eq!(cursor.worker_url, worker.origin);
+            assert_eq!(cursor.instance_epoch, source.binding.instance_epoch);
+            assert_eq!(cursor.observer_epoch, source.binding.observer_epoch);
+            let transport = HustTerminalTransport::new(
+                cursor.clone(),
+                worker.token.clone(),
+                source.frontend_pid,
+                source.core_pid,
+                Ownership::ExclusiveRouterV1,
+                Duration::from_secs(2),
+            )
+            .unwrap();
+            TerminalDriver::new(
+                runtime.clone(),
+                transport,
+                cursor,
+                Ownership::ExclusiveRouterV1,
+            )
+            .unwrap()
+        })
+        .collect()
+}
+
+#[cfg(feature = "durable-candidate")]
+async fn reconcile_driver(
+    config: &Config,
+    sessions: &[Session],
+    cursors: &mut [u64],
+    durable: &DurableOption,
+    retired_families: &mut usize,
+) -> BTreeMap<String, usize> {
+    use terminal_driver::{PumpError, Step};
+    assert!(
+        !config.background_terminal_driver,
+        "one consumer per source"
+    );
+    let runtime = durable.as_ref().unwrap();
+    let mut drivers = make_terminal_drivers(config, sessions, durable);
+    for (index, driver) in drivers.iter().enumerate() {
+        assert_eq!(driver.cursor().through, cursors[index]);
+    }
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut statuses = BTreeMap::new();
+    loop {
+        for (index, driver) in drivers.iter_mut().enumerate() {
+            let before = driver.cursor().through;
+            match driver.step().await {
+                Ok(Step::Committed(_)) | Ok(Step::Idle) | Err(PumpError::Retry) => {}
+                Err(error) => panic!("terminal driver failed: {error:?}"),
+            }
+            // A successful local commit may be followed by a lost ACK/retire
+            // response and return Retry. Count that cursor advance only once;
+            // the loop still waits for pending confirmation before returning.
+            let advanced = driver.cursor().through.checked_sub(before).unwrap();
+            if advanced != 0 {
+                *retired_families = retired_families
+                    .checked_add(advanced.try_into().unwrap())
+                    .unwrap();
+                for (status, count) in driver.transport().last_poll_statuses() {
+                    *statuses.entry(status.clone()).or_insert(0) += count;
+                }
+            }
+            cursors[index] = driver.cursor().through;
+        }
+        if runtime.owner().active_len().unwrap() == 0
+            && drivers
+                .iter()
+                .all(|driver| !driver.pending_remote_confirmation())
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "terminal driver finite reconciliation timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    statuses
+}
+
+#[cfg(feature = "durable-candidate")]
+type BackgroundTasks =
+    Vec<terminal_driver::TerminalTask<hust_terminal_transport::HustTerminalTransport>>;
+
+/// Qualification waits only on task progress and the original owner. No poll,
+/// ACK or retire occurs in this HTTP-side waiter.
+#[cfg(feature = "durable-candidate")]
+async fn wait_background(tasks: &BackgroundTasks, owner: &RuntimeOwner, expected: &[u64]) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        assert!(!owner.is_failed(), "background terminal task failed");
+        let progress: Vec<_> = tasks.iter().map(|task| task.progress()).collect();
+        for (state, through) in progress.iter().zip(expected) {
+            assert!(state.through <= *through, "unexpected source waterline");
+        }
+        if owner.active_len().unwrap() == 0
+            && progress
+                .iter()
+                .zip(expected)
+                .all(|(state, through)| state.settled() && state.through == *through)
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "background terminal drain timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+#[cfg(feature = "durable-candidate")]
+async fn qualify_background(
+    config: &Config,
+    sessions: &[Session],
+    durable: &DurableOption,
+    controls: &ControlSet,
+    origin: &str,
+    client: &reqwest::Client,
+    prompts: &[String; 2],
+) -> serde_json::Value {
+    use terminal_driver::{StopReason, TerminalTask};
+    let runtime = durable.as_ref().unwrap();
+    let owner = runtime.owner();
+    // Each source is moved into exactly one task before the first request. The
+    // finite reconciler is never called while these tasks exist.
+    let tasks: BackgroundTasks = make_terminal_drivers(config, sessions, durable)
+        .into_iter()
+        .map(|driver| TerminalTask::spawn(driver, Duration::from_millis(25)).unwrap())
+        .collect();
+    let mut expected = vec![0; tasks.len()];
+    wait_background(&tasks, owner, &expected).await;
+    assert!(tasks.iter().all(|task| task
+        .progress()
+        .ready_at(Instant::now(), Duration::from_secs(5))));
+    let mut results = Vec::new();
+    for (prompt, target, cached) in [(0, 0, 0), (0, 0, 384), (1, 1, 384)] {
+        let response = client.post(format!("{origin}/v1/completions"))
+            .json(&serde_json::json!({"model": config.model, "prompt": prompts[prompt], "max_tokens": 16, "temperature": 0}))
+            .send().await.unwrap().error_for_status().unwrap();
+        let reply: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(
+            reply["usage"]["prompt_tokens_details"]["cached_tokens"],
+            cached
+        );
+        expected[target] += 1;
+        wait_background(&tasks, owner, &expected).await;
+        // Actual per-source committed cursor, not a prediction from M4.
+        results.push(serde_json::json!({"worker": target, "cached_tokens": cached}));
+    }
+    let response = client.post(format!("{origin}/v1/completions"))
+        .json(&serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 256, "ignore_eos": true, "temperature": 0, "stream": true}))
+        .send().await.unwrap().error_for_status().unwrap();
+    let mut stream = response.bytes_stream();
+    wait_generated(&mut stream).await;
+    // Closing admission does not stop reconciliation or falsely end the stream.
+    controls.drain().unwrap();
+    let rejected = client
+        .post(format!("{origin}/v1/completions"))
+        .json(&serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status().as_u16(), 503);
+    drop(stream);
+    expected[0] += 1;
+    wait_background(&tasks, owner, &expected).await;
+    // Stop ALL sources before joining the first: each task's exit fence closes
+    // the shared owner. No task is aborted during a commit/ACK/retire.
+    for task in &tasks {
+        task.request_stop();
+    }
+    let mut statuses = BTreeMap::<String, usize>::new();
+    for (index, task) in tasks.into_iter().enumerate() {
+        let (result, driver) = task.join().await.unwrap();
+        assert_eq!(result, Ok(StopReason::Requested));
+        assert!(!driver.pending_remote_confirmation());
+        assert_eq!(driver.cursor().through, expected[index]);
+        for (status, count) in driver.transport().committed_statuses() {
+            *statuses.entry(status.clone()).or_default() += count;
+        }
+    }
+    assert_eq!(statuses.get("FINISHED_ABORTED"), Some(&1));
+    assert_eq!(owner.active_len().unwrap(), 0);
+    let store = Arc::new(
+        SqliteRowRuntimeStore::open(
+            config.durable_store.as_ref().unwrap(),
+            DEFAULT_MAX_SNAPSHOT_BYTES,
+        )
+        .unwrap(),
+    );
+    let stored = store.load().unwrap();
+    assert!(stored.checkpoint.active.is_empty());
+    for (index, worker) in config.workers.iter().enumerate() {
+        assert_eq!(
+            stored
+                .terminal_cursors
+                .iter()
+                .find(|cursor| cursor.source_id == worker.worker_id)
+                .unwrap()
+                .through,
+            expected[index]
+        );
+    }
+    let recovered = DurableRuntime::recover(
+        Arc::new(UnknownCache),
+        uuid::Uuid::new_v4().simple().to_string(),
+        store,
+        16,
+        16,
+    )
+    .unwrap();
+    assert!(!recovered.admission_ready());
+    serde_json::json!({
+        "status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7",
+        "requests": results, "cancel_core_statuses": statuses, "active_after_terminal": 0,
+        "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": true,
+        "managed_terminal_retirement_verified": true, "terminal_driver_transport_verified": true,
+        "background_terminal_driver_verified": true, "startup_confirmation_verified": true,
+        "admission_drain_rejected": true, "background_tasks_joined": true,
+        "retire_response_loss_recovered": true, "retire_response_losses": 0,
+        "retired_families": expected.iter().sum::<u64>(), "churn_families": 0, "churn_children": 0,
+        "durable_recovery_verified": false, "production_lifecycle_verified": false,
+        "performance_verified": false
+    })
+}
+
+#[cfg(feature = "durable-candidate")]
+#[derive(Debug)]
+struct UnknownCache;
+#[cfg(feature = "durable-candidate")]
+impl CachePort for UnknownCache {
+    fn lookup(&self, _: &str, _: &str, _: &str, _: &[String]) -> Option<u32> {
+        None
+    }
+}
+
+async fn wait_generated(
+    stream: &mut (impl futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin),
+) {
+    let mut pending = Vec::new();
+    for _ in 0..64 {
+        let chunk = tokio::time::timeout(Duration::from_secs(10), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        pending.extend_from_slice(&chunk);
+        assert!(pending.len() <= 65536);
+        while let Some(boundary) = pending.iter().position(|byte| *byte == b'\n') {
+            let line: Vec<_> = pending.drain(..=boundary).collect();
+            if let Some(data) = std::str::from_utf8(&line)
+                .unwrap()
+                .trim()
+                .strip_prefix("data: ")
+            {
+                if data != "[DONE]" {
+                    let value: serde_json::Value = serde_json::from_str(data).unwrap();
+                    if value["choices"][0]["text"]
+                        .as_str()
+                        .is_some_and(|text| !text.is_empty())
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    panic!("cancel must follow an actual generated output");
+}
+
 fn settle_volatile(
     owner: &RuntimeOwner,
     worker: &Worker,
@@ -786,6 +1335,26 @@ async fn main() {
         "managed retirement requires the durable candidate"
     );
     assert!(config.expected_retire_response_losses <= config.workers.len());
+    assert!(!config.background_terminal_driver || config.use_terminal_driver);
+    if matches!(mode, RunMode::Serve | RunMode::RecoverServe) {
+        assert!(config.use_terminal_driver && config.background_terminal_driver);
+        assert!(config.service_listen.is_some() && config.service_drain_seconds.is_some());
+    } else {
+        assert!(config.service_listen.is_none() && config.service_drain_seconds.is_none());
+    }
+    assert!(
+        !config.use_terminal_driver
+            || (config.durable_store.is_some()
+                && config.terminal_ownership_mode == "exclusive_router_v1"
+                && config.expected_retire_response_losses == 0
+                && config.churn_families == 0
+                && !config.exercise_control_gate
+                && matches!(
+                    mode,
+                    RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe
+                )),
+        "driver transport qualification requires isolated managed durable mode"
+    );
     assert!(
         config.expected_retire_response_losses == 0
             || config.terminal_ownership_mode == "exclusive_router_v1"
@@ -798,10 +1367,12 @@ async fn main() {
                 && (1..=8).contains(&config.churn_children_per_family))
     );
     assert!(
-        mode == RunMode::Qualify
-            || (config.terminal_ownership_mode == "exclusive_router_v1"
-                && config.durable_store.is_some()
-                && config.churn_families == 0),
+        matches!(
+            mode,
+            RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe
+        ) || (config.terminal_ownership_mode == "exclusive_router_v1"
+            && config.durable_store.is_some()
+            && config.churn_families == 0),
         "crash recovery qualification requires managed durable mode without churn"
     );
     assert_eq!(config.identity.len(), 64);
@@ -838,7 +1409,7 @@ async fn main() {
     #[cfg(feature = "durable-candidate")]
     let existing_sources: BTreeMap<String, ExistingSource> = if matches!(
         mode,
-        RunMode::RecoverAfterCrash | RunMode::RejectReplacedSource
+        RunMode::RecoverAfterCrash | RunMode::RecoverServe | RunMode::RejectReplacedSource
     ) {
         let store_path = config
             .durable_store
@@ -919,6 +1490,15 @@ async fn main() {
     assert!(sessions
         .iter()
         .all(|session| session.identity.ownership_mode == config.terminal_ownership_mode));
+    let control_sessions: Vec<_> = sessions.iter_mut().map(ControlSession::start).collect();
+    let control_set = Arc::new(ControlSet(
+        config
+            .workers
+            .iter()
+            .zip(&control_sessions)
+            .map(|(worker, session)| (worker.origin.clone(), session.gate.clone()))
+            .collect(),
+    ));
     let controls: Vec<_> = sessions
         .iter()
         .map(|s| WorkerControl {
@@ -945,7 +1525,7 @@ async fn main() {
         )
     };
     #[cfg(feature = "durable-candidate")]
-    let (owner, durable) = if mode == RunMode::RecoverAfterCrash {
+    let (owner, durable) = if matches!(mode, RunMode::RecoverAfterCrash | RunMode::RecoverServe) {
         let path = config.durable_store.as_ref().unwrap();
         let runtime = Arc::new(
             DurableRuntime::recover(
@@ -995,6 +1575,7 @@ async fn main() {
         assert_eq!(mode, RunMode::Qualify);
         (fresh_owner(), None::<()>)
     };
+    owner.install_controls(control_set.clone()).unwrap();
     let urls: Vec<_> = config.workers.iter().map(|w| w.origin.clone()).collect();
     assert!(
         urls[0] < urls[1],
@@ -1055,6 +1636,123 @@ async fn main() {
         vec![],
         false,
     );
+    #[cfg(feature = "durable-candidate")]
+    if matches!(mode, RunMode::Serve | RunMode::RecoverServe) {
+        use axum::routing::get;
+        use service_lifecycle::{self, ManagedSourceTask, ServiceSupervisor};
+
+        let listen: std::net::SocketAddr = config
+            .service_listen
+            .as_deref()
+            .expect("service_listen is required")
+            .parse()
+            .expect("service_listen must be a numeric socket address");
+        let drain_seconds = config
+            .service_drain_seconds
+            .expect("service_drain_seconds is required");
+        assert!((1..=300).contains(&drain_seconds));
+        if let Some(manager_budget) = std::env::var_os("PREFIX_ROUTING_DRAIN_SECONDS") {
+            let manager_budget: f64 = manager_budget
+                .to_str()
+                .expect("Manager drain budget must be UTF-8")
+                .parse()
+                .expect("Manager drain budget must be numeric");
+            assert_eq!(manager_budget, drain_seconds as f64);
+        }
+        let runtime = durable
+            .as_ref()
+            .expect("service requires the durable runtime")
+            .clone();
+        let drivers = make_terminal_drivers(&config, &sessions, &durable);
+        let mut source_tasks: Vec<Arc<dyn ManagedSourceTask>> = sessions
+            .into_iter()
+            .map(|session| Arc::new(session) as Arc<dyn ManagedSourceTask>)
+            .collect();
+        source_tasks.extend(
+            control_sessions
+                .into_iter()
+                .map(|session| Arc::new(session) as Arc<dyn ManagedSourceTask>),
+        );
+        let supervisor = if mode == RunMode::RecoverServe {
+            ServiceSupervisor::resume_recovered(
+                runtime,
+                control_set,
+                drivers,
+                source_tasks,
+                2,
+                controls,
+                true,
+                Duration::from_millis(25),
+                Duration::from_secs(5),
+                1024,
+            )
+            .await
+            .expect("service recovery failed closed")
+        } else {
+            ServiceSupervisor::start_with_sources(
+                runtime,
+                control_set,
+                drivers,
+                source_tasks,
+                Duration::from_millis(25),
+                Duration::from_secs(5),
+                1024,
+            )
+            .expect("service startup failed closed")
+        };
+        let state = supervisor.state.clone();
+        let app = app
+            .route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                service_lifecycle::track_http,
+            ))
+            .route(
+                "/readyz",
+                get(service_lifecycle::readiness).with_state(state),
+            );
+        let listener = tokio::net::TcpListener::bind(listen)
+            .await
+            .expect("Router listen failed");
+        let actual = listener.local_addr().unwrap();
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "starting",
+                "scope": "real-hust-service-candidate",
+                "origin": format!("http://{actual}"),
+                "pid": std::process::id(),
+                "recovered": mode == RunMode::RecoverServe
+            })
+        );
+        let stop = async {
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{signal, SignalKind};
+                let mut term = signal(SignalKind::terminate()).unwrap();
+                let mut interrupt = signal(SignalKind::interrupt()).unwrap();
+                tokio::select! { _ = term.recv() => (), _ = interrupt.recv() => () }
+            }
+            #[cfg(not(unix))]
+            tokio::signal::ctrl_c().await.unwrap();
+        };
+        let result = service_lifecycle::serve_until(
+            listener,
+            app,
+            supervisor,
+            stop,
+            Duration::from_secs(drain_seconds),
+        )
+        .await;
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "stopped",
+                "shutdown": format!("{result:?}"),
+                "active": owner.active_len().unwrap_or(usize::MAX)
+            })
+        );
+        std::process::exit(result.exit_code());
+    }
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}", listener.local_addr().unwrap());
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -1264,6 +1962,26 @@ async fn main() {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     assert_eq!(lookup(0, 1), Some(0));
+    #[cfg(feature = "durable-candidate")]
+    if config.background_terminal_driver {
+        let report = qualify_background(
+            &config,
+            &sessions,
+            &durable,
+            &control_set,
+            &origin,
+            &client,
+            &prompts,
+        )
+        .await;
+        shutdown_tx.send(()).unwrap();
+        http.await.unwrap();
+        for session in &mut sessions {
+            session.stop();
+        }
+        println!("{report}");
+        return;
+    }
     let mut resource_samples = Vec::new();
     let mut results = Vec::new();
     for (prompt, expected_worker, expected_cached) in [(0, 0, 0), (0, 0, 384), (1, 1, 384)] {
@@ -1325,40 +2043,7 @@ async fn main() {
         .json(&serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 256, "temperature": 0, "ignore_eos": true, "stream": true}))
         .send().await.unwrap().error_for_status().unwrap();
     let mut stream = response.bytes_stream();
-    let mut saw_text = false;
-    let mut pending = Vec::new();
-    for _ in 0..64 {
-        let chunk = tokio::time::timeout(Duration::from_secs(10), stream.next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        pending.extend_from_slice(&chunk);
-        assert!(pending.len() <= 65536);
-        while let Some(boundary) = pending.iter().position(|byte| *byte == b'\n') {
-            let line: Vec<u8> = pending.drain(..=boundary).collect();
-            if let Some(data) = std::str::from_utf8(&line)
-                .unwrap()
-                .trim()
-                .strip_prefix("data: ")
-            {
-                if data == "[DONE]" {
-                    continue;
-                }
-                let value: serde_json::Value = serde_json::from_str(data).unwrap();
-                if value["choices"][0]["text"]
-                    .as_str()
-                    .is_some_and(|text| !text.is_empty())
-                {
-                    saw_text = true;
-                }
-            }
-        }
-        if saw_text {
-            break;
-        }
-    }
-    assert!(saw_text, "cancel must follow an actual generated output");
+    wait_generated(&mut stream).await;
     drop(stream);
     assert_eq!(owner.active_len().unwrap(), 1);
     let cancellation = reconcile(
@@ -1372,6 +2057,90 @@ async fn main() {
     )
     .await;
     assert_eq!(cancellation.get("FINISHED_ABORTED"), Some(&1));
+    let mut control_qualification = serde_json::Value::Null;
+    if config.exercise_control_gate {
+        assert!(config.churn_families == 0 && config.durable_store.is_some());
+        let epoch = &sessions[0].identity.binding.instance_epoch;
+        let debt = control_request(&client, &origin, &config, &prompts[0], &owner, 0).await;
+        set_health_fault(&client, &config.workers[0], "fail").await;
+        wait_health(&control_sessions[0], epoch, false).await;
+        control_request(&client, &origin, &config, &prompts[0], &owner, 1).await;
+        assert!(owner
+            .checkpoint()
+            .unwrap()
+            .active
+            .iter()
+            .any(|attempt| attempt.attempt_id == debt));
+        assert_eq!(owner.active_len().unwrap(), 2);
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        assert_eq!(owner.active_len().unwrap(), 0);
+        set_health_fault(&client, &config.workers[0], "pass").await;
+        wait_health(&control_sessions[0], epoch, true).await;
+        control_request(&client, &origin, &config, &prompts[0], &owner, 0).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        control_sessions[0].pause.store(true, Ordering::Release);
+        wait_health(&control_sessions[0], epoch, false).await;
+        control_request(&client, &origin, &config, &prompts[0], &owner, 1).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        control_sessions[0].pause.store(false, Ordering::Release);
+        wait_health(&control_sessions[0], epoch, true).await;
+        set_health_fault(&client, &config.workers[0], "identity").await;
+        wait_health(&control_sessions[0], epoch, false).await;
+        set_health_fault(&client, &config.workers[0], "pass").await;
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert_eq!(control_sessions[0].gate.revision(epoch), None);
+        control_request(&client, &origin, &config, &prompts[0], &owner, 1).await;
+        reconcile(
+            &config,
+            &sessions,
+            &mut cursors,
+            &owner,
+            &durable,
+            &mut retired_families,
+            &mut retire_response_losses,
+        )
+        .await;
+        assert_eq!(owner.active_len().unwrap(), 0);
+        control_set.drain().unwrap();
+        let rejected = client
+            .post(format!("{origin}/v1/completions"))
+            .json(
+                &serde_json::json!({"model": config.model, "prompt": prompts[0], "max_tokens": 1}),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert!(!rejected.status().is_success());
+        assert_eq!(owner.active_len().unwrap(), 0);
+        control_qualification = serde_json::json!({"http_control_failure": true, "same_source_revalidated": true, "debt_preserved": true, "health_expiry": true, "identity_quarantined": true, "identity_fault": "injected-observer-field", "other_replica_serves": true, "drain_rejected": true});
+    }
     let churn_started = Instant::now();
     for iteration in 1..=config.churn_families {
         let response = client
@@ -1498,6 +2267,6 @@ async fn main() {
     }
     println!(
         "{}",
-        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4 + config.churn_families, "retire_response_loss_recovered": retire_response_losses == config.expected_retire_response_losses, "retire_response_losses": retire_response_losses, "retired_families": retired_families, "churn_families": config.churn_families, "churn_children": config.churn_families * config.churn_children_per_family, "resource_samples": resource_samples, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
+        serde_json::json!({"status": "pass", "scope": "finite-public-http-real-M1-M2-M3-M4-M5-M7", "requests": results, "cancel_core_statuses": cancellation, "active_after_terminal": owner.active_len().unwrap(), "real_native_subscription": true, "durable_commit_ack_and_paused_reopen_verified": durable_verified, "managed_terminal_retirement_verified": config.terminal_ownership_mode == "exclusive_router_v1" && durable_verified && retired_families == 4 + config.churn_families + if config.exercise_control_gate { 5 } else { 0 }, "terminal_driver_transport_verified": config.use_terminal_driver, "control_gate_qualification": control_qualification, "retire_response_loss_recovered": retire_response_losses == config.expected_retire_response_losses, "retire_response_losses": retire_response_losses, "retired_families": retired_families, "churn_families": config.churn_families, "churn_children": config.churn_families * config.churn_children_per_family, "resource_samples": resource_samples, "durable_recovery_verified": false, "production_lifecycle_verified": false, "performance_verified": false})
     );
 }

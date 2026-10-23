@@ -21,7 +21,7 @@
 | 身份与版本 | 支持矩阵分候选/已验证 | 不将 metadata 版本当兼容证据 |
 | 启停/回退 | 已有实验Router/自有后端启停与清理；Manager尚不管理运行中的Router | P2/P7 验收生产启停、排空、故障恢复及入口回退 |
 | 可选引擎 hook | 用户批准实验的 general plugin publisher 适配；默认关闭、固定版本/源文件守卫，不替换 Ascend platform plugin | 见 [ADR](decisions/2026-10-11-optional-hust-publisher.md)；功能、关闭回退、开销与目标配置分别验收，实验入口不是 Manager 激活 |
-| 责任与证据 | WMASTER123 个人私有仓库、顾问 unknown、无性能声明 | 正式组内准入另行审查 |
+| 责任与证据 | WMASTER123 个人公开开发仓库；用户已于 2026-10-22 明确确认保持公开；顾问 unknown、无性能声明 | 正式组内准入另行审查；公开开发不等于正式发布或生产认证，禁止提交凭据、原始请求与私有日志 |
 
 host.version_range >=0 仅允许惰性描述被解析，不是“兼容所有 vLLM”的声明；激活被明确阻止。未来启用前必须改成经过验证的守卫。components/protocols 为空，不伪装 KV connector 获取准入。
 

@@ -1,5 +1,11 @@
 # 普通 HTTP 接口接缝 CPU 原型
 
+2026-10-23 服务增量：共享 `service_lifecycle.rs` 已实现 readiness、HTTP body guard、有界 drain/join 和原 Axum 监听收尾；`checks/examples/service_lifecycle_probe.rs` 只作 CPU 信号资格。固定宿主包含同一源码以验证编译，原有限 NPU 模式尚未切换到新服务装配。复现和范围见[记录](../../evidence/service-lifecycle-cpu-2026-10-23.md)。
+
+2026-10-23：`TerminalTask` 在同一 `terminal_driver.rs` 监督后台 run；`background_terminal_driver` 是独立显式资格模式，不能同时调用旧 reconcile。新增有界进度/启动确认、失联撤销就绪、丢监督失败关闭、停止 join 及提交后诊断。CPU 的 step/run 各八项 HTTP 场景由现有 CI 运行；完整宿主/NPU 状态见[本轮记录](../../evidence/background-terminal-tasks-2026-10-23.md)。公开 service、信号排空和 Manager 尚未交付，用户当前不安排人员分工。
+
+2026-10-22 后续：`terminal_driver.rs` 与 `hust_terminal_transport.rs` 由 checks/固定宿主包含唯一源码。CPU HTTP 联调、完整宿主和双 NPU 有限接线均通过；有限 probe 的 `use_terminal_driver` 显式替换旧 reconcile，仍不是常驻 run。source 由 A 联审，循环/提交由 C 负责，B 联审 HTTP 排空。见[驱动 ADR](../../docs/decisions/2026-10-22-terminal-driver.md)和[最新实机记录](../../evidence/hust-terminal-driver-npu-2026-10-22.md)。
+
 2026-10-16：`durable_runtime.rs` 在现有 `RuntimeOwner` 外增加候选持久提交边界，`runtime_store.rs` 定义 owner/generation/cursor 契约，`sqlite_runtime_store.rs` 是只在独立 helper crate 锁定的 SQLite WAL/FULL 候选。发送许可在 commit 后返回；终态、checkpoint 和 cursor 同一替换事务；恢复默认暂停。同步 Lease 回调不做磁盘 I/O，阻塞存储调用在有界异步提交任务中执行。该候选尚未复制到固定 Router 宿主或修改其 Cargo；结果与限制见[证据](../../evidence/durable-runtime-candidate-2026-10-16.md)。
 
 2026-10-16：固定原版和三文件 patch 准入后，用 `bash tools/stage_router_runtime.sh --execute <artifacts下已审查的宿主目录>` 统一复制候选模块、原 Directory/Pool、共享 fixture 和 examples，避免漏文件或沿用旧副本。工具核验固定 Cargo 两文件、不改依赖，也不代替宿主 patch 审计。新 `hust_runtime_probe` 的真实公开入口/原生订阅验收见[计划](../../docs/planning/native-public-chain.md)；手动命令和通过范围以 evidence 为准。
@@ -28,7 +34,9 @@
 
 `stream_extension_probe` 直接检查无消费时零 pull、慢消费者、源 drop、idle、chunk/总量、源错误与正常 EOF；随后走实际 Router 的普通和负载追踪两条 HTTP 分支，检查本地回调恰一次、原生连接计数释放及配置错误在发送前拒绝。真实结束对账与标准 LifecycleEvent 桥仍未交付。诊断 stage-comment 模式与该选项组合目前明确拒绝；未选择该选项不改变原诊断路径。
 
-仅用于 R1 评估，不是 MOD 激活、生产插件 ABI 或性能优化实现。底座为 Apache-2.0 的 [vLLM Router 固定提交 91b65ee](https://github.com/vllm-project/router/tree/91b65ee4bdfbe98863a32a2205dced5dbb249ffe)。保留上游许可证；本目录新增文件同许可。原版源码、Cargo.toml/lock、HUST 源码不修改。
+当前为固定宿主候选与资格工具，实际完成情况以 [progress](../../docs/progress.md) 为准。真实公开链及恢复/退役和控制准入门已有有限实机资格，尚未成为生产 MOD 入口。下面早期 R1/fixture 说明保留其原测试范围，不代表最新全链缺失。底座为 Apache-2.0 的 [vLLM Router 固定提交 91b65ee](https://github.com/vllm-project/router/tree/91b65ee4bdfbe98863a32a2205dced5dbb249ffe)，保留上游许可证；未改 HUST。SQLite 仅在隔离宿主显式 candidate feature 中增加。
+
+当前 `runtime_owner.rs` 通过相邻 `control_gate.rs` 子模块读控制新鲜度；复制 owner 时必须同时复制 control_gate。优先使用已检查路径/输入的 `tools/stage_router_runtime.sh`，不要按下方早期手工列表漏文件。控制门测试在同一 checks crate，真实接线见[2026-10-22 证据](../../evidence/control-admission-2026-10-22.md)。
 
 ## 实际增量
 

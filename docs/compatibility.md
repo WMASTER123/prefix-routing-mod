@@ -1,5 +1,11 @@
 # 支持与候选矩阵
 
+2026-10-23 后续：service readiness/HTTP/期限与固定 Manager 的 CPU 资格见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。不扩大 HUST、Ascend、图、模型支持范围，不替代真实常驻启停验证，MOD 保持 import_only。
+
+2026-10-23：新增后台 TerminalTask 资格模式，具体 CPU、完整宿主和 NPU 状态见[本轮记录](../evidence/background-terminal-tasks-2026-10-23.md)。固定 Core ced6857 / Ascend b47795c 的模型、dtype、eager/TP1 范围不变；这不是跨版本兼容扩展。整体服务/Manager、目标图与性能仍未验收。
+
+2026-10-22 增量：同一固定 HUST 组合下，新终态驱动 HTTP 运输已完成 aarch64 完整宿主构建/39 项及双 NPU 有限 step 接线，见[最新资格](../evidence/hust-terminal-driver-npu-2026-10-22.md)。未扩展模型、dtype、图、并行或版本支持范围；常驻 run/Manager、长时间全链与容量仍未通过。诊断使用显式 profile，注册的 Triton 后端和唯一 active Ascend 分开报告；全量 profiling 工具依赖问题仍保留。
+
 2026-10-18 当前状态以[progress](progress.md)和[接手指南](项目接手指南_2026-10-17.md)为准：固定HUST与双TP1的原公开HTTP/M1/M2/M3/M4/M5/M7有限链已通过，`recovery-retirement-v1` 的强退保债、暂停恢复、退役幂等和累计回收已过资格；重启后 M2 固定降级 unknown。Manager激活、长时间全链、跨版本认证和容量收益尚未验收。下方按日期的旧状态为历史；旧版publisher能力不外推到新版HUST，参考接口不等于生产ABI。
 
 2026-10-14 后续：原typed Router库的异步准入/自有载体/转发/生命周期已和真实HUST终态组合到同一实验账本，2 family/3 child及丢许可保债通过。原三文件宿主patch与HUST包装不变；新接收器映射显式实例，新增完整终态批次校验。当前仍不是生产HTTP入口、在线KV或性能验收，component-v0.1/生产ABI和MOD import_only不变。范围与下一步见[组合计划](planning/router-hust-terminal-chain.md)和[证据](../evidence/router-hust-terminal-chain-2026-10-14.md)，下面同日较早记录仅对应当时阶段。

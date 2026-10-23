@@ -1,5 +1,13 @@
 # 测试与 CI
 
+2026-10-23 后续：service helper 108 项、严格 Clippy、固定 Manager CPU 子进程四场景通过；Python CPU 608/integration 3，wheel 构建和干净安装验证通过。新增 `tools.probe_service_manager` 纳入 helper CI；固定 Manager commit、仅 Linux、真实信号及 SQLite 重开，不触发 NPU。不同宿主/提交的准确范围见[证据](../evidence/service-lifecycle-cpu-2026-10-23.md)。
+
+2026-10-23：同一 helper 新增后台监督及就绪/停止反例，Linux x86_64 95 项、严格 Clippy 通过；原 HTTP 协议工具同时运行 step/run 各八项，CI 继续调用同一个入口。Windows CPU 606/7 skipped/3 deselected、integration 3 通过。完整宿主/两卡结果单独记录在[本轮证据](../evidence/background-terminal-tasks-2026-10-23.md)，不继承前一提交的 CI 或旧路径 NPU 成绩。
+
+2026-10-22 最新：新服务器 aarch64 helper 86 项/严格 Clippy、HTTP 协议八场景、完整宿主 39 项及实际 release 构建通过；新驱动的双 NPU 有限请求/取消/4 family 回收通过，见[实机记录](../evidence/hust-terminal-driver-npu-2026-10-22.md)。诊断工具新增 9 项，Windows CPU 605/7 skipped/3 deselected、integration 3 通过。常驻 run/信号/Manager 与性能仍待完成；本轮未重跑新路径的真实故障注入。`7110d16` 与 HTTP 实现 `4b867d9` 各自六项 CI 成功，完整宿主和 NPU 属于另行手动资格。仓库按用户确认保持公开。
+
+2026-10-22：控制门在 aarch64 helper 68 项、原索引/IPC/控制 93 项、固定完整宿主 39 项通过，helper Clippy 未放宽 lint；双 NPU 控制 HTTP 失联、保债、同源恢复、健康过期、注入身份冲突和 drain 拒绝通过。Windows 新 CPU 子集 590/7 skipped/3 deselected；旧退役 fixture 修复请求体未读导致的间歇连接中断，完整子集连续三轮通过。具体制品、失败留痕和边界见[本轮证据](../evidence/control-admission-2026-10-22.md)。下方 10-18 的 CI 待完成属于当时记录，`49b3aea` 的六项 CI 已于本轮重新核对全部通过；新增代码 CI 不继承旧结果。
+
 2026-10-18 恢复/回收更新：本轮修改后 Python CPU 588 passed/7 skipped/3 deselected、integration 3 passed，Ruff 与格式通过；响应丢失代理在 Windows 连续重复 8 次通过。固定 aarch64 宿主最终 example 38 项、独立 checks 58 项通过；删除的 1 项曾假定原生 END 能证明暖 M2 回放完整，审查后改为重启时 unknown。限定排除原 Router 四项既存 lint 和组合 dead-code/type-complexity 后，本轮 `clippy -D warnings` 通过。双 910B2 已完成真正 retire 回复丢失、520 family/1040 child、Router 强退暂停恢复、旧 cursor 和实际实例替换；详见[资格记录](../evidence/recovery-retirement-qualification-2026-10-18.md)。这些仍不代替图模式、Manager 生命周期、长时间稳定性或性能；当前新 head 的 GitHub CI 尚待完成。
 
 2026-10-17 较早持久化增量：最终最小 SQLite feature 下 helper 57 项、Clippy 和 Python CPU 576/7 skipped、integration 3 项通过；代码 `3264050` 对应 5 项 GitHub 检查通过。新增真正子进程未提交退出、变化行回滚、行身份错配和整批损坏反例；固定 ARM 宿主新增显式 durable feature，真实接线与存储对照见[本轮证据](../evidence/durable-public-chain-2026-10-17.md)。以下按日期段落只描述当时范围；索引/完整宿主/真实 NPU 与 helper CI 不互相替代。

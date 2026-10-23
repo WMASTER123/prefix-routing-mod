@@ -20,6 +20,7 @@ from pathlib import Path
 
 from prefix_routing_mod.adapters.profiles import inspect_backend
 from prefix_routing_mod.terminal_transport import FrontendEnds
+from tools.control_fault_proxy import ControlFaultProxy
 from tools.hust_native_probe import (
     PROFILE,
     command,
@@ -43,6 +44,7 @@ class _RetireLossProxy:
             raise ValueError("A no-proxy opener is required")
         self.dropped = 0
         self.forwarded = 0
+        self.upstream_errors = []
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -82,7 +84,9 @@ class _RetireLossProxy:
                         content_type = response.headers.get(
                             "Content-Type", "application/json"
                         )
-                except Exception:
+                except Exception as error:
+                    if len(owner.upstream_errors) < 4:
+                        owner.upstream_errors.append(type(error).__name__)
                     self.send_error(502)
                     return
                 owner.forwarded += 1
@@ -134,6 +138,31 @@ def run(args, output, report):
     churn_families = int(getattr(args, "churn_families", 0))
     churn_children = int(getattr(args, "churn_children_per_family", 0))
     exercise_recovery = bool(getattr(args, "exercise_router_recovery", False))
+    exercise_control = bool(getattr(args, "exercise_control_gate", False))
+    use_driver = bool(getattr(args, "use_terminal_driver", False))
+    background_driver = bool(getattr(args, "background_terminal_driver", False))
+    if background_driver and not use_driver:
+        raise ValueError("Background driver requires --use-terminal-driver")
+    if use_driver and not (
+        managed_retirement
+        and getattr(args, "durable_store", False)
+        and not exercise_recovery
+        and not inject_retire_loss
+        and not exercise_control
+        and churn_families == 0
+    ):
+        raise ValueError("Driver qualification requires isolated managed durable mode")
+    if exercise_control and not (
+        managed_retirement
+        and getattr(args, "durable_store", False)
+        and not exercise_recovery
+        and not inject_retire_loss
+        and churn_families == 0
+    ):
+        raise ValueError(
+            "Control qualification requires managed durable mode "
+            "without other fault cases"
+        )
     if churn_families and not (
         managed_retirement and 512 < churn_families <= 1024 and 1 <= churn_children <= 8
     ):
@@ -184,7 +213,7 @@ def run(args, output, report):
         ).encode()
     ).hexdigest()
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    backends, workers, retirement_proxies = [], [], []
+    backends, workers, retirement_proxies, control_proxies = [], [], [], []
     process = None
     try:
         for device in (0, 1):
@@ -217,6 +246,12 @@ def run(args, output, report):
             )
             backends.append(backend)
             backend.start()
+            health_origin = None
+            if exercise_control:
+                proxy = ControlFaultProxy(origin, token)
+                proxy.start()
+                control_proxies.append(proxy)
+                health_origin = proxy.origin
             retirement_origin = None
             if inject_retire_loss:
                 proxy = _RetireLossProxy(origin, opener)
@@ -226,6 +261,7 @@ def run(args, output, report):
             workers.append(
                 {
                     "origin": origin,
+                    **({"health_origin": health_origin} if health_origin else {}),
                     **(
                         {"retirement_origin": retirement_origin}
                         if retirement_origin is not None
@@ -252,7 +288,12 @@ def run(args, output, report):
             ),
             "churn_families": churn_families,
             "churn_children_per_family": churn_children,
+            "exercise_control_gate": exercise_control,
         }
+        if use_driver:
+            config["use_terminal_driver"] = True
+        if background_driver:
+            config["background_terminal_driver"] = True
         if args.durable_store:
             config["durable_store"] = str(output / "runtime.sqlite")
         config_path = output / "private-runtime-config.json"
@@ -398,6 +439,24 @@ def run(args, output, report):
             != managed_retirement
         ):
             raise ValueError("Managed retirement result differs from requested mode")
+        if bool(records[0].get("terminal_driver_transport_verified")) != use_driver:
+            raise ValueError("Terminal driver result differs from requested mode")
+        if (
+            bool(records[0].get("background_terminal_driver_verified"))
+            != background_driver
+        ):
+            raise ValueError(
+                "Background terminal driver result differs from requested mode"
+            )
+        if background_driver and not all(
+            records[0].get(key) is True
+            for key in (
+                "startup_confirmation_verified",
+                "admission_drain_rejected",
+                "background_tasks_joined",
+            )
+        ):
+            raise ValueError("Background driver lifecycle coverage incomplete")
         if bool(records[0].get("retire_response_loss_recovered")) is not True:
             raise ValueError(
                 "Retirement response-loss result differs from requested mode"
@@ -421,12 +480,39 @@ def run(args, output, report):
         ):
             raise ValueError("Retirement fault proxy coverage differs")
         report.update(status="pass", chain=records[0])
+        if exercise_control:
+            coverage = records[0].get("control_gate_qualification", {})
+            if (
+                not all(
+                    coverage.get(key) is True
+                    for key in (
+                        "http_control_failure",
+                        "same_source_revalidated",
+                        "debt_preserved",
+                        "health_expiry",
+                        "identity_quarantined",
+                        "other_replica_serves",
+                        "drain_rejected",
+                    )
+                )
+                or control_proxies[0].failures == 0
+                or control_proxies[0].conflicts == 0
+            ):
+                report["status"] = "fail"
+                raise ValueError("Control fault coverage incomplete")
+            report["control_faults"] = [
+                {
+                    "http_failures": p.failures,
+                    "injected_identity_conflicts": p.conflicts,
+                }
+                for p in control_proxies
+            ]
     finally:
         if process is not None:
             report["router_cleanup"] = stop_owned_group(process)
         report["cleanup"] = []
         errors = []
-        for proxy in reversed(retirement_proxies):
+        for proxy in reversed(retirement_proxies + control_proxies):
             try:
                 proxy.stop()
             except Exception as error:
@@ -474,6 +560,9 @@ def main():
         ),
     )
     parser.add_argument("--churn-families", type=int, default=0)
+    parser.add_argument("--exercise-control-gate", action="store_true")
+    parser.add_argument("--use-terminal-driver", action="store_true")
+    parser.add_argument("--background-terminal-driver", action="store_true")
     parser.add_argument("--churn-children-per-family", type=int, default=0)
     parser.add_argument(
         "--exercise-router-recovery",

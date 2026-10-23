@@ -75,6 +75,13 @@ pub struct HustSourceControl {
     origin: String,
     token: String,
     identity: SourceIdentity,
+    health_origin: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum HealthFault {
+    Unavailable,
+    IdentityChanged,
 }
 
 impl fmt::Debug for HustSourceControl {
@@ -147,6 +154,7 @@ impl HustSourceControl {
             origin: origin.into(),
             token,
             identity,
+            health_origin: None,
         })
     }
 
@@ -189,11 +197,73 @@ impl HustSourceControl {
             origin: origin.into(),
             token,
             identity,
+            health_origin: None,
         })
     }
 
     pub fn identity(&self) -> &SourceIdentity {
         &self.identity
+    }
+
+    pub fn fork_for_health(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            origin: self.origin.clone(),
+            token: self.token.clone(),
+            identity: self.identity.clone(),
+            health_origin: None,
+        }
+    }
+
+    /// Qualification-only transport override; logical worker binding is unchanged.
+    pub fn fork_for_health_at(&self, origin: Option<&str>) -> Result<Self, OwnerFault> {
+        let mut fork = self.fork_for_health();
+        if let Some(origin) = origin {
+            fork.client = Self::client(
+                origin,
+                &self.token,
+                &self.identity.binding.worker_id,
+                self.identity.frontend_pid,
+            )?;
+            fork.health_origin = Some(origin.into());
+        }
+        Ok(fork)
+    }
+
+    pub fn refresh_health(&mut self, spec: &PartitionSpec) -> Result<(), HealthFault> {
+        if spec.binding.worker.as_ref() != self.origin
+            || spec.instance_epoch.as_ref() != self.identity.binding.instance_epoch
+        {
+            return Err(HealthFault::IdentityChanged);
+        }
+        let current = Self::read(
+            &self.client,
+            self.health_origin.as_deref().unwrap_or(&self.origin),
+            &self.token,
+        )
+        .map_err(|_| HealthFault::Unavailable)?;
+        if !current.valid() {
+            return Err(HealthFault::Unavailable);
+        }
+        if current.binding != self.identity.binding
+            || current.frontend_pid != self.identity.frontend_pid
+            || current.core_pid != self.identity.core_pid
+            || current.ownership_mode != self.identity.ownership_mode
+        {
+            return Err(HealthFault::IdentityChanged);
+        }
+        if current.core_boundary < self.identity.core_boundary
+            || current.frontend_boundary < self.identity.frontend_boundary
+            || current.acknowledged < self.identity.acknowledged
+            || current.retired_through < self.identity.retired_through
+            || (current.retired_through == self.identity.retired_through
+                && (current.family_count < self.identity.family_count
+                    || current.reserved_children < self.identity.reserved_children))
+        {
+            return Err(HealthFault::Unavailable);
+        }
+        self.identity = current;
+        Ok(())
     }
 
     fn read(client: &Client, origin: &str, token: &str) -> Result<SourceIdentity, OwnerFault> {
@@ -219,29 +289,7 @@ impl HustSourceControl {
 
 impl SourceControl for HustSourceControl {
     fn verify(&mut self, spec: &PartitionSpec) -> Result<(), OwnerFault> {
-        if spec.binding.worker.as_ref() != self.origin
-            || spec.instance_epoch.as_ref() != self.identity.binding.instance_epoch
-        {
-            return Err(OwnerFault::Source);
-        }
-        let current = Self::read(&self.client, &self.origin, &self.token)?;
-        if !current.valid()
-            || current.binding != self.identity.binding
-            || current.frontend_pid != self.identity.frontend_pid
-            || current.core_pid != self.identity.core_pid
-            || current.core_boundary < self.identity.core_boundary
-            || current.frontend_boundary < self.identity.frontend_boundary
-            || current.acknowledged < self.identity.acknowledged
-            || current.retired_through < self.identity.retired_through
-            || current.ownership_mode != self.identity.ownership_mode
-            || (current.retired_through == self.identity.retired_through
-                && (current.family_count < self.identity.family_count
-                    || current.reserved_children < self.identity.reserved_children))
-        {
-            return Err(OwnerFault::Source);
-        }
-        self.identity = current;
-        Ok(())
+        self.refresh_health(spec).map_err(|_| OwnerFault::Source)
     }
 }
 
