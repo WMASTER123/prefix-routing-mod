@@ -27,8 +27,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub type TaskJoinFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), &'static str>> + Send + 'a>>;
+pub type TaskJoinFuture<'a> = Pin<Box<dyn Future<Output = Result<(), &'static str>> + Send + 'a>>;
 
 /// A Router-owned source loop, such as one native-KV subscriber or control
 /// refresher. HUST backend processes must never implement this interface: the
