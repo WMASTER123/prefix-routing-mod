@@ -84,14 +84,14 @@ use runtime_owner::control_gate::{ControlSet, SourceKey, WorkerGate};
 use runtime_owner::{CachePort, RuntimeOwner, TerminalResult, WorkerControl};
 use runtime_provider::{FeaturePort, RuntimeProvider};
 #[cfg(feature = "durable-candidate")]
+use service_lifecycle::{ManagedSourceTask, TaskJoinFuture};
+#[cfg(feature = "durable-candidate")]
 use {
     durable_runtime::{DurableRuntime, TerminalRecord},
     runtime_store::{RuntimeStore, TerminalCursor},
     sqlite_row_runtime_store::SqliteRowRuntimeStore,
     sqlite_runtime_store::DEFAULT_MAX_SNAPSHOT_BYTES,
 };
-#[cfg(feature = "durable-candidate")]
-use service_lifecycle::{ManagedSourceTask, TaskJoinFuture};
 
 #[cfg(feature = "durable-candidate")]
 type DurableOption = Option<Arc<DurableRuntime>>;
@@ -377,7 +377,11 @@ impl ManagedSourceTask for Session {
                 .await
                 .map_err(|_| "kv_join_cancelled")?
                 .map_err(|_| "kv_thread_panicked")?;
-            if errors.lock().map_err(|_| "kv_error_state_poisoned")?.is_empty() {
+            if errors
+                .lock()
+                .map_err(|_| "kv_error_state_poisoned")?
+                .is_empty()
+            {
                 Ok(())
             } else {
                 Err("kv_thread_failed")
@@ -1345,7 +1349,10 @@ async fn main() {
                 && config.expected_retire_response_losses == 0
                 && config.churn_families == 0
                 && !config.exercise_control_gate
-                && matches!(mode, RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe)),
+                && matches!(
+                    mode,
+                    RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe
+                )),
         "driver transport qualification requires isolated managed durable mode"
     );
     assert!(
@@ -1360,10 +1367,12 @@ async fn main() {
                 && (1..=8).contains(&config.churn_children_per_family))
     );
     assert!(
-        matches!(mode, RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe)
-            || (config.terminal_ownership_mode == "exclusive_router_v1"
-                && config.durable_store.is_some()
-                && config.churn_families == 0),
+        matches!(
+            mode,
+            RunMode::Qualify | RunMode::Serve | RunMode::RecoverServe
+        ) || (config.terminal_ownership_mode == "exclusive_router_v1"
+            && config.durable_store.is_some()
+            && config.churn_families == 0),
         "crash recovery qualification requires managed durable mode without churn"
     );
     assert_eq!(config.identity.len(), 64);
