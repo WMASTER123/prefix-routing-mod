@@ -1,6 +1,8 @@
 # 新实验服务器操作基线
 
-2026-10-23 service 增量：CPU 资格入口和边界见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。Router drain 使用显式预算，Manager grace 必须另加清理余量；Manager 收到 SIGTERM 返回 143，需结合 Router 0/75/70 和保债状态判定。尚无可启用的生产 Manager 配方，不把实验 CLI 当交付启动方式。
+2026-10-23 后续：新增候选用户入口 `prefix-routing-mod manager-run --drain-seconds 30 --shutdown-grace-seconds 35 -- /absolute/router /private/config.json serve`。它只复用固定 Manager 监督显式 Router 命令，不启动或停止 HUST backend；grace 必须至少比 drain 多 1 秒。固定宿主和真实双 NPU 尚未资格，因此该命令是候选启动入口，manifest 仍不可 enable。范围与下一次实机步骤见[记录](../evidence/source-lifecycle-manager-candidate-2026-10-23.md)。
+
+2026-10-23 service 增量：CPU 资格入口和边界见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。Router drain 使用显式预算，Manager grace 必须另加清理余量；Manager 收到 SIGTERM 返回 143，需结合 Router 0/75/70 和保债状态判定。
 
 2026-10-23 后台资格入口：在已验证的 `tools.hust_runtime_chain --execute ... --durable-store --managed-terminal-retirement --use-terminal-driver` 上显式增加 `--background-terminal-driver`，使用全新输出目录。它运行每来源唯一后台任务，HTTP 侧只等待进度；仅接受独立资格模式，拒绝与未验证的恢复/churn/控制故障组合。具体制品、实测状态和边界见[本轮记录](../evidence/background-terminal-tasks-2026-10-23.md)。它仍是有限实验，不是正式 Manager 启动命令。
 

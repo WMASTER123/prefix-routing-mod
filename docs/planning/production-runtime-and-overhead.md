@@ -1,6 +1,6 @@
 # 生产接线、Manager 与开销实施边界
 
-2026-10-23 最新：service 状态、HTTP 在途、统一期限排空和固定 Manager 信号已通过 CPU 候选资格，见[记录](../../evidence/service-lifecycle-cpu-2026-10-23.md)。后续将该唯一实现装入真实 HUST 全链，补控制/KV 线程关闭和启动恢复，再验 Manager 用户入口。下方未实现描述按其日期解释，不再重写一套 service/监督实现。
+2026-10-23 最新：控制/KV 来源线程、终态任务、HTTP 与账本已收敛到同一监督候选，恢复顺序和固定 Manager 显式入口已补齐；CPU/CI 通过，固定宿主 `serve/recover-serve` 和双 NPU 尚待新服务器资格，见[记录](../../evidence/source-lifecycle-manager-candidate-2026-10-23.md)。下方未实现描述按其日期解释，不再重写一套 service/监督实现。
 
 2026-10-23 后续：同一驱动已增加每来源唯一 TerminalTask、启动确认/就绪新鲜度、停止 join 和显式后台实机资格模式，见[记录](../../evidence/background-terminal-tasks-2026-10-23.md)。下一步整体 service 必须将这些观测与控制门、HTTP 工作和持久启动恢复组合，不能把驱动 ready 等同于整个服务 ready。SIGTERM/期限排空和 Manager 仍待实现。当前暂停人员分工讨论，不影响以下工程顺序。
 

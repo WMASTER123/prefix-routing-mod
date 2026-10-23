@@ -1,6 +1,6 @@
 # 架构基线
 
-2026-10-23 后续：新增同进程 service lifecycle，组合现有 HTTP、控制门、持久账本和终态任务。HTTP 在途、后端负债及待确认独立判断，单一期限排空；CPU/Manager 信号资格见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。真实 HUST 常驻装配及统一线程收尾待完成，下方旧日期状态保留历史范围。
+2026-10-23 后续：同进程 service lifecycle 已进一步接管 Router 自建的 KV/控制来源线程，并增加暂停恢复的来源证明顺序、固定宿主 `serve/recover-serve` 候选和固定 Manager 的显式用户入口。CPU/CI 见[候选记录](../evidence/source-lifecycle-manager-candidate-2026-10-23.md)；真实双 NPU 常驻资格尚未执行，不能提升 manifest 状态。下方旧日期状态保留历史范围。
 
 2026-10-23：同一终态驱动已增加每来源唯一 TerminalTask、有界进度与停止 join；显式后台资格路径和实测状态见[新记录](../evidence/background-terminal-tasks-2026-10-23.md)。下面 10-22 的有限 step 状态保留原时间范围。整体服务 readiness、HTTP 工作计数、信号排空与 Manager 仍待装配，不能由后台任务资格直接提升产品状态。
 

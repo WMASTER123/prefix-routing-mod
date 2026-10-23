@@ -25,7 +25,9 @@
 
 ## 组件状态
 
-2026-10-23 服务生命周期增量：已实现整体 readiness、HTTP handler/响应体在途计数、统一期限排空、stop-all/join 与监听关闭；Linux x86_64 helper 108/严格 Clippy、固定 Manager 的真实信号/超时/强退与暂停保债恢复四项通过。审查补齐 observer/ownership 的跨来源一致性校验。这属于 CPU 服务壳资格；尚未装配进真实 HUST 常驻入口，控制/KV 线程统一关闭、公开配置及 Manager 激活未完成，见[新记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。下段后台双卡成绩仅对应原路径。
+2026-10-23 后续增量：控制/KV 来源线程已纳入同一 Router 监督边界，恢复启动增加“来源证明→持久 resume→启动消费者”的顺序，固定宿主候选新增 `serve/recover-serve`，并提供固定 Manager 的显式 `manager-run` 入口。CPU 侧 614/7 skip、Rust helper/Clippy/Manager 信号 CI 通过；但上一台服务器已失效，固定宿主构建和真实双 NPU 常驻资格未执行，因此 manifest 仍 `import_only`，公开配置/激活仍未冻结。见[候选记录](../evidence/source-lifecycle-manager-candidate-2026-10-23.md)。
+
+2026-10-23 服务生命周期增量：已实现整体 readiness、HTTP handler/响应体在途计数、统一期限排空、stop-all/join 与监听关闭；Linux x86_64 helper 108/严格 Clippy、固定 Manager 的真实信号/超时/强退与暂停保债恢复四项通过。审查补齐 observer/ownership 的跨来源一致性校验。这属于 CPU 服务壳资格；当时尚未装配进真实 HUST 常驻入口，见[记录](../evidence/service-lifecycle-cpu-2026-10-23.md)。下段后台双卡成绩仅对应原路径。
 
 最终输入 `c6028c8` 已补齐 aarch64 helper 108、HTTP 16、Manager 4、完整宿主 39/release 构建及六项 CI，Python CPU 608/integration 3/wheel 验证通过。当前没有新增 NPU 执行或容量结论，实验子进程已由监督器回收。
 
@@ -35,7 +37,7 @@
 |---|---|---|
 | M1 | 真实本地 Qwen tokenizer、完整块摘要，已装入公开字符串 completion 链 | 输入/输出预算和一次分词开销；chat/template、数组/token-id 不在当前支持范围 |
 | M2 | 复用原索引/Directory/Pool；真实 Rust 订阅写入同进程目录，连续性/父链/总配额/失信/实例围栏；Router 重启后安全降级为 unknown 已通过 | 大工作集/并发成本；当前不支持暖目录恢复，需权威快照水位的新 profile 后另行验收 |
-| M3 | 条件准入、保债、持久终态与回收；后台任务已过双 NPU 有限资格；服务 readiness、HTTP 计数/期限排空与 Manager 信号已过 CPU 资格 | 将服务壳装入真实 HUST 入口，统一控制/KV 线程收尾、生产启动恢复和 Manager 激活；跨主机所有权不在首版范围 |
+| M3 | 条件准入、保债、持久终态与回收；后台任务已过双 NPU 有限资格；服务壳、统一来源任务及恢复顺序已过 CPU 资格 | 固定宿主构建并验证真实常驻 `serve/recover-serve`；跨主机所有权不在首版范围 |
 | M4 | 基础可信正命中优先/最低在途回退，真实目标和缓存结果符合预期 | 配对开销与强基线；优化策略后置 |
 | M5 | 复用原 Router HTTP/SSE，公开入口、真实转发及生成后取消通过 | 生产启停/排空、并发配置竞争/故障和可发布二进制 |
 | M6 | CPU/源码/原生 CI、可重复装配、手动 NPU 公开链/稳定性及原始报告 | 同底座开销、持续服务、强基线和多阈值容量曲线 |
@@ -48,7 +50,7 @@
 
 ## 接下来集中完成什么
 
-1. 将已通过 CPU 验证的 service readiness、HTTP 工作计数和期限排空装入固定 Router/HUST 链；补控制/KV 线程关闭、生产启动恢复与 Manager 用户入口，再统一唯一源码目录和制品。具体边界见[生产工作包](planning/production-runtime-and-overhead.md)，不得改动保债、来源绑定或 commit→ACK→retire 顺序。
+1. 在新申请的双 NPU 服务器上构建固定宿主并验证已装配的常驻 `serve/recover-serve`：统一 KV/控制/终态退出、默认暂停恢复、同身份 takeover、信号排空和 Manager 进程树边界。通过前不得修改 manifest 激活状态；具体见[候选记录](../evidence/source-lifecycle-manager-candidate-2026-10-23.md)。
 2. 开展有界直连/原 Router/同底座仅加接线开销对照，明确启用的观测与持久性；随后做双副本强基线、多阈值容量曲线和输入/输出长度分组。
 3. 暂停人员分工讨论；保留[工作包](planning/component-work-packages.md)中的组件所有权，统一收敛生产目录、公开配置/错误码、Manager 和测试替身。恢复/回收语义已经冻结，不等于全部生产接口冻结。
 
